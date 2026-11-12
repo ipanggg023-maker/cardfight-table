@@ -467,3 +467,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 .jtabs button.on { border-color: var(--gold); color: var(--gold); }
 .jtask { background: #f2b94b22; border-left: 3px solid var(--gold); padding: 6px 8px; border-radius: 6px; margin: 0; white-space: pre-wrap; }
 .drawer.judge { left: auto; right: 0; border-right: 0; border-left: 1px solid var(--line); }
+
+/* cloud sync status (db.js) */
+.sync-badge { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 90; background: var(--mat2, #13243d); border: 1px solid var(--gold, #f2b94b); color: #e8eef8; padding: 6px 14px; border-radius: 999px; font-size: .82rem; box-shadow: 0 8px 24px #0006; pointer-events: none; }

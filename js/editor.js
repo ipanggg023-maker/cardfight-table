@@ -1228,6 +1228,11 @@ window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault()
 // Leaving through an app link: ask here (before the loading screen), then don't ask again
 Loader.canLeave = () => { if (!dirty) return true; if (!window.confirm("Discard unsaved changes?")) return false; dirty = false; return true; };
 
+// Players with an account build decks from the shared library; only admins (and guests, locally) edit cards.
+if (!DB.canEditCards()) {
+  ["cards", "cgs", "online", "formats"].forEach((t) => { document.querySelector(`[data-tab="${t}"]`).hidden = true; });
+  document.querySelector('[data-tab="decks"]').click();
+}
 Loader.wait((async () => {
   await DB.removeSamples();
   await reload();
