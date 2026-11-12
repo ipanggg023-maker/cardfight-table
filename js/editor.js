@@ -136,7 +136,11 @@ function renderCard() {
       <label>Power ${num("power", c.power)}</label>
       <label>Shield ${num("shield", c.shield)}</label>
       <label>Critical ${num("crit", c.crit)}</label>
-      <label>Trigger ${sel("trigger", { "": "None", crit: "Critical", front: "Front", draw: "Draw", heal: "Heal", over: "Over" }, c.trigger || "")}</label>
+      <label>Trigger ${sel("trigger", { "": "None", crit: "Critical", front: "Front", draw: "Draw", heal: "Heal", over: "Over", stand: "Stand (Premium)" }, c.trigger || "")}</label>
+      ${c.trigger ? `<label>Trigger power ${num("trigPower", c.trigPower, c.trigger === "over" ? "100000000" : "10000")}</label>` : ""}
+      <label>Drive ${sel("drive", { "": `Auto (${c.grade >= 3 ? "Twin" : "1"})`, 1: "1 check", 2: "Twin Drive (2)", 3: "Triple Drive (3)" }, c.drive ?? "")}</label>
+      <label>Boost ${sel("boost", { "": `Auto (${c.grade <= 1 ? "yes" : "no"})`, 1: "Yes", 0: "No" }, c.boost === true ? "1" : c.boost === false ? "0" : c.boost ?? "")}</label>
+      <label>Intercept ${sel("intercept", { "": `Auto (${c.grade === 2 ? "yes" : "no"})`, 1: "Yes", 0: "No" }, c.intercept === true ? "1" : c.intercept === false ? "0" : c.intercept ?? "")}</label>
       <label>Nation ${txt("nation", c.nation, "Dragon Empire")}</label>
       <label>Race ${txt("race", c.race)}</label>
     </div>
@@ -178,6 +182,7 @@ function abilityHTML(ab, ai) {
       ${order ? "" : `<label>Zone ${sel(`${base}.zone`, SCHEMA.zones, ab.zone || "VC")}</label>`}
       ${ab.kind === "AUTO" ? `<label>When ${sel(`${base}.when`, SCHEMA.events, ab.when)}</label>` : ""}
       <label>Limit ${sel(`${base}.once`, { "": "No limit", turn: "1/Turn", game: "1/Game" }, ab.once || "")}</label>
+      ${ab.kind === "AUTO" ? `<label class="chk" title="Tick when the card text has no &quot;you may&quot;: it resolves without asking"><input type="checkbox" data-path="${base}.mandatory" ${ab.mandatory ? "checked" : ""}> Mandatory</label>` : ""}
       <button class="del" data-do="delAb" data-i="${ai}">Remove ability</button>
     </div>
     <div class="preview">${esc(describeAbility(ab))}</div>
@@ -545,7 +550,7 @@ const rideChoices = (g) => cards.filter((c) => c.grade === g && (c.type === "uni
 // ---------- quick deck: builds a legal deck from your own cards of one clan ----------
 const TRIG_MIX = {
   balanced: { label: "Balanced", sub: "8 Critical · 4 Draw · 4 Heal", want: { crit: 8, draw: 4, heal: 4 } },
-  crit: { label: "Aggressive", sub: "12 Critical · 4 Heal", want: { crit: 12, heal: 4 } },
+  crit: { label: "Aggressive", sub: "8 Critical · 4 Front · 4 Heal", want: { crit: 8, front: 4, heal: 4 } }, // Standard caps each type at 8
   draw: { label: "Card advantage", sub: "4 Critical · 8 Draw · 4 Heal", want: { crit: 4, draw: 8, heal: 4 } },
   front: { label: "Front row", sub: "4 Critical · 8 Front · 4 Heal", want: { crit: 4, front: 8, heal: 4 } },
 };
@@ -744,7 +749,9 @@ function quickBuild(o) {
   // Triggers: 16, heal max 4, over max 1
   const trigOf = (t) => sc(clan.filter((c) => c.trigger === t));
   const want = { ...TRIG_MIX[o.mix].want };
+  // triggers in the ride deck (e.g. a trigger starter) count toward the 16 (CR 8.1.6)
   let trigLeft = 16;
+  for (const rc of ride) if (rc && rc.trigger) { trigLeft--; if (want[rc.trigger] > 0) want[rc.trigger]--; else if (want.crit > 0) want.crit--; else want[Object.keys(want).find((k) => want[k] > 0)]--; }
   if (o.over && trigOf("over").length) { take(trigOf("over"), 1); trigLeft--; if (want.crit) want.crit--; else want[Object.keys(want)[0]]--; }
   for (const [t, n] of Object.entries(want)) trigLeft -= n - take(trigOf(t), n);
   if (trigLeft > 0) {

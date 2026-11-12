@@ -67,7 +67,9 @@ function validateDeck(deck, byId) {
   if (ride.length !== 4 || ride.some((c) => !c)) errs.push("Ride deck needs 4 cards");
   else if (ride.map((c) => c.grade).join() !== "0,1,2,3") errs.push("Ride deck must be grade 0, 1, 2, 3 in order");
   if (main.length !== 50) errs.push(`Main deck has ${main.length}/50 cards`);
-  const count = (fn) => main.filter(fn).length;
+  // triggers, sentinels and copies count across the main deck and the ride deck (CR 8.1.6–8.1.7)
+  const both = [...main, ...ride.filter(Boolean)];
+  const count = (fn) => both.filter(fn).length;
   if (count((c) => c.trigger) !== 16) errs.push(`Triggers: ${count((c) => c.trigger)}/16`);
   const noType = main.filter((c) => c.type === "trigger" && !c.trigger);
   if (noType.length) errs.push(`Set the trigger type: ${[...new Set(noType.map((c) => c.name))].join(", ")}`);

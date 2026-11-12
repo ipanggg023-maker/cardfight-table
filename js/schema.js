@@ -45,6 +45,7 @@ const SCHEMA = {
     attackHit: "When this unit's attack hits",
     battleEnd: "At the end of the battle this unit attacked",
     endTurn: "At the end of your turn",
+    overDrive: "When revealed as an over trigger in your drive check (its over-trigger text)",
   },
 
   conds: {
@@ -133,6 +134,7 @@ function describeAbility(ab) {
   if (["AUTO", "ACT", "CONT"].includes(ab.kind)) s += `(${ab.zone || "VC"})`;
   if (ab.once === "turn") s += "[1/Turn]";
   if (ab.once === "game") s += "[1/Game]";
+  if (ab.kind === "AUTO" && ab.mandatory) s += "[Mandatory]";
   s += ": ";
   if (ab.kind === "AUTO") s += (SCHEMA.events[ab.when] || "?") + ", ";
   const conds = (ab.conds || []).map((c) => SCHEMA.conds[c.type]?.text(c)).filter(Boolean);

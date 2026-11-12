@@ -210,7 +210,9 @@ async function startGame() {
     const decks = [await DB.loadDeck($("#d1").value), await DB.loadDeck($("#d2").value)];
     ui.hotseat = $("#hotseat").checked;
     ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
-    Game.newGame([$("#n1").value.trim() || "Player 1", $("#n2").value.trim() || "Player 2"], decks);
+    const fp = $("#firstP").value;
+    Game.newGame([$("#n1").value.trim() || "Player 1", $("#n2").value.trim() || "Player 2"], decks, { first: fp === "" ? null : +fp });
+    toast(`${Game.state().players[Game.state().first].name} goes first`);
     Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
     $("#setup").hidden = true;
     const loading = loadingTable("Shuffling decks…");
@@ -339,7 +341,7 @@ function renderSide(root, pi, side) {
     : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
   setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
     <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
+      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
   setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
   const topDrop = p.drop[p.drop.length - 1];
   if (topDrop) seen.set(topDrop.uid, topDrop);
@@ -468,6 +470,9 @@ function actionsHTML(S, v) {
     if (ui.unitSel) {
       Game.actList(S.active, ui.unitSel).forEach((a) => (h += b("actv", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-i="${a.i}" title="${esc(a.text)}"`)));
     }
+    const me = S.players[S.active];
+    if (me.useEnergy && me.energy >= 7 && me.egTurn !== S.turn) h += b("egdraw", "⚡ Energy-Blast 7: draw 1", "on");
+    if (S.turn === 1) return h + hint("First turn: no attacks") + b("end", "End turn ▶", "go");
     return h + b("end", "End turn", "ghost") + b("battle", "Battle ▶", "go");
   }
   if (S.phase === "battle") {
@@ -566,6 +571,7 @@ function onAction(a, el) {
     case "cancel": ui.mode = null; ui.attacker = null; return render();
     case "play": { const id = ui.sel; ui.sel = null; return act(Game.playOrder(id)); }
     case "actv": return act(Game.activate(ui.unitSel, +el.dataset.i));
+    case "egdraw": return act(Game.energyDraw());
     case "battle": Object.assign(ui, { sel: null, unitSel: null, mode: null }); return act(Game.toBattle());
     case "boost": ui.boost = !ui.boost; return render();
     case "confirm": ui.sel = null; return act(Game.confirmGuard());

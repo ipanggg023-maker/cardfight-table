@@ -8,7 +8,7 @@ const Net = (() => {
   const PREFIX = "vgtable-";
   const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
   const ACTIONS = ["answer", "mulligan", "rideFromDeck", "rideFromHand", "skipRide", "call", "move", "activate",
-    "playOrder", "toBattle", "attack", "guard", "intercept", "confirmGuard", "endTurn"];
+    "playOrder", "toBattle", "attack", "guard", "intercept", "confirmGuard", "endTurn", "energyDraw"];
   const GUEST = 1;
 
   let peer = null, conn = null, code = "", reqN = 0;

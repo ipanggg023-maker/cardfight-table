@@ -60,15 +60,16 @@ CSS: "HUD layout v3" blocks at the end of style.css. Card size scales with the s
 - `style.css` shared, `editor.css` editor only
 
 ## Data model
-Card: `{id, name, grade, type: unit|trigger|order, power, shield, crit, trigger: null|crit|front|draw|heal|over, sentinel, persona, nation, race, image, text, abilities[]}`
-Ability: `{kind: AUTO|ACT|CONT|ORDER|BLITZ, zone, when, once: ""|turn|game, conds[], costs[], effects[]}`; each row is `{type, ...params}`
+Card: `{id, name, grade, type: unit|trigger|order, power, shield, crit, trigger: null|crit|front|draw|heal|over|stand, trigPower?, drive?, boost?, intercept?, sentinel, persona, nation, race, image, text, abilities[]}`. Missing drive/boost/intercept fall back to grade (Twin Drive on G3+, Boost on G0–1, Intercept on G2); missing trigPower = 10000 (over 100M)
+Ability: `{kind: AUTO|ACT|CONT|ORDER|BLITZ, zone, when, once: ""|turn|game, mandatory?, conds[], costs[], effects[]}`; each row is `{type, ...params}`. `mandatory` AUTOs resolve without asking (no "you may"). `when: "overDrive"` = an over trigger's own text, only on drive checks
 Deck: `{id, name, energy, ride:[4 card ids G0..G3], main:[50 card ids]}`
 
 ## Engine notes
 - `S.active` = turn player, `S.controller` = who must act now (defender while guarding, chooser during `S.pending`)
 - Choices: `choose(pi, prompt, options, min, max)` returns a Promise; UI calls `Game.answer(ids)`. Auto-resolves when there's no real choice
 - Slots `{card, rest, pow, crit, powB, critB}`; pow/crit reset at end of turn, powB/critB at end of battle. CONT bonuses computed live in `power()`/`crit()`
-- Phases: mulligan → ride → main → battle → (endTurn) ride…
+- Phases: mulligan → ride → main → battle → (endTurn) ride…. `S.first` = who went first (random unless chosen); both players draw every turn; no attacks on turn 1; mulligan = bottom, draw, shuffle
+- Rules follow docs/rules (CR 4.59). Fixed so far: B1–B12, B15, B16 of `docs/rules/08-engine-gaps-and-plan.md`. Still open: check-timing queue (B13: turn player orders waiting AUTOs, both players' abilities), deferred loss checks (B14), formats, zones (G/order/crest), gifts, Stride, Legion
 - Damage cards have `down` (face down) for Counter-Blast
 
 ## Adding a new ability block

@@ -18,6 +18,14 @@ const Game = (() => {
   const slot = (card) => ({ card, rest: false, pow: 0, crit: 0, powB: 0, critB: 0 });
   const P = (i) => S.players[i];
   const over = () => S.winner !== null;
+  // Skill icons (CR 2.17, 14.3–14.5). Cards made before these fields existed fall back to the usual
+  // values for their grade: Twin Drive on grade 3+, Boost on grade 0–1, Intercept on grade 2.
+  const flag = (v, dflt) => (v === true || v === "1" ? true : v === false || v === "0" ? false : dflt);
+  const driveOf = (c) => +c.drive || (c.grade >= 3 ? 2 : 1);
+  const canBoostIcon = (c) => c.type !== "order" && flag(c.boost, c.grade <= 1);
+  const canInterceptIcon = (c) => c.type !== "order" && flag(c.intercept, c.grade === 2);
+  // Trigger power is the number printed on the icon (CR 11.10.5): 10000 on V/D cards, 5000 on old ones
+  const trigPower = (c) => +c.trigPower || (c.trigger === "over" ? 100000000 : 10000);
   const log = (m) => { S.log.unshift(m); if (S.log.length > 120) S.log.pop(); };
 
   // ---------- setup ----------
@@ -26,23 +34,29 @@ const Game = (() => {
     const p = {
       name, deckName: deck.name, useEnergy: !!deck.energy, energy: 0,
       deck: shuffle(deck.main.map(inst)), ride: ride.slice(1),
-      hand: [], soul: [], damage: [], drop: [], bind: [],
+      hand: [], soul: [], damage: [], drop: [], bind: [], removed: [],
       slots: { vc: slot(ride[0]), fl: null, fr: null, bl: null, bc: null, br: null },
-      driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false,
+      driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
+      orderTurn: -1, egTurn: -1, // turn number of the last order played / Energy Generator draw (1 each per turn)
     };
     for (let i = 0; i < 5; i++) p.hand.push(p.deck.pop());
     return p;
   }
-  function newGame(names, decks) {
+  // opts.first: 0 / 1 = that player goes first; anything else = random (CR 8.2.1.6)
+  function newGame(names, decks, opts = {}) {
     uidN = 0;
     resume = null;
+    const first = opts.first === 0 || opts.first === 1 ? opts.first : Math.floor(Math.random() * 2);
     S = {
       players: [makePlayer(names[0], decks[0]), makePlayer(names[1], decks[1])],
-      active: 0, controller: 0, turn: 1, phase: "mulligan",
+      first, active: first, controller: first, turn: 1, phase: "mulligan",
       rode: false, battle: null, winner: null, pending: null, busy: false,
       log: [], reveal: [], used: new Set(), usedGame: new Set(),
     };
-    log(`Game start! ${S.players[0].name} goes first (no draw on turn 1)`);
+    log(`Game start! ${P(first).name} goes first (draws on turn 1 but can't attack)`);
+    // Energy Generator: the player who went second Energy-Charges 3 when it is placed in the crest zone
+    const second = P(1 - first);
+    if (second.useEnergy) { second.energy = 3; log(`${second.name} went second: Energy-Charge 3`); }
     return S;
   }
 
@@ -146,8 +160,12 @@ const Game = (() => {
     return sum;
   }
   function power(pi, key) {
-    const s = P(pi).slots[key];
-    return s ? s.card.power + s.pow + s.powB + cont(pi, key, "power") : 0;
+    const p = P(pi), s = p.slots[key];
+    if (!s) return 0;
+    // Persona Ride: units on your front-row circles get +10000 until end of turn (CR 7.15.1.4).
+    // It belongs to the circles, so units called there later this turn get it too.
+    const persona = p.personaFront && FRONT.includes(key) ? 10000 : 0;
+    return s.card.power + s.pow + s.powB + persona + cont(pi, key, "power");
   }
   function crit(pi, key) {
     const s = P(pi).slots[key];
@@ -244,8 +262,8 @@ const Game = (() => {
     const abs = card.abilities || [];
     for (let i = 0; i < abs.length; i++) {
       const ab = abs[i];
-      if (ab.kind !== "AUTO" || ab.when !== event || !zoneOK(ab.zone, zone)) continue;
-      await resolve(pi, card, ab, i, { key, zone, ...extra, card }, true);
+      if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) continue;
+      await resolve(pi, card, ab, i, { key, zone, ...extra, card }, !ab.mandatory); // mandatory = no "you may"
     }
   }
   async function fireAll(pi, event, extra = {}) {
@@ -358,39 +376,52 @@ const Game = (() => {
   }
 
   // ---------- triggers ----------
-  async function trigger(pi, c) {
+  // check: "drive" | "damage". The checked card is in the trigger zone while this runs (CR 11.10).
+  async function trigger(pi, c, check) {
     const t = c.trigger;
-    if (!t) return;
+    if (!t || !TRIG[t]) return;
     const p = P(pi), o = P(1 - pi);
-    const mine = unitsAt(pi, UNITS);
+    const mine = unitsAt(pi, UNITS), amt = trigPower(c);
     log(`${TRIG[t].icon} ${TRIG[t].name} trigger!`);
-    if (t === "front") { unitsAt(pi, FRONT).forEach((u) => (p.slots[u.key].pow += 10000)); return; }
-    const amt = t === "over" ? 100000000 : 10000;
+    if (t === "front") { unitsAt(pi, FRONT).forEach((u) => (p.slots[u.key].pow += amt)); return; }
+    if (t === "over") draw(pi, 1);
     const [pu] = await chooseUnits(pi, `${TRIG[t].name} trigger: power +${amt.toLocaleString()} to which unit?`, mine, 1);
     if (pu) p.slots[pu.key].pow += amt;
     if (t === "crit") {
       const [cu] = await chooseUnits(pi, "Critical trigger: critical +1 to which unit?", mine, 1);
       if (cu) p.slots[cu.key].crit += 1;
     }
-    if (t === "draw" || t === "over") draw(pi, 1);
-    if (t === "heal" && p.damage.length && p.damage.length >= o.damage.length) {
-      p.drop.push(p.damage.pop());
-      log(`♥ ${p.name} heals 1 damage`);
+    if (t === "draw") draw(pi, 1);
+    if (t === "stand") { // Premium: stand one of your rear-guards
+      const rested = unitsAt(pi, RC).filter((u) => p.slots[u.key].rest);
+      const [su] = await chooseUnits(pi, "Stand trigger: stand which rear-guard?", rested, 1);
+      if (su) { p.slots[su.key].rest = false; log(`${p.slots[su.key].card.name} stands`); }
     }
+    if (t === "heal") {
+      // Only if your damage ≥ opponent's; the checked card isn't in the damage zone yet, so it doesn't count
+      if (p.damage.length && p.damage.length >= o.damage.length) {
+        const [h] = await chooseCards(pi, "Heal trigger: choose 1 damage to heal", p.damage, 1, 1);
+        if (h) { p.damage.splice(p.damage.indexOf(h), 1); p.drop.push(h); log(`♥ ${p.name} heals ${h.name}`); }
+      } else log("Heal trigger: no heal (your damage is less than your opponent's)");
+    }
+    // Over trigger on a drive check: the card's own "over trigger" text (AUTO "When revealed as an over trigger in your drive check")
+    if (t === "over" && check === "drive") await fire(pi, null, "overDrive", { card: c, zone: "trigger" });
   }
 
   // ---------- turn flow ----------
-  async function startTurn(skipDraw) {
+  // Stand phase → draw phase (both players draw every turn, CR 9.4.2) → ride phase
+  async function startTurn() {
     const pi = S.active, p = P(pi);
     Object.values(p.slots).forEach((s) => s && (s.rest = false));
     S.used = new Set();
-    Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false });
+    Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false });
     S.rode = false;
     S.reveal = [];
     log(`— Turn ${S.turn}: ${p.name} —`);
-    if (!skipDraw) draw(pi, 1);
+    draw(pi, 1);
     if (over()) return;
     S.phase = "ride";
+    // Energy Generator: Energy-Charge 3 at the beginning of your ride phase, max 10
     if (p.useEnergy) p.energy = Math.min(10, p.energy + 3);
     await fireAll(pi, "turnStart");
   }
@@ -401,28 +432,30 @@ const Game = (() => {
   const mulligan = (uids) => run(async () => {
     if (S.phase !== "mulligan") return err("Not in mulligan");
     const p = P(S.controller);
+    // CR 8.2.1.8: returned cards go to the bottom, draw that many, then shuffle (deck top = end of the array)
     const back = p.hand.filter((c) => uids.includes(c.uid));
     p.hand = p.hand.filter((c) => !uids.includes(c.uid));
-    p.deck.push(...back);
-    shuffle(p.deck);
+    p.deck.unshift(...back);
     for (let i = 0; i < back.length; i++) p.hand.push(p.deck.pop());
+    shuffle(p.deck);
     log(`${p.name} redraws ${back.length} card(s)`);
-    if (S.controller === 0) { S.controller = 1; return; }
-    S.controller = 0;
-    await startTurn(true);
+    if (S.controller === S.first) { S.controller = 1 - S.first; return; }
+    S.controller = S.first;
+    await startTurn();
   });
 
-  async function doRide(pi, card) {
+  async function doRide(pi, card, fromHand) {
     const p = P(pi), old = p.slots.vc.card;
     p.soul.push(old);
     p.slots.vc.card = card;
     S.rode = true;
     log(`${p.name} rides ${card.name} (G${card.grade})`);
-    if (card.persona && card.grade >= 3 && old.name === card.name) {
-      unitsAt(pi, FRONT).forEach((u) => (p.slots[u.key].pow += 10000));
+    // Persona Ride (CR 6.3.8): a normal ride from hand onto a vanguard with the same name, both with the icon
+    if (fromHand && card.persona && old.persona && old.name === card.name) {
+      p.personaFront = true;
       p.personaThisTurn = true;
       draw(pi, 1);
-      log("✨ Persona Ride! Front row +10000, draw 1");
+      log("✨ Persona Ride! Draw 1, your front row gets +10000 this turn");
     }
     await fire(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
     await fire(pi, "vc", "placedVC");
@@ -437,7 +470,7 @@ const Game = (() => {
     if (hi < 0) return err("Choose a card in hand to discard");
     p.drop.push(p.hand.splice(hi, 1)[0]);
     p.ride.splice(p.ride.indexOf(next), 1);
-    await doRide(pi, next);
+    await doRide(pi, next, false);
   });
   const rideFromHand = (uid) => run(async () => {
     if (S.phase !== "ride") return err("You can only ride in the ride phase");
@@ -447,7 +480,7 @@ const Game = (() => {
     const g = p.slots.vc.card.grade;
     if (card.grade !== g && card.grade !== g + 1) return err(`Ride grade ${g} or ${g + 1} only`);
     p.hand.splice(p.hand.indexOf(card), 1);
-    await doRide(pi, card);
+    await doRide(pi, card, true);
   });
   const skipRide = () => run(async () => {
     if (S.phase !== "ride") return err("Not in ride phase");
@@ -498,16 +531,31 @@ const Game = (() => {
     if (!card || card.type !== "order") return err("Not an order card");
     const kind = guarding ? "BLITZ" : "ORDER";
     if (!guarding && (S.phase !== "main" || S.battle)) return err("Normal orders: your main phase only");
-    if (!guarding && p.ordersThisTurn >= 1) return err("Only 1 normal order per turn");
+    if (card.grade > p.slots.vc.card.grade) return err("An order's grade must be ≤ your vanguard's");
+    if (p.orderTurn === S.turn) return err("Only 1 order per turn (blitz orders count too)");
     const found = orderAbility(card, kind);
     if (!found) return err(guarding ? "This is not a blitz order" : "This is not a normal order");
     const ctx = { key: null, zone: "hand", card };
     p.hand.splice(p.hand.indexOf(card), 1);
     if (!ready(pi, card, found.ab, found.i, ctx)) { p.hand.push(card); return err("Conditions or costs not met"); }
     p.ordersThisTurn++;
+    p.orderTurn = S.turn;
     log(`${p.name} plays ${card.name}`);
     await resolve(pi, card, found.ab, found.i, ctx, false);
     p.drop.push(card);
+  });
+
+  // Energy Generator crest: ACT [1/Turn] Energy-Blast 7 → draw 1 (main phase)
+  const energyDraw = () => run(async () => {
+    const pi = S.active, p = P(pi);
+    if (!p.useEnergy) return err("No Energy Generator");
+    if (S.phase !== "main" || S.battle) return err("Use it in your main phase");
+    if (p.egTurn === S.turn) return err("Once per turn");
+    if (p.energy < 7) return err("Needs 7 energy");
+    p.energy -= 7;
+    p.egTurn = S.turn;
+    draw(pi, 1);
+    log(`${p.name}: Energy Generator, Energy-Blast 7 → draw 1`);
   });
 
   // ---------- battle ----------
@@ -519,11 +567,12 @@ const Game = (() => {
   });
   function canAttack(key) {
     const s = S.players[S.active].slots[key];
-    return S.phase === "battle" && !S.battle && FRONT.includes(key) && !!s && !s.rest;
+    // the first player can't attack on their first turn (CR 10.3.2)
+    return S.phase === "battle" && S.turn > 1 && !S.battle && FRONT.includes(key) && !!s && !s.rest;
   }
   function boosterFor(pi, key) {
     const bk = BACK_OF[key], b = bk && P(pi).slots[bk];
-    return b && !b.rest && b.card.grade <= 1 && b.card.type !== "order" ? bk : null;
+    return b && !b.rest && canBoostIcon(b.card) ? bk : null;
   }
   const attack = (att, useBoost, tgt) => run(async () => {
     if (!canAttack(att)) return err("That unit can't attack");
@@ -574,7 +623,7 @@ const Game = (() => {
     const b = S.battle, di = 1 - S.active, d = P(di), s = d.slots[key];
     if (!b) return err("No attack");
     if (!["fl", "fr"].includes(key) || !s) return err("Only front row rear-guards can intercept");
-    if (s.card.grade !== 2) return err("Only grade 2 units can intercept");
+    if (!canInterceptIcon(s.card)) return err("This unit has no Intercept skill");
     if (key === b.tgt) return err("The attacked unit can't intercept");
     b.guards.push(s.card);
     d.slots[key] = null;
@@ -586,14 +635,14 @@ const Game = (() => {
     const ai = S.active, di = 1 - ai, p = P(ai), d = P(di);
     S.controller = ai;
     if (b.att === "vc") {
-      const n = (p.slots.vc.card.grade >= 3 ? 2 : 1) + p.driveBonus;
+      const n = driveOf(p.slots.vc.card) + p.driveBonus;
       for (let i = 0; i < n && !over(); i++) {
         if (!p.deck.length) return lose(ai, "deck is empty");
         const c = p.deck.pop();
         S.reveal.push({ type: "Drive", card: c });
         log(`Drive check: ${c.name}`);
-        await trigger(ai, c);
-        (c.trigger === "over" ? p.bind : p.hand).push(c);
+        await trigger(ai, c, "drive");
+        if (c.trigger === "over") { p.removed.push(c); log(`${c.name} is removed from the game`); } else p.hand.push(c);
       }
     }
     if (over()) return;
@@ -608,14 +657,11 @@ const Game = (() => {
           const c = d.deck.pop();
           S.reveal.push({ type: "Damage", card: c });
           log(`Damage check: ${c.name}`);
-          if (c.trigger === "over") d.bind.push(c); else d.damage.push(c);
-          await trigger(di, c);
+          await trigger(di, c, "damage");
+          if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else d.damage.push(c);
           if (d.damage.length >= 6) lose(di, "6 damage");
         }
-      } else {
-        log(`${d.slots[b.tgt].card.name} is retired`);
-        retire(di, b.tgt);
-      }
+      } else b.hitUid = d.slots[b.tgt].card.uid;
       if (!over()) await fire(ai, b.att, "attackHit");
     }
     await endBattle();
@@ -624,8 +670,10 @@ const Game = (() => {
     const b = S.battle;
     if (!b) return;
     const ai = S.active;
-    P(1 - ai).drop.push(...b.guards);
+    const d = P(1 - ai);
+    d.drop.push(...b.guards);
     b.guards = [];
+    if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { log(`${d.slots[b.tgt].card.name} is retired`); retire(1 - ai, b.tgt); }
     if (!over()) await fire(ai, b.att, "battleEnd");
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && (s.powB = 0, s.critB = 0)));
     S.battle = null;
@@ -636,6 +684,7 @@ const Game = (() => {
     if (S.battle) return err("Finish the battle first");
     if (S.phase === "mulligan") return err("Still in mulligan");
     await fireAll(S.active, "endTurn");
+    P(S.active).personaFront = false;
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && Object.assign(s, { pow: 0, crit: 0, powB: 0, critB: 0 })));
     S.active = 1 - S.active;
     S.controller = S.active;
@@ -671,6 +720,7 @@ const Game = (() => {
     newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
-    toBattle, attack, guard, intercept, confirmGuard, endTurn,
+    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw,
+    driveOf, canBoostIcon, canInterceptIcon, trigPower,
   };
 })();
