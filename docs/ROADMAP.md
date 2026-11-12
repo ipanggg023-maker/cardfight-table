@@ -10,11 +10,12 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Card library import (CGS GitHub data, 21k cards), tcgapi.dev import (needs key + relay)
 - Local pictures: `vanguard_images` (Edit.py) + "Link pictures" folder matcher
 - Playmats per player (Classic / overDress Red / Blue / custom upload), DD2-style HUD, phase banner
+- Online play (2026-11-12): lobby "Host online" / "Join online", 5-letter room code, PeerJS; host runs the engine, guest gets redacted snapshots; guest can reload and rejoin mid-game; rematch
 
 ## Next (priority order)
 
-### 1. Online play between two PCs
-> Add online play: one player hosts, the other joins with a room code. Use PeerJS (WebRTC, free public broker) loaded from a CDN. The host runs `Game` from engine.js; the guest sends actions (`{fn, args}`) and receives `Game.state()` after each change. Hide the opponent's hand and deck order on the guest side. Add "Host online" / "Join online" to lobby.html. Keep hot-seat working.
+### 1. Online play polish
+> Online play works (js/net.js). Still open: random first player, chat/emotes, a "rejoin last room" button, showing the host's custom card images when they are big data URLs (test with real images), and a TURN server option for networks where WebRTC can't connect directly.
 
 ### 2. Better text → ability coverage
 > Write `tools/parse-report.mjs` (Node) that loads every set from the CGS repo, runs `TextParse.abilities()` on each effect, and lists the most common phrases that produce no blocks or partial blocks. Then add regexes in js/textparse.js and new SCHEMA blocks + engine handling for the top 10.

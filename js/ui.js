@@ -5,8 +5,12 @@ const fmt = (n) => n.toLocaleString("en-US");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 const hue = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
 
-const ui = { sel: null, mode: null, attacker: null, boost: true, unitSel: null, mull: new Set(), pick: new Set(), hotseat: true, shown: 0 };
+const ui = { sel: null, mode: null, attacker: null, boost: true, unitSel: null, mull: new Set(), pick: new Set(), hotseat: true, shown: 0, online: null };
 const seen = new Map(); // uid -> card, for the info panel
+const ONLINE = new URLSearchParams(location.search).get("online"); // "host" | "join" | null
+const imgOf = (c) => (typeof Net !== "undefined" ? Net.img(c) : c.image || "");
+// Online: you may only act when the engine is waiting on your seat.
+const myMove = () => !ui.online || Game.state().controller === ui.online.seat;
 
 // ---------- setup ----------
 async function loadSetup() {
@@ -23,6 +27,80 @@ async function loadSetup() {
   $("#d2").innerHTML = opts;
   if (decks[1]) $("#d2").value = decks[1].id;
   [1, 2].forEach(renderMatPick);
+  if (ONLINE && !ui.netReady) setupOnline();
+}
+
+// ---------- online setup (host / join) ----------
+const netStatus = (t) => ($("#netStatus").textContent = t);
+async function setupOnline() {
+  ui.netReady = true;
+  document.body.classList.add("online", "online-" + ONLINE);
+  $("#onlineBox").hidden = false;
+  $("#hotseatRow").hidden = true;
+  $("#n1Label").textContent = "Your name";
+  $("#setup h1").textContent = ONLINE === "host" ? "Host online" : "Join online";
+  const btn = $("#startBtn");
+  if (ONLINE === "join") { btn.textContent = "Join game"; netStatus("Type the host's room code, pick your deck, then join."); return; }
+  btn.disabled = true;
+  btn.textContent = "Waiting for opponent…";
+  netStatus("Opening a room…");
+  try {
+    $("#roomCode").textContent = await Net.host(onNet);
+    netStatus("Send this code to your opponent. Keep this page open.");
+  } catch (e) { netStatus(e.message); btn.textContent = "Couldn't open a room"; }
+}
+function onNet(ev) {
+  if (ev.type === "joined") {          // host: guest is here
+    ui.guest = ev;
+    netStatus(`${ev.name} joined with “${ev.deck.name}”. Press Start when ready.`);
+    Object.assign($("#startBtn"), { disabled: false, textContent: "Start game" });
+  } else if (ev.type === "start") {    // guest: host started the match
+    Object.assign(ui, { online: { seat: ev.seat }, mats: ev.mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+    $("#setup").hidden = true;
+    $("#win").hidden = true;
+    $("#netLost").hidden = true;
+  } else if (ev.type === "left") {
+    if (!ui.online) {                   // still on the setup screen
+      netStatus(ONLINE === "host" ? "Opponent left. Waiting for someone to join…" : "Disconnected from the host.");
+      if (ONLINE === "host") Object.assign($("#startBtn"), { disabled: true, textContent: "Waiting for opponent…" });
+      else Object.assign($("#startBtn"), { disabled: false, textContent: "Join game" });
+      return;
+    }
+    const host = ONLINE === "host";
+    $("#netLostText").innerHTML = host
+      ? `Your opponent disconnected.<br><span>They can rejoin with code <b>${esc(Net.code)}</b>. The game is kept.</span>`
+      : `Lost connection to the host.<br><span>Room ${esc(Net.code)}</span>`;
+    $("#netRetry").hidden = host;
+    $("#netLost").hidden = false;
+  } else if (ev.type === "back") {     // host: guest rejoined mid-game
+    $("#netLost").hidden = true;
+    toast("Your opponent is back");
+  } else if (ev.type === "error") toast(ev.msg);
+}
+async function joinOnline() {
+  const btn = $("#startBtn");
+  btn.disabled = true;
+  btn.textContent = "Connecting…";
+  try {
+    const deck = await DB.loadDeck($("#d1").value);
+    const name = $("#n1").value.trim() || "Guest";
+    await Net.join($("#joinCode").value, { name, deck, mat: Mats.resolve(1, Mats.choice(1)) }, onNet);
+    btn.textContent = "Connected";
+    netStatus("Connected! Waiting for the host to start…");
+  } catch (e) {
+    netStatus(e.message);
+    Object.assign(btn, { disabled: false, textContent: "Join game" });
+  }
+}
+async function startHosted() {
+  if (!ui.guest) return;
+  const deck = await DB.loadDeck($("#d1").value);
+  const names = [$("#n1").value.trim() || "Host", ui.guest.name || "Guest"];
+  const mats = [Mats.resolve(1, Mats.choice(1)), ui.guest.mat || { key: "classic", img: "" }];
+  Object.assign(ui, { online: { seat: 0 }, mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+  $("#setup").hidden = true;
+  Net.startHosted(names, [deck, ui.guest.deck], mats);
+  render();
 }
 function renderMatPick(seat) {
   const box = document.querySelector(`.matpick[data-seat="${seat}"]`);
@@ -49,6 +127,8 @@ document.addEventListener("change", async (e) => {
   catch (err) { toast(err.message); }
 });
 async function startGame() {
+  if (ONLINE === "join") return joinOnline();
+  if (ONLINE === "host") return startHosted().catch((e) => toast(e.message));
   if (typeof Auth !== "undefined" && Auth.get()) Auth.set({ ...Auth.get(), lastP2: $("#n2").value.trim() });
   try {
     const decks = [await DB.loadDeck($("#d1").value), await DB.loadDeck($("#d2").value)];
@@ -60,7 +140,7 @@ async function startGame() {
     render();
   } catch (e) { toast(e.message); }
 }
-const view = () => (ui.hotseat ? ui.shown : Game.state().controller);
+const view = () => (ui.online ? ui.online.seat : ui.hotseat ? ui.shown : Game.state().controller);
 
 // ---------- card drawing ----------
 function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
@@ -68,8 +148,9 @@ function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
   const S = Game.state();
   const pw = pi !== null && key ? Game.power(pi, key) : c.power;
   const cr = pi !== null && key ? Game.crit(pi, key) : c.crit || 1;
-  const img = c.image ? ` style="--h:${hue(c.nation)};background-image:linear-gradient(#0000 45%,#000c),url('${esc(c.image)}')"` : ` style="--h:${hue(c.nation)}"`;
-  return `<div class="card${c.image ? " img" : ""}${s.rest ? " rest" : ""}${extra}" data-uid="${c.uid}"${img}>
+  const src = imgOf(c);
+  const img = src ? ` style="--h:${hue(c.nation)};background-image:linear-gradient(#0000 45%,#000c),url('${esc(src)}')"` : ` style="--h:${hue(c.nation)}"`;
+  return `<div class="card${src ? " img" : ""}${s.rest ? " rest" : ""}${extra}" data-uid="${c.uid}"${img}>
     <div class="ctop"><span class="cg">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
       ${c.trigger ? `<span class="ct t-${c.trigger}">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="ct t-sent">◆</span>` : ""}${(c.abilities || []).length ? `<span class="ab">✦</span>` : ""}</div>
     <div class="cn">${esc(c.name)}</div>
@@ -78,7 +159,7 @@ function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
 }
 function infoPanel(c) {
   if (!c) return `<p class="muted">Hover a card to see its details.</p>`;
-  return `${c.image ? `<img src="${esc(c.image)}" alt="">` : ""}
+  return `${imgOf(c) ? `<img src="${esc(imgOf(c))}" alt="">` : ""}
     <h3>${esc(c.name)}</h3>
     <p class="muted">${c.type === "order" ? "Order" : "Grade " + c.grade} · ${esc(c.nation || "")}${c.race ? " · " + esc(c.race) : ""}</p>
     ${c.type !== "order" ? `<p>Power ${fmt(c.power)} · Shield ${fmt(c.shield || 0)} · Crit ${c.crit || 1}</p>` : ""}
@@ -197,12 +278,14 @@ function render() {
   renderPending(S, v);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = `${S.players[S.winner].name} wins!`;
+  if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
 }
 
 function actionsHTML(S, v) {
   const b = (id, text, cls = "", data = "") => `<button data-act="${id}" class="${cls}" ${data}>${text}</button>`;
   const hint = (t) => `<p class="hint">${t}</p>`;
   if (S.winner !== null) return b("restart", "New game", "go");
+  if (ui.online && S.controller !== v) return hint(S.pending ? `${esc(S.players[S.controller].name)} is choosing…` : S.battle ? `${esc(S.players[S.controller].name)} is guarding…` : `${esc(S.players[S.controller].name)}'s move…`);
   if (S.pending) return hint("Waiting for a choice…");
   const isActive = v === S.active;
   if (S.phase === "mulligan") return hint("Tap cards to send back") + b("mull", ui.mull.size ? `Redraw ${ui.mull.size}` : "Keep hand", "go");
@@ -279,7 +362,7 @@ async function act(promise) {
 
 function onSlot(side, key) {
   const S = Game.state(), v = view();
-  if (S.winner !== null || S.pending) return;
+  if (S.winner !== null || S.pending || !myMove()) return;
   if (S.battle) { if (v !== S.active && side === "me") act(Game.intercept(key)); return; }
   if (v !== S.active || side !== "me" && S.phase !== "battle") return;
   if (S.phase === "ride") {
@@ -305,7 +388,7 @@ function onSlot(side, key) {
 }
 function onHand(uid) {
   const S = Game.state(), v = view();
-  if (S.winner !== null || S.pending) return;
+  if (S.winner !== null || S.pending || !myMove()) return;
   if (S.phase === "mulligan") { ui.mull.has(uid) ? ui.mull.delete(uid) : ui.mull.add(uid); return render(); }
   const card = S.players[v].hand.find((c) => c.uid === uid);
   if (S.battle && v !== S.active) {
@@ -330,7 +413,15 @@ function onAction(a, el) {
     case "boost": ui.boost = !ui.boost; return render();
     case "confirm": ui.sel = null; return act(Game.confirmGuard());
     case "end": Object.assign(ui, { sel: null, attacker: null, unitSel: null, mode: null }); return act(Game.endTurn());
-    case "restart": $("#setup").hidden = false; $("#win").hidden = true; return loadSetup();
+    case "restart":
+      if (ui.online) {
+        if (ONLINE !== "host") return toast("The host starts the next game");
+        Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+        $("#win").hidden = true;
+        Net.rematch();
+        return render();
+      }
+      $("#setup").hidden = false; $("#win").hidden = true; return loadSetup();
   }
 }
 function onOpt(id) {
@@ -377,5 +468,13 @@ $("#startBtn").addEventListener("click", startGame);
 $("#curtainBtn").addEventListener("click", () => { ui.shown = Game.state().controller; render(); });
 $("#winBtn").addEventListener("click", () => onAction("restart"));
 $("#zoneClose").addEventListener("click", () => ($("#zone").hidden = true));
-Game.setOnChange(render);
+$("#netRetry").addEventListener("click", async () => {
+  $("#netRetry").disabled = true;
+  try { await Net.join(Net.code, { name: Game.state().players[ui.online.seat].name, deck: { ride: [], main: [] } }, onNet); $("#netLost").hidden = true; }
+  catch (e) { toast(e.message); }
+  $("#netRetry").disabled = false;
+});
+$("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value.toUpperCase()));
+// Host: every engine change goes to the guest too.
+Game.setOnChange(() => { render(); if (ui.online && ONLINE === "host") Net.pushState(); });
 loadSetup();

@@ -84,3 +84,14 @@ button:disabled { cursor: not-allowed; }
 .skinbar { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); bottom: 14px; background: #070f1dcc; border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; font-size: .85rem; }
 .skinbar .chk { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .skin-mat .hero .brand svg, .skin-mat .lobby-main .brand svg { display: none; }
+
+/* ---------- online play (index.html?online=host|join) ---------- */
+body.online .p2 { display: none; }
+.onlinebox { margin: 4px 0 12px; display: grid; gap: 6px; }
+.onlinebox .host-only, .onlinebox .join-only { display: none; }
+body.online-host .onlinebox .host-only { display: flex; align-items: baseline; gap: 12px; }
+body.online-join .onlinebox .join-only { display: grid; gap: 4px; }
+.onlinebox .host-only b { font-family: "Chakra Petch", sans-serif; font-size: 34px; letter-spacing: .25em; color: var(--gold, #f2b94b); user-select: all; }
+.onlinebox #joinCode { font-family: "Chakra Petch", sans-serif; font-size: 22px; letter-spacing: .25em; text-transform: uppercase; }
+.onlinebox p { margin: 0; min-height: 1.2em; }
+#startBtn:disabled { opacity: .55; cursor: default; }

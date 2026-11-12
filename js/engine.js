@@ -643,9 +643,32 @@ const Game = (() => {
     await startTurn(false);
   });
 
+  // ---------- online sync ----------
+  // Plain JSON copy of the state. With a seat, hides what that player may not see:
+  // the opponent's hand and ride deck, both decks' order, and the opponent's choice options.
+  // Card images are left out (sent once at game start) to keep messages small.
+  function snapshot(seat = null) {
+    const s = JSON.parse(JSON.stringify({ ...S, used: [...S.used], usedGame: [...S.usedGame] }, (k, v) => (k === "image" ? undefined : v)));
+    if (seat === null) return s;
+    let fake = 0;
+    const hide = (cards) => cards.map(() => ({ uid: -(++fake), name: "?", hidden: true, type: "unit", grade: 0, power: 0 }));
+    s.players.forEach((p, i) => {
+      p.deck = hide(p.deck);
+      if (i !== seat) { p.hand = hide(p.hand); p.ride = hide(p.ride); }
+    });
+    if (s.pending && s.pending.player !== seat) s.pending.options = [];
+    return s;
+  }
+  // Show a received snapshot (guest side). Pure helpers (power, actList…) then work on it.
+  function load(state) {
+    S = { ...state, used: new Set(state.used), usedGame: new Set(state.usedGame) };
+    resume = null;
+    onChange();
+  }
+
   return {
     FRONT, RC, UNITS, BACK_OF,
-    newGame, state: () => S, setOnChange: (f) => (onChange = f),
+    newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
     toBattle, attack, guard, intercept, confirmGuard, endTurn,

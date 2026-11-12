@@ -71,8 +71,11 @@ Deck: `{id, name, energy, ride:[4 card ids G0..G3], main:[50 card ids]}`
 2. Handle the same `type` in `effect()` / `condOK()` / `canPay()`+`pay()` in engine.js, or `fire(...)` the new event at the right moment
 3. The editor picks it up automatically. Test by building a card with it and playing a game
 
+## Online play
+`js/net.js` + `index.html?online=host|join` (lobby tiles). Host runs the engine and sends `Game.snapshot(1)` (hidden info removed) after each change; guest's `Game` actions become remote calls. Details in docs/ARCHITECTURE.md. Needs internet (PeerJS from unpkg + public broker); hot-seat doesn't.
+Local test: `node tools/serve.mjs` (or the "vanguard" entry in .claude/launch.json), open host and join pages in two tabs.
+
 ## Not implemented yet (good next tasks)
-- Online play between two computers (e.g. PeerJS; engine.js is DOM-free so it can be shared)
 - Over trigger extra effects, imaginary gifts, set orders/Regalis Piece zones, G zone/Stride, "cannot be called" type restrictions
 - Opponent-chosen effects (e.g. "your opponent chooses…"), abilities from soul/drop/hand zones, drop-zone ACT
 - Ride from ride deck alternative costs written on ride-line cards
@@ -87,7 +90,7 @@ tcgapi.dev importer (+ local relay), Card library importer (CGS GitHub data), pl
 Untested with real data: tcgapi.dev attribute names (needs a real key), card images hotlinked from en.cf-vanguard.com.
 
 ## Suggested next tasks
-1. Online play between two PCs (PeerJS or a small WebSocket server); engine.js is DOM-free, run it on the host and send state/answers.
+1. Online play polish (see ROADMAP task 1).
 2. Improve `js/textparse.js` using the CGS data: run every `effect` through `TextParse.abilities` in Node and list texts that produce no/partial abilities, then add regexes and SCHEMA blocks for the most common ones.
 3. Trigger type for CGS cards: data has no icon. Ideas: shield value hints, or a per-set picker that shows card images in a grid.
 4. Real accounts + cloud save (replace Auth.get/set/clear; keep DB API).

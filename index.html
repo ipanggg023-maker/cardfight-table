@@ -42,14 +42,19 @@
     <h1>Vanguard Table</h1>
     <p class="sub"><a href="lobby.html">← Lobby</a> · <a href="editor.html">Card &amp; deck editor</a></p>
     <div class="grid2">
-      <label>Player 1 <input id="n1" value="Player 1" maxlength="20"></label>
+      <label><span id="n1Label">Player 1</span> <input id="n1" value="Player 1" maxlength="20"></label>
       <label>Deck <select id="d1"></select></label>
       <div class="matpick" data-seat="1"></div>
-      <label>Player 2 <input id="n2" value="Player 2" maxlength="20"></label>
-      <label>Deck <select id="d2"></select></label>
-      <div class="matpick" data-seat="2"></div>
+      <label class="p2">Player 2 <input id="n2" value="Player 2" maxlength="20"></label>
+      <label class="p2">Deck <select id="d2"></select></label>
+      <div class="matpick p2" data-seat="2"></div>
     </div>
-    <label class="chk"><input type="checkbox" id="hotseat" checked> Hide hands (pass the device between turns)</label>
+    <div id="onlineBox" class="onlinebox" hidden>
+      <div class="host-only"><small>Room code</small><b id="roomCode">·····</b></div>
+      <label class="join-only">Room code <input id="joinCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
+      <p id="netStatus" class="muted"></p>
+    </div>
+    <label class="chk" id="hotseatRow"><input type="checkbox" id="hotseat" checked> Hide hands (pass the device between turns)</label>
     <button id="startBtn" class="go big">Start game</button>
     <details class="rules">
       <summary>Quick rules</summary>
@@ -96,6 +101,13 @@
   </div>
 </div>
 
+<div id="netLost" class="overlay curtain" hidden>
+  <div class="panel">
+    <p id="netLostText"></p>
+    <button id="netRetry" class="go big">Reconnect</button>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
 <script src="js/cards.js"></script>
@@ -103,6 +115,7 @@
 <script src="js/db.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/mats.js"></script>
+<script src="js/net.js"></script>
 <script src="js/ui.js"></script>
 <script>mountUserChip();</script>
 </body>

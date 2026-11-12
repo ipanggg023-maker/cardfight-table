@@ -18,7 +18,8 @@ Every page loads `js/auth.js` in `<head>` (guest login + `Skin` + `Auth.require(
 | `js/db.js` | IndexedDB `vanguard-table` (stores `cards`, `decks`), export/import, `loadDeck()`, `validateDeck()` | cards |
 | `js/engine.js` | Rules engine `Game` (no DOM). Phases, battle, triggers, abilities, choices | schema |
 | `js/mats.js` | Playmats registry `MATS`, `MAT_LAYOUT` (% positions), per-seat choice + custom upload | – |
-| `js/ui.js` | Game screen. Redraws everything from `Game.state()` on each change | engine, mats, db |
+| `js/net.js` | Online play: PeerJS (loaded from unpkg only when going online), host/join, remote actions, image map | engine |
+| `js/ui.js` | Game screen. Redraws everything from `Game.state()` on each change. `?online=host\|join` switches the setup panel to online | engine, mats, db, net |
 | `js/textparse.js` | Official card text → stats + ability blocks (regex), CSV parsing | schema |
 | `js/tcgapi.js` | tcgapi.dev client (via local relay) + `apiToCard()` | textparse |
 | `js/cgs.js` | Card library from github.com/dragogodev/cgs JSON + `cgsToCard()` | textparse |
@@ -31,7 +32,14 @@ Every page loads `js/auth.js` in `<head>` (guest login + `Skin` + `Auth.require(
 - Player choices: engine sets `S.pending = {player, prompt, options[], min, max}` and awaits; UI calls `Game.answer(ids)`.
 - `S.active` = turn player, `S.controller` = who must act now (used for hot-seat curtain).
 - `Game.setOnChange(fn)` → UI re-renders.
-- Because the engine is DOM-free and state is plain data, online play can run the engine on one host and sync `state()` + actions.
+- `Game.snapshot(seat)` → JSON-safe copy (Sets → arrays, no `image` fields). With a seat it hides the opponent's hand + ride deck, both decks (as `{hidden:true}` stubs with fake uids), and the opponent's pending options. `Game.load(state)` shows a snapshot; the pure helpers (`power`, `actList`, `nextRide`…) then work on it.
+
+## Online play (js/net.js)
+- Host = seat 0, runs the real engine. Peer id `vgtable-<CODE>` on the public PeerJS broker.
+- Guest → host: `hello {name, deck, mat}`, `act {id, fn, args}`. Host → guest: `start {seat, mats, images}`, `state {s}`, `res {id, r}`.
+- On the guest, `Net.join()` replaces the `Game` action methods with remote calls. The host only runs them when `S.controller` (or `S.pending.player` for `answer`) is the guest.
+- Card images travel once in `start.images` (by card id); `imgOf(c)` in ui.js looks them up.
+- UI: `ui.online = {seat}`; `view()` is fixed to that seat, no curtain; `myMove()` blocks clicks when it's not your move.
 
 ## Ability DSL (card.abilities[])
 ```js
