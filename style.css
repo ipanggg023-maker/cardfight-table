@@ -448,3 +448,22 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 
 /* D era: order zone / World chips */
 .chip.oz b, .chip.world b { color: var(--cyan); }
+
+/* lock / delete: face-down cards */
+.card .cn.facedown { margin: auto; text-align: center; font-weight: 700; }
+.slot .card:has(.facedown) { background: repeating-linear-gradient(45deg, #1c2b47 0 8px, #15213a 8px 16px); border-color: #3a4f7a; }
+/* Judge panel (right drawer) */
+.drawer.judge { width: min(440px, 92vw); }
+#judgeBody { display: grid; gap: 8px; overflow-y: auto; padding-bottom: 12px; font-size: .82rem; }
+#judgeBody h4 { margin: 6px 0 0; font: 600 .75rem var(--display); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+#judgeBody details summary { cursor: pointer; color: var(--muted); }
+.jrow { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0; }
+.jc { padding: 2px 6px; font-size: .74rem; }
+.jc.on { border-color: var(--gold); color: var(--gold); }
+.junit { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; border-bottom: 1px solid var(--line); padding: 3px 0; }
+.junit button, .jmove button { padding: 2px 6px; font-size: .72rem; }
+.jmove { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: var(--mat2); border: 1px solid var(--gold); border-radius: 8px; padding: 6px; }
+.jtabs { display: flex; gap: 6px; }
+.jtabs button.on { border-color: var(--gold); color: var(--gold); }
+.jtask { background: #f2b94b22; border-left: 3px solid var(--gold); padding: 6px 8px; border-radius: 6px; margin: 0; white-space: pre-wrap; }
+.drawer.judge { left: auto; right: 0; border-right: 0; border-left: 1px solid var(--line); }

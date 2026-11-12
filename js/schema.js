@@ -50,6 +50,7 @@ const SCHEMA = {
     overDrive: "When revealed as an over trigger in your drive check (its over-trigger text)",
     onStride: "When this G unit strides",
     dressed: "When this unit is put on RC with overDress / XoverDress",
+    unlocked: "When this card is unlocked",
   },
 
   conds: {
@@ -112,6 +113,11 @@ const SCHEMA = {
     lookTop: { label: "Look at top N, take some", params: [["n", "num", "look at"], ["pick", "num", "take up to"], ["filter", "filter"], ["dest", "dest"], ["rest", "restDest"]],
       text: (p) => `look at the top ${p.n} cards, choose up to ${p.pick} ${flt(p.filter)} and ${destT(p.dest)}, ${p.rest === "bottom" ? "put the rest on the bottom" : "shuffle the deck"}` },
     seekMate: { label: "Seek Mate: legion with a card from the deck", params: [["text", "text", "mate name contains"]], text: (p) => `search your deck for "${p.text || "?"}" and Legion with it, then shuffle` },
+    lock: { label: "Lock (face down; unlocks in its owner's end phase)", params: [["target", "target"], ["n", "num"]], text: (p) => `lock ${TARGETS[p.target] || "the chosen unit"}` },
+    unlock: { label: "Unlock your locked cards", params: [["n", "num", "up to"]], text: (p) => `unlock up to ${p.n || 1} of your locked cards` },
+    delete: { label: "Delete the opponent's vanguard", params: [["target", "target"]], text: () => "delete your opponent's vanguard" },
+    timeLeap: { label: "Time Leap (bind, call a unit 1 grade higher from the deck)", params: [["target", "target"], ["n", "num"]], text: (p) => `Time Leap ${TARGETS[p.target] || "your rear-guards"}` },
+    manual: { label: "✋ Manual: do it by hand (Judge panel)", params: [["text", "text", "what to do"]], text: (p) => `[Manual] ${p.text || "do the card's text by hand"}` },
     setWorld: { label: "Set your World", params: [["text", "text", "World (e.g. Dark Night)"]], text: (p) => `your World becomes "${p.text || "?"}"` },
     gift: { label: "Gain an Imaginary Gift", params: [["kind", "giftKind", "gift"]], text: (p) => `gain Imaginary Gift: ${({ force: "Force", accel: "Accel", protect: "Protect" })[p.kind || "force"]}` },
     callFromHand: { label: "Call from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `call up to ${p.n} ${flt(p.filter)} from hand to RC` },

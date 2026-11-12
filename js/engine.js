@@ -172,14 +172,16 @@ const Game = (() => {
   }
   const zoneOf = (key) => (key === "vc" ? "VC" : "RC");
   const zoneOK = (abZone, zone) => !abZone || abZone === "any" || abZone === zone || (abZone === "VC/RC" && (zone === "VC" || zone === "RC"));
-  const unitsAt = (pi, keys, f) => keys.filter((k) => P(pi).slots[k] && match(P(pi).slots[k].card, f)).map((key) => ({ pi, key }));
+  // locked cards are not units with information (CR 7.30), so effects never pick them as units
+  const unitsAt = (pi, keys, f) => keys.filter((k) => P(pi).slots[k] && !P(pi).slots[k].locked && match(P(pi).slots[k].card, f)).map((key) => ({ pi, key }));
 
   // ---------- power (incl. CONT abilities) ----------
   function contTargets(pi, t, k) {
     return { self: [k], vc: ["vc"], allFront: frontOf(pi), allFrontRC: frontOf(pi).filter((x) => x !== "vc"), allMyRC: rcOf(pi), allMyUnits: unitsOf(pi) }[t || "self"] || [];
   }
   // Cards whose abilities work from a circle: the unit, plus arms attached to the vanguard (CR 17.7)
-  const sourcesAt = (p, k) => (p.slots[k] ? [p.slots[k].card, ...(k === "vc" ? p.slots.vc.arms || [] : [])] : []);
+  // locked or deleted cards have no text (CR 7.30, 7.32)
+  const sourcesAt = (p, k) => (p.slots[k] && !p.slots[k].locked && !p.slots[k].deleted ? [p.slots[k].card, ...(k === "vc" ? p.slots.vc.arms || [] : [])] : []);
   function cont(pi, key, stat) {
     const p = P(pi);
     let sum = 0;
@@ -198,13 +200,14 @@ const Game = (() => {
   }
   function power(pi, key) {
     const p = P(pi), s = p.slots[key];
-    if (!s) return 0;
+    if (!s || s.locked) return 0;
     // Persona Ride: units on your front-row circles get +10000 until end of turn (CR 7.15.1.4).
     // It belongs to the circles, so units called there later this turn get it too.
     const persona = p.personaFront && frontOf(pi).includes(key) ? 10000 : 0;
     const heart = s.heart ? (+s.heart.power || 0) + (s.heartMate ? +s.heartMate.power || 0 : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
     const mate = s.mate ? +s.mate.power || 0 : 0; // legion: the mate's power is added (CR 6.4)
-    return s.card.power + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power");
+    const base = s.deleted ? 0 : s.card.power; // Delete: power drops by its printed power (CR 7.32)
+    return base + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power");
   }
   function crit(pi, key) {
     const s = P(pi).slots[key];
@@ -495,6 +498,44 @@ const Game = (() => {
         break;
       }
       case "gift": await giveGift(pi, e.kind || "force", false); break;
+      case "lock": // Lock (CR 7.30): face down, standing; the circle is a lock circle until unlocked
+        for (const u of await pickUnits(pi, e, ctx)) {
+          const sl = P(u.pi).slots[u.key];
+          if (!sl || u.key === "vc") continue;
+          if (sl.card.type === "g") { leaveCircle(u.pi, u.key, "drop"); continue; } // a locked G unit goes to the G zone
+          Object.assign(sl, { locked: true, rest: false, pow: 0, crit: 0, powB: 0, critB: 0 });
+          log(`🔒 ${sl.card.name} is locked`);
+        }
+        break;
+      case "unlock": {
+        const keys = rcOf(pi).filter((k) => p.slots[k] && p.slots[k].locked);
+        const picked = await choose(pi, `Unlock up to ${n} of your locked cards`, keys.map((k) => ({ id: k, label: slotName(k) })), 0, n);
+        for (const k of picked) unlockAt(pi, k);
+        break;
+      }
+      case "delete": // Delete (CR 7.32): the opponent's vanguard turns face down, loses its printed power and text
+        for (const u of await pickUnits(pi, e, ctx)) {
+          if (u.key !== "vc") continue;
+          const sl = P(u.pi).slots.vc;
+          if (!sl.deleted) { sl.deleted = true; log(`⛔ ${sl.card.name} is deleted`); }
+        }
+        break;
+      case "timeLeap": { // Time Leap (CR 7.33): bind, call a unit 1 grade higher from the deck, swap back at end of turn
+        const us = await pickUnits(pi, e, ctx);
+        const calls = [];
+        for (const u of us) {
+          if (u.pi !== pi || u.key === "vc") continue;
+          const old = p.slots[u.key].card;
+          bindUnit(pi, u.key);
+          const opts = p.deck.filter((c) => c.type !== "order" && c.grade === old.grade + 1);
+          const [c] = await chooseCards(pi, `Time Leap ${old.name}: choose a grade ${old.grade + 1} unit from your deck`, opts, 0, 1);
+          if (c) { p.deck.splice(p.deck.indexOf(c), 1); calls.push({ key: u.key, card: c, back: old.uid }); }
+        }
+        shuffle(p.deck);
+        for (const x of calls) { await place(pi, x.card, x.key); p.slots[x.key].timeLeap = x.back; } // called all at once
+        break;
+      }
+      case "manual": await manualEffect(pi, ctx, e.text); break;
       case "setWorld": p.world = e.text || ""; log(`🌐 ${p.name}'s World is now ${p.world || "(none)"}`); break;
       case "seekMate": {
         // Seek Mate (CR 6.4, 14.11): legion with a named card from the deck; a unit only legions once
@@ -771,6 +812,7 @@ const Game = (() => {
   const call = (uid, key) => run(async () => {
     if (S.phase !== "main") return err("Call units in the main phase");
     if (!rcOf(S.active).includes(key)) return err("Rear-guard circles only");
+    if (P(S.active).slots[key] && P(S.active).slots[key].locked) return err("That circle is locked");
     const pi = S.active, p = P(pi);
     const card = p.hand.find((c) => c.uid === uid);
     if (!card) return err("Card not in hand");
@@ -934,6 +976,82 @@ const Game = (() => {
     await dressOnto(pi, card, dest, under);
   });
 
+  function unlockAt(pi, k) {
+    const sl = P(pi).slots[k];
+    if (!sl || !sl.locked) return;
+    sl.locked = false; sl.rest = false; // turned face up in the stand position (CR 7.31)
+    log(`🔓 ${sl.card.name} is unlocked`);
+    collect(pi, k, "unlocked");
+  }
+  // End phase (CR 9.11): the turn player's locked and deleted cards return; Time Leap units swap back
+  function endPhaseReturns(pi) {
+    const p = P(pi);
+    for (const k of unitsOf(pi)) {
+      const sl = p.slots[k];
+      if (!sl) continue;
+      if (sl.locked) unlockAt(pi, k);
+      if (sl.deleted) { sl.deleted = false; log(`${sl.card.name} is no longer deleted`); }
+      if (sl.timeLeap) {
+        const back = p.bind.find((c) => c.uid === sl.timeLeap);
+        p.deck.unshift(sl.card); // the leaped unit goes to the bottom of the deck
+        if (sl.under && sl.under.length) p.drop.push(...sl.under);
+        p.slots[k] = back ? slot(back) : null;
+        if (back) p.bind.splice(p.bind.indexOf(back), 1);
+        log(`⏱ Time Leap ends: ${back ? back.name + " returns" : "the circle is empty"}`);
+      }
+    }
+  }
+  // ---------- manual effects / judge mode ----------
+  // A "Manual" block pauses the game: the players do the card's text by hand with judgeOp() (move any card,
+  // change power/critical, rest/stand, energy, shuffle), then answer Done. judgeOp() also works any time in hot-seat.
+  async function manualEffect(pi, ctx, text) {
+    S.judge = { by: pi, text: text || (ctx.card && ctx.card.text) || "Do this card's text by hand" };
+    log(`✋ ${ctx.card ? ctx.card.name + ": " : ""}manual effect, resolve it by hand`);
+    try { await choose(pi, `✋ Manual: ${S.judge.text}\nUse the Judge panel to do it, then press Done.`, [{ id: "done", label: "Done ✓" }, { id: "skip", label: "Skip (do nothing)" }], 1, 1); }
+    finally { S.judge = null; }
+  }
+  const ZONES = ["hand", "deck", "drop", "soul", "damage", "bind", "removed", "orderZone", "gUp", "gDeck"];
+  function judgeOp(op) {
+    if (!S || over()) return err("No game");
+    const p = P(op.pi);
+    if (!p) return err("No such player");
+    const findCard = () => {
+      for (const z of ZONES) { const i = (p[z] || []).findIndex((c) => c.uid === op.uid); if (i >= 0) return { z, i, card: p[z][i] }; }
+      for (const k of unitsOf(op.pi)) if (p.slots[k] && p.slots[k].card.uid === op.uid) return { k, card: p.slots[k].card };
+      return null;
+    };
+    switch (op.op) {
+      case "move": {
+        const at = findCard();
+        if (!at) return err("Card not found");
+        if (at.z) p[at.z].splice(at.i, 1);
+        else { const sl = p.slots[at.k]; if (at.k === "vc") return err("Ride or stride to change the vanguard"); p.slots[at.k] = null; if (sl.under) p.drop.push(...sl.under); }
+        const c = at.card;
+        if (op.to === "deckTop") p.deck.push(c);
+        else if (op.to === "deckBottom") p.deck.unshift(c);
+        else if (op.to === "damageDown") { c.down = true; p.damage.push(c); }
+        else if (op.to === "damage") { c.down = false; p.damage.push(c); }
+        else if (ZONES.includes(op.to)) p[op.to].push(c);
+        else if (rcOf(op.pi).includes(op.to)) { if (p.slots[op.to]) p.drop.push(p.slots[op.to].card); p.slots[op.to] = slot(c); }
+        else return err("Unknown destination");
+        log(`⚖ ${p.name}: ${c.name} → ${op.to}`);
+        break;
+      }
+      case "power": { const sl = p.slots[op.key]; if (!sl) return err("No unit"); sl.pow += +op.amount || 0; log(`⚖ ${sl.card.name} power ${op.amount > 0 ? "+" : ""}${op.amount}`); break; }
+      case "crit": { const sl = p.slots[op.key]; if (!sl) return err("No unit"); sl.crit += +op.amount || 0; log(`⚖ ${sl.card.name} critical ${op.amount > 0 ? "+" : ""}${op.amount}`); break; }
+      case "rest": { const sl = p.slots[op.key]; if (!sl) return err("No unit"); sl.rest = !!op.value; log(`⚖ ${sl.card.name} ${sl.rest ? "rests" : "stands"}`); break; }
+      case "lock": { const sl = p.slots[op.key]; if (!sl || op.key === "vc") return err("Rear-guards only"); sl.locked = !sl.locked; log(`⚖ ${sl.card.name} ${sl.locked ? "locked" : "unlocked"}`); break; }
+      case "flip": { const c = p.damage.find((x) => x.uid === op.uid); if (!c) return err("Not in damage"); c.down = !c.down; log(`⚖ ${c.name} turned face ${c.down ? "down" : "up"}`); break; }
+      case "energy": p.energy = Math.max(0, Math.min(10, p.energy + (+op.amount || 0))); log(`⚖ ${p.name} energy ${p.energy}`); break;
+      case "shuffle": shuffle(p.deck); log(`⚖ ${p.name} shuffles the deck`); break;
+      case "draw": draw(op.pi, 1); log(`⚖ ${p.name} draws 1`); break;
+      default: return err("Unknown judge action");
+    }
+    ruleActions();
+    onChange();
+    return OK;
+  }
+
   // ---------- battle ----------
   const toBattle = () => run(async () => {
     if (S.phase !== "main") return err("Not in main phase");
@@ -944,16 +1062,16 @@ const Game = (() => {
   function canAttack(key) {
     const s = S.players[S.active].slots[key];
     // the first player can't attack on their first turn (CR 10.3.2)
-    return S.phase === "battle" && S.turn > 1 && !S.battle && frontOf(S.active).includes(key) && !!s && !s.rest;
+    return S.phase === "battle" && S.turn > 1 && !S.battle && frontOf(S.active).includes(key) && !!s && !s.rest && !s.locked;
   }
   function boosterFor(pi, key) {
     const bk = BACK_OF[key], b = bk && P(pi).slots[bk];
-    return b && !b.rest && canBoostIcon(b.card) ? bk : null;
+    return b && !b.rest && !b.locked && canBoostIcon(b.card) ? bk : null;
   }
   const attack = (att, useBoost, tgt) => run(async () => {
     if (!canAttack(att)) return err("That unit can't attack");
     const ai = S.active, di = 1 - ai, p = P(ai);
-    if (!frontOf(di).includes(tgt) || !P(di).slots[tgt]) return err("Attack an opponent's front row unit");
+    if (!frontOf(di).includes(tgt) || !P(di).slots[tgt] || P(di).slots[tgt].locked) return err("Attack an opponent's front row unit");
     p.slots[att].rest = true;
     const bk = useBoost ? boosterFor(ai, att) : null;
     if (bk) p.slots[bk].rest = true;
@@ -1000,6 +1118,7 @@ const Game = (() => {
     const b = S.battle, di = 1 - S.active, d = P(di), s = d.slots[key];
     if (!b) return err("No attack");
     if (!["fl", "fr"].includes(key) || !s) return err("Only front row rear-guards can intercept");
+    if (s.locked) return err("A locked card can't intercept");
     if (!canInterceptIcon(s.card)) return err("This unit has no Intercept skill");
     if (key === b.tgt) return err("The attacked unit can't intercept");
     b.guards.push(s.card);
@@ -1064,6 +1183,7 @@ const Game = (() => {
     if (S.battle) return err("Finish the battle first");
     if (S.phase === "mulligan") return err("Still in mulligan");
     returnGUnits();
+    endPhaseReturns(S.active);
     collectAll(S.active, "endTurn");
     collectAll(1 - S.active, "oppTurnEnd");
     await settle();
@@ -1087,7 +1207,10 @@ const Game = (() => {
     const hide = (cards) => cards.map(() => ({ uid: -(++fake), name: "?", hidden: true, type: "unit", grade: 0, power: 0 }));
     s.players.forEach((p, i) => {
       p.deck = hide(p.deck);
-      if (i !== seat) { p.hand = hide(p.hand); p.ride = hide(p.ride); p.gDeck = hide(p.gDeck || []); }
+      if (i !== seat) {
+        p.hand = hide(p.hand); p.ride = hide(p.ride); p.gDeck = hide(p.gDeck || []);
+        Object.values(p.slots).forEach((sl) => { if (sl && sl.locked) sl.card = hide([sl.card])[0]; });
+      }
     });
     if (s.pending && s.pending.player !== seat) s.pending.options = [];
     return s;
@@ -1104,7 +1227,7 @@ const Game = (() => {
     newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
-    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
+    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, judgeOp, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
     driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower,
   };
 })();

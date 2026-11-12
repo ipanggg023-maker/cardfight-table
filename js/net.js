@@ -8,7 +8,7 @@ const Net = (() => {
   const PREFIX = "vgtable-";
   const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
   const ACTIONS = ["answer", "mulligan", "rideFromDeck", "rideFromHand", "skipRide", "call", "move", "activate",
-    "playOrder", "toBattle", "attack", "guard", "intercept", "confirmGuard", "endTurn", "energyDraw", "stride", "skipStride", "gGuard", "overDress", "xoverDress", "activateOrderZone"];
+    "playOrder", "toBattle", "attack", "guard", "intercept", "confirmGuard", "endTurn", "energyDraw", "stride", "skipStride", "gGuard", "overDress", "xoverDress", "activateOrderZone", "judgeOp"];
   const GUEST = 1;
 
   let peer = null, conn = null, code = "", reqN = 0;
@@ -78,7 +78,7 @@ const Net = (() => {
       const S = Game.state();
       let r;
       if (!S || !ACTIONS.includes(m.fn)) r = { ok: false, msg: "No game" };
-      else if (m.fn === "answer" ? !(S.pending && S.pending.player === GUEST) : S.controller !== GUEST || S.pending)
+      else if (m.fn === "judgeOp" ? !S.judge : m.fn === "answer" ? !(S.pending && S.pending.player === GUEST) : S.controller !== GUEST || S.pending)
         r = { ok: false, msg: "Not your move" };
       else r = await Game[m.fn](...(m.args || []));
       send({ t: "res", id: m.id, r: r || { ok: true } });

@@ -229,6 +229,8 @@ const view = () => (ui.online ? ui.online.seat : ui.hotseat ? ui.shown : Game.st
 const cardClass = (src, s = {}, extra = "") => `card${src ? " img" : ""}${s.rest ? " rest" : ""}${extra}`;
 const cardBg = (src) => (src ? `linear-gradient(#0000 45%,#000c),url("${src.replace(/"/g, "%22")}")` : "");
 function cardInner(c, pi = null, key = null) {
+  if (c.type === "locked") return `<div class="cn facedown">🔒 Locked</div>`;
+  if (c.type === "deleted") return `<div class="cn facedown">⛔ Deleted</div><div class="cs"><span class="cp">${fmt(pi !== null && key ? Game.power(pi, key) : 0)}</span></div>`;
   const pw = pi !== null && key ? Game.power(pi, key) : c.power;
   const cr = pi !== null && key ? Game.crit(pi, key) : c.crit || 1;
   return `<div class="ctop"><span class="cg">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
@@ -346,7 +348,8 @@ function renderSide(root, pi, side) {
     const cls = `slot${key === "vc" ? " vcs" : ""}${key[0] === "x" ? " accel" : ""}${hl(key) ? " " + hl(key) : ""}`;
     if (el.className !== cls) el.className = cls;
     const s = p.slots[key];
-    placeCard(el, s && s.card, s, pi, key);
+    const shown = s && (s.locked || s.deleted) ? { uid: -1000000 - s.card.uid, name: s.locked ? "Locked" : "Deleted", type: s.locked ? "locked" : "deleted", grade: s.card.grade, power: 0, abilities: [], image: "" } : s && s.card;
+    placeCard(el, shown, s, pi, key);
     // gift markers on this circle (Force I/II, Protect II) and the accel bonus
     const m = (p.marks || {})[key] || {}, a = (p.accel || []).find((x) => x.key === key);
     const badge = [m.forceI ? `F+${10 * m.forceI}k` : "", m.forceII ? "F★2" : "", m.protectII ? "P+10k" : "", a ? `A${a.variant}` : "",
@@ -462,6 +465,7 @@ function render() {
   setHTML($("#actions"), actionsHTML(S, v));
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
+  renderJudge(S, v);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
   if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
@@ -520,7 +524,7 @@ function actionsHTML(S, v) {
 
 function renderPending(S, v) {
   const p = S.pending;
-  if (!p || p.player !== v) { $("#choice").hidden = true; ui.pick.clear(); return; }
+  if (!p || p.player !== v || S.judge) { $("#choice").hidden = true; ui.pick.clear(); return; } // a manual effect is answered in the Judge panel
   // a new prompt starts with nothing picked (picks never carry over from an earlier prompt)
   const key = p.prompt + "|" + p.options.map((o) => o.id).join(",");
   if (ui.pendingKey !== key) { ui.pendingKey = key; ui.pick.clear(); }
@@ -669,6 +673,56 @@ document.addEventListener("mouseover", (e) => {
     $("#info").hidden = false;
   } else infoT = setTimeout(() => ($("#info").hidden = true), 250);
 });
+// ---------- Judge panel: do card text by hand (Manual blocks), or fix a mistake in hot-seat ----------
+// Online it only works while a Manual effect is open (both players see what was done in the log).
+const J = { pi: null, uid: null };
+const judgeAllowed = (S) => !!S && S.winner === null && (!ui.online || !!S.judge);
+function renderJudge(S, v) {
+  const box = $("#judge");
+  $("#judgeBtn").hidden = !judgeAllowed(S);
+  if (S.judge && judgeAllowed(S) && box.hidden && !J.auto) { box.hidden = false; J.auto = true; J.pi = S.judge.by; }
+  if (!S.judge && J.auto) { J.auto = false; box.hidden = true; } // opened for a manual effect → closes after Done
+  if (box.hidden || !judgeAllowed(S)) { if (!judgeAllowed(S)) box.hidden = true; return; }
+  if (J.pi === null) J.pi = v;
+  const p = S.players[J.pi];
+  const cardBtn = (c, where) => `<button class="jc${J.uid === c.uid ? " on" : ""}" data-juid="${c.uid}" title="${esc(where)}">${c.hidden ? "?" : esc(c.name)}${c.down ? " (face down)" : ""}</button>`;
+  const zone = (label, cards, open = true) => `<details ${open ? "open" : ""}><summary>${label} (${cards.length})</summary><div class="jrow">${cards.map((c) => cardBtn(c, label)).join("") || '<span class="muted">empty</span>'}</div></details>`;
+  const field = Game.unitsOf(J.pi).filter((k) => p.slots[k]).map((k) => {
+    const sl = p.slots[k];
+    return `<div class="junit"><b>${esc(k.toUpperCase())}</b> ${cardBtn(sl.card, "field")} <small>${fmt(Game.power(J.pi, k))}${sl.rest ? " · rest" : ""}${sl.locked ? " · locked" : ""}</small>
+      <button data-jop="power" data-k="${k}" data-a="5000">+5k</button><button data-jop="power" data-k="${k}" data-a="-5000">−5k</button>
+      <button data-jop="crit" data-k="${k}" data-a="1">★+1</button><button data-jop="crit" data-k="${k}" data-a="-1">★−1</button>
+      <button data-jop="rest" data-k="${k}" data-a="${sl.rest ? 0 : 1}">${sl.rest ? "Stand" : "Rest"}</button>${k !== "vc" ? `<button data-jop="lock" data-k="${k}">${sl.locked ? "Unlock" : "Lock"}</button>` : ""}</div>`;
+  }).join("");
+  const sel = J.uid !== null && [...p.hand, ...p.deck, ...p.drop, ...p.soul, ...p.damage, ...p.bind, ...(p.removed || []), ...(p.orderZone || []), ...(p.gUp || []), ...(p.gDeck || []), ...Game.unitsOf(J.pi).map((k) => p.slots[k] && p.slots[k].card).filter(Boolean)].find((c) => c.uid === J.uid);
+  const dests = [["hand", "Hand"], ["deckTop", "Deck top"], ["deckBottom", "Deck bottom"], ["drop", "Drop"], ["soul", "Soul"], ["damage", "Damage ↑"], ["damageDown", "Damage ↓"], ["bind", "Bind"], ["removed", "Removed"], ["orderZone", "Order zone"], ...Game.rcOf(J.pi).map((k) => [k, "RC " + k.toUpperCase()])];
+  setHTML($("#judgeBody"), `
+    ${S.judge ? `<p class="jtask">✋ ${esc(S.judge.text)}</p>${S.pending && S.pending.player === v ? `<div class="jrow"><button class="go" data-opt="done">Done ✓</button><button data-opt="skip">Skip (do nothing)</button></div>` : `<p class="muted">Waiting for ${esc(S.players[S.judge.by].name)} to press Done.</p>`}` : '<p class="muted">Move cards by hand when a card does something the game can\'t. Everything you do is written in the log.</p>'}
+    <div class="jtabs">${S.players.map((pl, i) => `<button data-jpi="${i}" class="${J.pi === i ? "on" : ""}">${esc(pl.name)}</button>`).join("")}</div>
+    ${sel ? `<div class="jmove"><b>${esc(sel.name)}</b> → ${dests.map(([d, l]) => `<button data-jto="${d}">${l}</button>`).join("")}${p.damage.includes(sel) ? '<button data-jop="flip">Flip</button>' : ""}<button data-jop="cancel">✕</button></div>` : '<p class="muted">Pick a card, then where it goes.</p>'}
+    <h4>Field</h4>${field || '<span class="muted">no units</span>'}
+    ${zone("Hand", p.hand)}${zone("Drop", p.drop)}${zone("Soul", p.soul, false)}${zone("Damage", p.damage)}${zone("Bind", p.bind, false)}${zone("Removed", p.removed || [], false)}${zone("Order zone", p.orderZone || [], false)}
+    ${zone("Deck (top last)", p.deck, false)}
+    <div class="jrow"><button data-jop="draw">Draw 1</button><button data-jop="shuffle">Shuffle deck</button>${p.useEnergy ? '<button data-jop="energy" data-a="1">Energy +1</button><button data-jop="energy" data-a="-1">Energy −1</button>' : ""}</div>`);
+}
+async function judge(op) { const r = await Game.judgeOp({ pi: J.pi, ...op }); if (r && !r.ok) toast(r.msg); render(); }
+$("#judge").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.jpi !== undefined) { J.pi = +b.dataset.jpi; J.uid = null; return render(); }
+  if (b.dataset.juid !== undefined) { J.uid = J.uid === +b.dataset.juid ? null : +b.dataset.juid; return render(); }
+  if (b.dataset.jto) { const uid = J.uid; J.uid = null; return judge({ op: "move", uid, to: b.dataset.jto }); }
+  const op = b.dataset.jop;
+  if (op === "cancel") { J.uid = null; return render(); }
+  if (op === "flip") { const uid = J.uid; J.uid = null; return judge({ op: "flip", uid }); }
+  if (op === "power" || op === "crit") return judge({ op, key: b.dataset.k, amount: +b.dataset.a });
+  if (op === "rest") return judge({ op, key: b.dataset.k, value: b.dataset.a === "1" });
+  if (op === "lock") return judge({ op, key: b.dataset.k });
+  if (op === "energy") return judge({ op, amount: +b.dataset.a });
+  if (op === "draw" || op === "shuffle") return judge({ op });
+});
+$("#judgeBtn").addEventListener("click", () => { $("#judge").hidden = !$("#judge").hidden; render(); });
+$("#judgeClose").addEventListener("click", () => { $("#judge").hidden = true; });
 $("#logBtn").addEventListener("click", () => { $("#logDrawer").hidden = !$("#logDrawer").hidden; render(); });
 $("#logClose").addEventListener("click", () => ($("#logDrawer").hidden = true));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; $("#info").hidden = true; } });
