@@ -643,7 +643,8 @@ function renderCgs() {
   const useImg = $("#cgsImages").checked;
   $("#cgsCount").hidden = !cgs.items.length;
   $("#cgsCount").textContent = `${list.length.toLocaleString()} cards`;
-  $("#cgsImportAll").hidden = !list.length || list.length > 300;
+  $("#cgsImportAll").hidden = !list.length;
+  if (!cgs.busy) $("#cgsImportAll").textContent = `Import all ${list.length.toLocaleString()}`;
   $("#cgsMore").hidden = list.length <= cgs.shown;
   if (!list.length) { $("#cgsResults").innerHTML = `<p class="muted">${cgs.items.length ? "No matching cards." : "Pick a set."}</p>`; return; }
   const trigOpts = (d) => {
@@ -670,19 +671,24 @@ $("#cgsResults").addEventListener("change", (e) => {
   cgs.pick[s.dataset.trig] = s.value;
   s.classList.toggle("warn", !s.value);
 });
-async function importCgsItem(d) {
+// byName: optional Map(lower-case name -> saved card), kept up to date during a bulk import
+async function importCgsItem(d, byName) {
   const picked = cgs.pick[cgsKey(d)];
   const c = cgsToCard(d, picked === undefined ? undefined : (picked || null));
   if (!$("#cgsImages").checked) c.image = "";
   else if ($("#cgsLocal").checked) c.image = cgsLocalImage(d._set, d.number);
-  const old = cards.find((x) => x.name.toLowerCase() === c.name.toLowerCase());
+  const key = c.name.toLowerCase();
+  const old = byName ? byName.get(key) : cards.find((x) => x.name.toLowerCase() === key);
+  let saved;
   if (old) {
     const keep = { abilities: (old.abilities || []).length ? old.abilities : c.abilities };
     if (old.trigger && !c.trigger) { keep.trigger = old.trigger; keep.needsTrigger = false; } // don't wipe a type you set by hand
-    await DB.put("cards", { ...old, ...c, ...keep, id: old.id });
+    saved = { ...old, ...c, ...keep, id: old.id };
   } else {
-    await DB.put("cards", { ...c, id: DB.newId() });
+    saved = { ...c, id: DB.newId() };
   }
+  await DB.put("cards", saved);
+  if (byName) byName.set(key, saved);
   return c;
 }
 $("#cgsResults").addEventListener("click", async (e) => {
@@ -697,14 +703,28 @@ $("#cgsResults").addEventListener("click", async (e) => {
     toast(`${c.name}: imported with ${c.abilities.length} abilit${c.abilities.length === 1 ? "y" : "ies"}${c.needsTrigger ? ". ⚠ Set its trigger type" : ""}. Check it in the Cards tab.`, c.needsTrigger);
   } catch (err) { toast(err.message, true); b.disabled = false; b.textContent = "Import"; }
 });
+// Imports every card in the current list (set / search / type filter). Click again while running to stop.
 $("#cgsImportAll").addEventListener("click", async () => {
-  const todo = cgsFiltered();
+  const btn = $("#cgsImportAll");
+  if (cgs.busy) { cgs.stop = true; btn.textContent = "Stopping…"; return; }
+  // Same name twice in the list (reprints, alt arts): import it once
+  const seenNames = new Set();
+  const todo = cgsFiltered().filter((d) => { const k = d.name.trim().toLowerCase(); if (seenNames.has(k)) return false; seenNames.add(k); return true; });
   const unset = todo.filter((d) => d.type === "Trigger Unit" && !(cgs.pick[cgsKey(d)] ?? cgsTriggerGuess(d))).length;
-  if (!window.confirm(`Import ${todo.length} cards?${unset ? ` ${unset} trigger(s) have no type yet and will be marked ⚠.` : ""}`)) return;
-  let ok = 0;
-  for (const d of todo) { try { await importCgsItem(d); ok++; } catch (err) { toast(err.message, true); break; } }
+  const big = todo.length > 1000 ? `\n\nThat's a lot of cards: it can take a few minutes and makes the Cards list long. You can stop it with the same button.` : "";
+  if (!window.confirm(`Import ${todo.length.toLocaleString()} cards?${unset ? `\n${unset} trigger(s) have no type yet and will be marked ⚠.` : ""}${big}`)) return;
+  const byName = new Map(cards.map((c) => [c.name.toLowerCase(), c]));
+  Object.assign(cgs, { busy: true, stop: false });
+  let ok = 0, failed = 0;
+  for (const d of todo) {
+    if (cgs.stop) break;
+    try { await importCgsItem(d, byName); ok++; } catch { failed++; }
+    if (ok % 20 === 0) btn.textContent = `Importing ${ok.toLocaleString()}/${todo.length.toLocaleString()}… (click to stop)`;
+  }
+  const stopped = cgs.stop;
+  Object.assign(cgs, { busy: false, stop: false });
   await reload(); renderList(); renderCgs();
-  toast(`Imported ${ok} cards. Check their abilities in the Cards tab.`);
+  toast(`${stopped ? "Stopped. " : ""}Imported ${ok.toLocaleString()} cards${failed ? `, ${failed} failed` : ""}. Check their abilities in the Cards tab.`, failed > 0);
 });
 
 // ---------- link pictures from a folder by file name ----------
