@@ -45,6 +45,8 @@ const SCHEMA = {
     attackHit: "When this unit's attack hits",
     battleEnd: "At the end of the battle this unit attacked",
     endTurn: "At the end of your turn",
+    oppTurnStart: "At the start of your opponent's turn",
+    oppTurnEnd: "At the end of your opponent's turn",
     overDrive: "When revealed as an over trigger in your drive check (its over-trigger text)",
   },
 

@@ -52,7 +52,9 @@ const Game = (() => {
       first, active: first, controller: first, turn: 1, phase: "mulligan",
       rode: false, battle: null, winner: null, pending: null, busy: false,
       log: [], reveal: [], used: new Set(), usedGame: new Set(),
+      queue: [], loss: [null, null], // waiting AUTO abilities; pending losses (decided at check timing)
     };
+    depth = 0; inCheck = false; qN = 0;
     log(`Game start! ${P(first).name} goes first (draws on turn 1 but can't attack)`);
     // Energy Generator: the player who went second Energy-Charges 3 when it is placed in the crest zone
     const second = P(1 - first);
@@ -68,7 +70,7 @@ const Game = (() => {
     S.busy = true;
     try { return (await fn()) || OK; }
     catch (e) { console.error(e); return err(e.message); }
-    finally { S.busy = false; onChange(); }
+    finally { ruleActions(); S.busy = false; onChange(); }
   }
 
   // ---------- choices ----------
@@ -109,11 +111,20 @@ const Game = (() => {
   }
 
   // ---------- basic helpers ----------
-  function lose(pi, why) {
-    if (over()) return;
-    S.winner = 1 - pi;
+  // A loss condition is noted here and decided at the next check timing (CR 13.1.2, 13.2)
+  function lose(pi, why) { if (!over() && !S.loss[pi]) S.loss[pi] = why; }
+  // Rule actions: 6+ damage loses; pending losses are decided; both at once = draw game (CR 13.2–13.3)
+  function ruleActions() {
+    if (!S || over()) return;
+    S.players.forEach((p, pi) => { if (p.damage.length >= 6 && !S.loss[pi]) S.loss[pi] = "6 damage"; });
+    const [a, b] = S.loss;
+    if (!a && !b) return;
     S.battle = null;
-    log(`🏆 ${P(S.winner).name} wins! (${P(pi).name}: ${why})`);
+    S.queue = [];
+    if (a && b) { S.winner = -1; log(`🤝 Draw game! (${P(0).name}: ${a} · ${P(1).name}: ${b})`); return; }
+    const pi = a ? 0 : 1;
+    S.winner = 1 - pi;
+    log(`🏆 ${P(S.winner).name} wins! (${P(pi).name}: ${S.loss[pi]})`);
   }
   function draw(pi, n = 1) {
     const p = P(pi);
@@ -251,23 +262,52 @@ const Game = (() => {
     if (ab.once === "turn") S.used.add(usedKey(card, i));
     if (ab.once === "game") S.usedGame.add(gameKey(pi, card, i));
     log(`✦ ${card.name}: ${describeAbility(ab)}`);
-    for (const c of ab.costs || []) await pay(pi, c, ctx);
-    for (const e of ab.effects || []) { if (over()) break; await effect(pi, e, { ...ctx, card }); }
+    depth++; // abilities triggered while this resolves wait for the next check timing
+    try {
+      for (const c of ab.costs || []) await pay(pi, c, ctx);
+      for (const e of ab.effects || []) { if (over()) break; await effect(pi, e, { ...ctx, card }); }
+    } finally { depth--; }
+    await settle();
     return true;
   }
-  async function fire(pi, key, event, extra = {}) {
+  // ---------- check timing (CR 11.6) ----------
+  // AUTO abilities don't resolve on the spot: they wait in S.queue. At a check timing rule actions
+  // come first, then the turn player resolves their waiting abilities one by one in the order they
+  // choose, then the other player; abilities triggered meanwhile join the queue.
+  let depth = 0, inCheck = false, qN = 0;
+  function collect(pi, key, event, extra = {}) {
     const card = extra.card || (key && P(pi).slots[key] && P(pi).slots[key].card);
     if (!card || over()) return;
     const zone = extra.zone || zoneOf(key);
-    const abs = card.abilities || [];
-    for (let i = 0; i < abs.length; i++) {
-      const ab = abs[i];
-      if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) continue;
-      await resolve(pi, card, ab, i, { key, zone, ...extra, card }, !ab.mandatory); // mandatory = no "you may"
-    }
+    (card.abilities || []).forEach((ab, i) => {
+      if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) return;
+      S.queue.push({ id: ++qN, pi, i, card, ctx: { key, zone, ...extra, card } });
+    });
   }
-  async function fireAll(pi, event, extra = {}) {
-    for (const k of UNITS) if (P(pi).slots[k]) await fire(pi, k, event, extra);
+  function collectAll(pi, event, extra = {}) { for (const k of UNITS) if (P(pi).slots[k]) collect(pi, k, event, extra); }
+  async function settle() { if (depth === 0 && !inCheck) await checkTiming(); }
+  async function fire(pi, key, event, extra = {}) { collect(pi, key, event, extra); await settle(); }
+  async function fireAll(pi, event, extra = {}) { collectAll(pi, event, extra); await settle(); }
+  async function checkTiming() {
+    inCheck = true;
+    try {
+      for (;;) {
+        ruleActions();
+        if (over()) return;
+        let mine = S.queue.filter((q) => q.pi === S.active);
+        if (!mine.length) mine = S.queue.filter((q) => q.pi !== S.active);
+        if (!mine.length) return;
+        let item = mine[0];
+        if (mine.length > 1) {
+          const opts = mine.map((q) => ({ id: "q" + q.id, label: `${q.card.name}: ${describeAbility(q.card.abilities[q.i])}`, card: q.card }));
+          const [pick] = await choose(item.pi, "Choose which of your abilities resolves next", opts, 1, 1);
+          item = mine.find((q) => "q" + q.id === pick) || item;
+        }
+        S.queue.splice(S.queue.indexOf(item), 1);
+        const ab = item.card.abilities[item.i];
+        if (ab) await resolve(item.pi, item.card, ab, item.i, item.ctx, !ab.mandatory); // mandatory = no "you may"
+      }
+    } finally { inCheck = false; }
   }
 
   // ---------- moving cards ----------
@@ -288,8 +328,9 @@ const Game = (() => {
     if (p.slots[key]) { log(`${p.slots[key].card.name} was replaced and retired`); retire(pi, key); }
     p.slots[key] = slot(card);
     log(`${p.name} calls ${card.name}`);
-    await fire(pi, key, "placedRC");
-    for (const k of UNITS) if (k !== key && p.slots[k]) await fire(pi, k, "allyPlacedRC", { placedKey: key });
+    collect(pi, key, "placedRC");
+    for (const k of UNITS) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key });
+    await settle();
   }
   async function callAnywhere(pi, card) {
     const opts = RC.map((k) => ({ id: k, label: `${SLOT_NAME[k]}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
@@ -419,11 +460,14 @@ const Game = (() => {
     S.reveal = [];
     log(`— Turn ${S.turn}: ${p.name} —`);
     draw(pi, 1);
+    ruleActions();
     if (over()) return;
     S.phase = "ride";
     // Energy Generator: Energy-Charge 3 at the beginning of your ride phase, max 10
     if (p.useEnergy) p.energy = Math.min(10, p.energy + 3);
-    await fireAll(pi, "turnStart");
+    collectAll(pi, "turnStart");
+    collectAll(1 - pi, "oppTurnStart");
+    await settle();
   }
   async function enterMain() {
     S.phase = "main";
@@ -457,8 +501,9 @@ const Game = (() => {
       draw(pi, 1);
       log("✨ Persona Ride! Draw 1, your front row gets +10000 this turn");
     }
-    await fire(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
-    await fire(pi, "vc", "placedVC");
+    collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
+    collect(pi, "vc", "placedVC");
+    await settle();
     await enterMain();
   }
   const nextRide = (pi) => P(pi).ride.find((c) => c.grade === P(pi).slots.vc.card.grade + 1) || null;
@@ -584,9 +629,10 @@ const Game = (() => {
     S.battle = { att, tgt, boostKey: bk, guards: [], perfect: false, shieldBonus: 0 };
     S.reveal = [];
     log(`${p.slots[att].card.name}${bk ? " (boosted)" : ""} attacks ${P(di).slots[tgt].card.name}`);
-    await fire(ai, att, "attack");
-    if (bk) await fire(ai, bk, "boost");
-    await fire(di, tgt, "attacked");
+    collect(ai, att, "attack");
+    if (bk) collect(ai, bk, "boost");
+    collect(di, tgt, "attacked");
+    await settle();
     if (!S.battle) return;
     if (!P(ai).slots[att] || !P(di).slots[tgt]) { log("A unit left the field; the battle ends"); await endBattle(); return; }
     S.controller = di;
@@ -637,7 +683,7 @@ const Game = (() => {
     if (b.att === "vc") {
       const n = driveOf(p.slots.vc.card) + p.driveBonus;
       for (let i = 0; i < n && !over(); i++) {
-        if (!p.deck.length) return lose(ai, "deck is empty");
+        if (!p.deck.length) { lose(ai, "deck is empty"); ruleActions(); return; }
         const c = p.deck.pop();
         S.reveal.push({ type: "Drive", card: c });
         log(`Drive check: ${c.name}`);
@@ -653,13 +699,13 @@ const Game = (() => {
       if (b.tgt === "vc") {
         const n = crit(ai, b.att);
         for (let i = 0; i < n && !over(); i++) {
-          if (!d.deck.length) { lose(di, "deck is empty"); break; }
+          if (!d.deck.length) { lose(di, "deck is empty"); ruleActions(); break; }
           const c = d.deck.pop();
           S.reveal.push({ type: "Damage", card: c });
           log(`Damage check: ${c.name}`);
           await trigger(di, c, "damage");
           if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else d.damage.push(c);
-          if (d.damage.length >= 6) lose(di, "6 damage");
+          ruleActions(); // 6 damage is a rule action, checked after each damage check
         }
       } else b.hitUid = d.slots[b.tgt].card.uid;
       if (!over()) await fire(ai, b.att, "attackHit");
@@ -683,7 +729,10 @@ const Game = (() => {
   const endTurn = () => run(async () => {
     if (S.battle) return err("Finish the battle first");
     if (S.phase === "mulligan") return err("Still in mulligan");
-    await fireAll(S.active, "endTurn");
+    collectAll(S.active, "endTurn");
+    collectAll(1 - S.active, "oppTurnEnd");
+    await settle();
+    if (over()) return;
     P(S.active).personaFront = false;
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && Object.assign(s, { pow: 0, crit: 0, powB: 0, critB: 0 })));
     S.active = 1 - S.active;
@@ -717,7 +766,7 @@ const Game = (() => {
 
   return {
     FRONT, RC, UNITS, BACK_OF,
-    newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load,
+    newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
     toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw,

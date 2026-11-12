@@ -436,7 +436,7 @@ function render() {
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
   $("#win").hidden = S.winner === null;
-  if (S.winner !== null) $("#winText").textContent = `${S.players[S.winner].name} wins!`;
+  if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
   if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
 }
 

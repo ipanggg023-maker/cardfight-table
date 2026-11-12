@@ -69,7 +69,9 @@ Deck: `{id, name, energy, ride:[4 card ids G0..G3], main:[50 card ids]}`
 - Choices: `choose(pi, prompt, options, min, max)` returns a Promise; UI calls `Game.answer(ids)`. Auto-resolves when there's no real choice
 - Slots `{card, rest, pow, crit, powB, critB}`; pow/crit reset at end of turn, powB/critB at end of battle. CONT bonuses computed live in `power()`/`crit()`
 - Phases: mulligan → ride → main → battle → (endTurn) ride…. `S.first` = who went first (random unless chosen); both players draw every turn; no attacks on turn 1; mulligan = bottom, draw, shuffle
-- Rules follow docs/rules (CR 4.59). Fixed so far: B1–B12, B15, B16 of `docs/rules/08-engine-gaps-and-plan.md`. Still open: check-timing queue (B13: turn player orders waiting AUTOs, both players' abilities), deferred loss checks (B14), formats, zones (G/order/crest), gifts, Stride, Legion
+- Check timing (CR 11.6): `fire()`/`collect()` put AUTO abilities in `S.queue`; `checkTiming()` runs rule actions, then the turn player resolves their waiting abilities in the order they pick (prompt when 2+), then the other player; abilities triggered while one resolves (`depth`>0) wait. Simultaneous events (attack+boost+attacked, placedRC+allyPlacedRC, riddenUpon+placedVC, turnStart+oppTurnStart) are collected together first
+- Losses: `lose()` only notes `S.loss[pi]`; `ruleActions()` decides at check timing / after each damage check / after every action. Both at once = draw game (`S.winner = -1`)
+- Rules follow docs/rules (CR 4.59). Fixed: B1–B16 of `docs/rules/08-engine-gaps-and-plan.md`. Still open: formats, zones (G/order/crest), gifts, Stride, Legion, more DSL blocks
 - Damage cards have `down` (face down) for Counter-Blast
 
 ## Adding a new ability block
