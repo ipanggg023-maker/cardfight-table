@@ -216,9 +216,9 @@ button.zb { cursor: pointer; } button.zb:hover { border-color: var(--cyan); }
 
 /* hand: overlapping fan at the bottom */
 body.game .hand { border: 0; justify-content: center; align-items: flex-end; overflow: visible; padding: 4px 230px 10px 110px; min-height: 0; }
-.hand .hc { margin-left: calc(var(--cw) * -0.28); transition: transform .15s, margin .15s; }
+.hand .hc { margin-left: calc(var(--cw) * -0.28); transition: transform .15s; }
 .hand .hc:first-child { margin-left: 0; }
-.hand .hc:hover, .hand .hc.picked { margin-inline: 6px; z-index: 2; }
+.hand .hc:hover, .hand .hc.picked { z-index: 2; }
 .hand .hc:hover { transform: translateY(-14px); }
 .hand .hc.picked { transform: translateY(-20px); }
 .hand .hint { flex-basis: auto; }
@@ -308,7 +308,7 @@ body.game .center { justify-self: center; display: grid; grid-template-columns: 
 .gc .gcards .card.mini { --cw: calc(var(--ch) * 0.42); width: calc(var(--ch) * 0.44); height: calc(var(--ch) * 0.58); padding: 3px 4px; font-size: .55rem; }
 .gc .gcards .card.mini + .card.mini { margin-left: calc(var(--ch) * -0.2); }
 .gc .gcards .card.mini .cn { display: none; }
-.center.fighting .gc { filter: drop-shadow(0 0 10px #6fd39a55); }
+.center.fighting .gc { box-shadow: 0 0 22px 2px #6fd39a40; border-radius: 50%; }
 .pw { display: grid; gap: 0; font-family: var(--display); font-variant-numeric: tabular-nums; min-width: 0; }
 .pw.atk { justify-items: end; text-align: right; } .pw.def { justify-items: start; }
 .pw small { font-size: .6rem; letter-spacing: .16em; color: var(--muted); }
@@ -421,3 +421,14 @@ body.game { --mw: min(66vw, calc((100vh - 80px) / 2.28 / 0.5085)); }
 body.game .center { align-items: start; }
 body.game .center > * { transform: translateY(-50%); }
 body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0.42); }
+
+/* ---------- performance (60 fps) ----------
+   Only transform and opacity animate. Cards and slots are isolated so a change in one does not
+   repaint the whole table. The playmat picture gets its own GPU layer and is never re-decoded. */
+.mat.img::before { will-change: transform; transform: translateZ(0); }
+.slot { contain: layout style; transition: box-shadow .15s; }
+.card { contain: layout style; backface-visibility: hidden; }
+.mat .slot > .card { transition: transform .25s ease, opacity .25s ease; }
+.hand { contain: layout style; }
+.hand .hc { will-change: transform; }
+@media (prefers-reduced-motion: reduce) { .mat .slot > .card, .hand .hc { transition: none; } }

@@ -9,6 +9,57 @@ const ui = { sel: null, mode: null, attacker: null, boost: true, unitSel: null, 
 const seen = new Map(); // uid -> card, for the info panel
 const ONLINE = new URLSearchParams(location.search).get("online"); // "host" | "join" | null
 const imgOf = (c) => (typeof Net !== "undefined" ? Net.img(c) : c.image || "");
+
+// ---------- card pictures: preloaded, kept decoded in memory, with fallback ----------
+// Every picture of both decks starts loading when the game starts, so cards never pop in blank.
+// A picture that fails is retried once, then the card uses its backup web picture (source.imageWeb),
+// then the plain coloured card. When a picture's state changes the table redraws once.
+const Pics = (() => {
+  const st = new Map(); // url -> {img, ok: null (loading) | true | false, src}
+  let redraw = () => {}, t = 0;
+  const changed = () => { clearTimeout(t); t = setTimeout(() => redraw(), 60); };
+  function load(url) {
+    let e = st.get(url);
+    if (e) return e;
+    const img = new Image();
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    e = { img, ok: null, src: url, tries: 0 };
+    img.onload = () => {
+      const done = () => { e.ok = true; e.src = img.src; };
+      (img.decode ? img.decode() : Promise.resolve()).then(done, done);
+    };
+    img.onerror = () => {
+      if (++e.tries < 2) { setTimeout(() => { img.src = url + (url.includes("?") ? "&" : "?") + "r=" + e.tries; }, 1200); return; }
+      e.ok = false;
+      changed();
+    };
+    img.src = url;
+    st.set(url, e);
+    return e;
+  }
+  // The picture to draw for card c right now ("" = none)
+  function url(c) {
+    if (!c || c.hidden) return "";
+    for (const u of [imgOf(c), c.source && c.source.imageWeb]) {
+      if (!u) continue;
+      const e = load(u);
+      if (e.ok !== false) return e.src;
+    }
+    return "";
+  }
+  return { url, load, onRedraw: (f) => (redraw = f), get size() { return st.size; } };
+})();
+// Load every picture the game can show: all cards of both players (+ playmats, + online image map)
+function preloadPictures() {
+  const S = Game.state();
+  if (!S) return;
+  S.players.forEach((p) => {
+    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...Object.values(p.slots).filter(Boolean).map((s) => s.card)].forEach((c) => Pics.url(c));
+  });
+  if (typeof Net !== "undefined") Object.values(Net.images).forEach((u) => u && Pics.load(u));
+  (ui.mats || []).forEach((m) => m && m.img && Pics.load(m.img));
+}
 // Online: you may only act when the engine is waiting on your seat.
 const myMove = () => !ui.online || Game.state().controller === ui.online.seat;
 
@@ -145,23 +196,50 @@ async function startGame() {
 const view = () => (ui.online ? ui.online.seat : ui.hotseat ? ui.shown : Game.state().controller);
 
 // ---------- card drawing ----------
-function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
-  seen.set(c.uid, c);
-  const S = Game.state();
+// A card is drawn in three parts so an existing card element can be updated in place
+// (no flicker, picture stays decoded): class, background picture, inner text.
+const cardClass = (src, s = {}, extra = "") => `card${src ? " img" : ""}${s.rest ? " rest" : ""}${extra}`;
+const cardBg = (src) => (src ? `linear-gradient(#0000 45%,#000c),url("${src.replace(/"/g, "%22")}")` : "");
+function cardInner(c, pi = null, key = null) {
   const pw = pi !== null && key ? Game.power(pi, key) : c.power;
   const cr = pi !== null && key ? Game.crit(pi, key) : c.crit || 1;
-  const src = imgOf(c);
-  const img = src ? ` style="--h:${hue(c.nation)};background-image:linear-gradient(#0000 45%,#000c),url('${esc(src)}')${c.source && c.source.imageWeb && c.source.imageWeb !== src ? `,url('${esc(c.source.imageWeb)}')` : ""}"` : ` style="--h:${hue(c.nation)}"`;
-  return `<div class="card${src ? " img" : ""}${s.rest ? " rest" : ""}${extra}" data-uid="${c.uid}"${img}>
-    <div class="ctop"><span class="cg">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
+  return `<div class="ctop"><span class="cg">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
       ${c.trigger ? `<span class="ct t-${c.trigger}">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="ct t-sent">◆</span>` : ""}${(c.abilities || []).length ? `<span class="ab">✦</span>` : ""}</div>
     <div class="cn">${esc(c.name)}</div>
-    <div class="cs">${c.type === "order" ? "" : `<span class="cp${pw !== c.power ? " buffed" : ""}">${fmt(pw)}</span>`}${cr > 1 ? `<span class="cc">★${cr}</span>` : ""}${c.shield ? `<span class="csh">🛡${c.shield / 1000}k</span>` : ""}</div>
-  </div>`;
+    <div class="cs">${c.type === "order" ? "" : `<span class="cp${pw !== c.power ? " buffed" : ""}">${fmt(pw)}</span>`}${cr > 1 ? `<span class="cc">★${cr}</span>` : ""}${c.shield ? `<span class="csh">🛡${c.shield / 1000}k</span>` : ""}</div>`;
+}
+function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
+  seen.set(c.uid, c);
+  const src = Pics.url(c);
+  return `<div class="${cardClass(src, s, extra)}" data-uid="${c.uid}" data-src="${esc(src)}" style="--h:${hue(c.nation)}${src ? `;background-image:${esc(cardBg(src))}` : ""}">${cardInner(c, pi, key)}</div>`;
+}
+// Update a card element that already shows card c
+function patchCard(el, c, s = {}, pi = null, key = null, extra = "") {
+  seen.set(c.uid, c);
+  const src = Pics.url(c);
+  const cls = cardClass(src, s, extra);
+  if (el.className !== cls) el.className = cls;
+  if (el.dataset.src !== src) { el.style.backgroundImage = cardBg(src); el.dataset.src = src; }
+  setHTML(el, cardInner(c, pi, key));
+}
+// Make `box` hold exactly one card element for c (reuses the existing one when it's the same card)
+function placeCard(box, c, s, pi, key, extra = "") {
+  const old = box.querySelector(":scope > .card");
+  if (!c) { if (old) old.remove(); return; }
+  if (old && old.dataset.uid === String(c.uid)) return patchCard(old, c, s, pi, key, extra);
+  const tmp = document.createElement("div");
+  tmp.innerHTML = cardHTML(c, s, pi, key, extra);
+  if (old) old.replaceWith(tmp.firstElementChild); else box.appendChild(tmp.firstElementChild);
+}
+// innerHTML only when it really changed
+function setHTML(el, html) {
+  if (el._h === html) return;
+  el.innerHTML = html;
+  el._h = html;
 }
 function infoPanel(c) {
   if (!c) return `<p class="muted">Hover a card to see its details.</p>`;
-  return `${imgOf(c) ? `<img src="${esc(imgOf(c))}" alt="">` : ""}
+  return `${Pics.url(c) ? `<img src="${esc(Pics.url(c))}" alt="" decoding="async">` : ""}
     <h3>${esc(c.name)}</h3>
     <p class="muted">${c.type === "order" ? "Order" : "Grade " + c.grade} · ${esc(c.nation || "")}${c.race ? " · " + esc(c.race) : ""}</p>
     ${c.type !== "order" ? `<p>Power ${fmt(c.power)} · Shield ${fmt(c.shield || 0)} · Crit ${c.crit || 1}</p>` : ""}
@@ -178,9 +256,34 @@ const boxCSS = (r, opp) => {
   const [l, t, rr, b] = opp ? [100 - r[2], 100 - r[3], 100 - r[0], 100 - r[1]] : r;
   return `left:${l}%;top:${t}%;width:${rr - l}%;height:${b - t}%`;
 };
-function sideHTML(pi, side) {
+// Draws one player's half of the table into root (#me or #opp). The mat and its zones are built once;
+// later calls only touch what changed, so the mat picture and card pictures are never re-created.
+function renderSide(root, pi, side) {
   const S = Game.state(), p = S.players[pi], v = view(), opp = side === "opp";
   const mat = (ui.mats && ui.mats[pi]) || { key: "classic", img: "" };
+  const L = MAT_LAYOUT;
+  const skey = `${pi}|${mat.key}|${mat.img ? mat.img.length + mat.img.slice(-24) : ""}`;
+  if (root._skey !== skey) {
+    root._skey = skey;
+    root.innerHTML = `<div class="mat ${mat.img ? "img" : "classic"} ${side}" style="${mat.img ? `--matimg:url('${esc(mat.img)}')` : ""}">
+      <div class="mz info" style="${boxCSS(L.order, opp)}"></div>
+      <div class="mz damage" style="${boxCSS(L.damage, opp)}"></div>
+      <div class="mz deck" style="${boxCSS(L.deck, opp)}"></div>
+      <button class="mz drop" style="${boxCSS(L.drop, opp)}" data-zone="${pi}:drop"></button>
+      <div class="mz ride" style="${boxCSS(L.ride, opp)};display:none"></div>
+      ${Object.keys(L.slots).map((key) => {
+        const [x, y] = L.slots[key];
+        const pos = opp ? `left:${100 - x}%;top:${100 - y}%` : `left:${x}%;top:${y}%`;
+        return `<div class="slot" style="${pos}" data-side="${side}" data-key="${key}"><span class="sl">${SLOT_LABEL[key]}</span></div>`;
+      }).join("")}
+    </div>`;
+    root._parts = {
+      info: root.querySelector(".mz.info"), damage: root.querySelector(".mz.damage"), deck: root.querySelector(".mz.deck"),
+      drop: root.querySelector(".mz.drop"), ride: root.querySelector(".mz.ride"),
+      slots: Object.fromEntries([...root.querySelectorAll(".slot")].map((el) => [el.dataset.key, el])),
+    };
+  }
+  const P = root._parts;
   const hl = (key) => {
     const c = [];
     if (S.battle) {
@@ -193,36 +296,32 @@ function sideHTML(pi, side) {
     if (side === "me" && ui.sel && S.phase === "ride" && key === "vc") c.push("can-drop");
     return c.join(" ");
   };
-  const slotH = (key) => {
-    const [x, y] = MAT_LAYOUT.slots[key];
-    const pos = opp ? `left:${100 - x}%;top:${100 - y}%` : `left:${x}%;top:${y}%`;
-    return `<div class="slot ${key === "vc" ? "vcs" : ""} ${hl(key)}" style="${pos}" data-side="${side}" data-key="${key}"><span class="sl">${SLOT_LABEL[key]}</span>${p.slots[key] ? cardHTML(p.slots[key].card, p.slots[key], pi, key) : ""}</div>`;
-  };
+  for (const key of Object.keys(L.slots)) {
+    const el = P.slots[key], cls = `slot${key === "vc" ? " vcs" : ""}${hl(key) ? " " + hl(key) : ""}`;
+    if (el.className !== cls) el.className = cls;
+    const s = p.slots[key];
+    placeCard(el, s && s.card, s, pi, key);
+  }
   p.damage.forEach((c) => seen.set(c.uid, c));
-  const dmg = Array.from({ length: 6 }, (_, i) => {
+  setHTML(P.damage, Array.from({ length: 6 }, (_, i) => {
     const c = p.damage[i];
     return c ? `<div class="dmgc${c.down ? " down" : ""}" data-uid="${c.uid}"><b>${i + 1}</b><span>${c.down ? "Face down" : esc(c.name)}</span></div>`
       : `<div class="dmgc empty"><b>${i + 1}</b></div>`;
-  }).join("");
+  }).join(""));
+  P.damage.title = `Damage ${p.damage.length}/6`;
   const chip = (label, val, cls = "", zone = "") => zone
     ? `<button class="chip ${cls}" data-zone="${pi}:${zone}"><small>${label}</small><b>${val}</b></button>`
     : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
-  const L = MAT_LAYOUT, topDrop = p.drop[p.drop.length - 1];
+  setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
+    <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
+      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
+  setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
+  const topDrop = p.drop[p.drop.length - 1];
   if (topDrop) seen.set(topDrop.uid, topDrop);
-  return `<div class="mat ${mat.img ? "img" : "classic"} ${side}" style="${mat.img ? `--matimg:url('${esc(mat.img)}')` : ""}">
-    <div class="mz info" style="${boxCSS(L.order, opp)}">
-      <div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
-      <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-        ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>
-    </div>
-    <div class="mz damage" style="${boxCSS(L.damage, opp)}" title="Damage ${p.damage.length}/6">${dmg}</div>
-    <div class="mz deck" style="${boxCSS(L.deck, opp)}"><small>Deck</small><b>${p.deck.length}</b></div>
-    <button class="mz drop" style="${boxCSS(L.drop, opp)}" data-zone="${pi}:drop">${topDrop ? `<span class="top" data-uid="${topDrop.uid}">${esc(topDrop.name)}</span>` : ""}<small>Drop</small><b>${p.drop.length}</b></button>
-    ${p.ride.length ? `<div class="mz ride" style="${boxCSS(L.ride, opp)}"><b>${p.ride.length}</b></div>` : ""}
-    ${Object.keys(L.slots).map(slotH).join("")}
-  </div>`;
+  setHTML(P.drop, `${topDrop ? `<span class="top" data-uid="${topDrop.uid}">${esc(topDrop.name)}</span>` : ""}<small>Drop</small><b>${p.drop.length}</b>`);
+  P.ride.style.display = p.ride.length ? "" : "none";
+  setHTML(P.ride, `<b>${p.ride.length}</b>`);
 }
-
 // ---------- phase rail + cut-in banner ----------
 const PHASES = [["ride", "Ride"], ["main", "Main"], ["battle", "Battle"], ["end", "End"]];
 let lastBeat = "";
@@ -248,6 +347,36 @@ function showBanner(text, sub) {
   clearTimeout(bannerT); bannerT = setTimeout(() => (b.hidden = true), 1300);
 }
 
+// Hand: keeps one element per card (by uid) and only adds/removes/reorders what changed
+function renderHand(hand, picked) {
+  const box = $("#hand");
+  if (!hand.length) { if (!box.querySelector(".hint")) box.innerHTML = `<span class="hint">No cards in hand</span>`; return; }
+  const have = new Map();
+  [...box.children].forEach((el) => (el.dataset.hand ? have.set(el.dataset.hand, el) : el.remove()));
+  let prev = null;
+  for (const c of hand) {
+    let el = have.get(String(c.uid));
+    if (el) { have.delete(String(c.uid)); patchCard(el.firstElementChild, c); }
+    else { el = document.createElement("div"); el.dataset.hand = c.uid; el.innerHTML = cardHTML(c); }
+    const cls = "hc" + picked(c);
+    if (el.className !== cls) el.className = cls;
+    const want = prev ? prev.nextSibling : box.firstChild;
+    if (want !== el) box.insertBefore(el, want);
+    prev = el;
+  }
+  have.forEach((el) => el.remove());
+}
+// Engine updates can come in bursts (abilities, triggers): draw at most once per frame.
+// The timeout covers background tabs, where animation frames are paused.
+let renderReq = 0, renderTO = 0;
+function scheduleRender() {
+  if (renderReq) return;
+  const go = () => { cancelAnimationFrame(renderReq); clearTimeout(renderTO); renderReq = 0; render(); };
+  renderReq = requestAnimationFrame(go);
+  renderTO = setTimeout(go, 100);
+}
+Pics.onRedraw(scheduleRender);
+
 // ---------- full render ----------
 function render() {
   const S = Game.state();
@@ -255,28 +384,29 @@ function render() {
   if (ui.hotseat && ui.shown !== S.controller && S.winner === null) return showCurtain();
   $("#curtain").hidden = true;
   const v = view();
-  $("#opp").innerHTML = sideHTML(1 - v, "opp");
-  $("#me").innerHTML = sideHTML(v, "me");
+  preloadPictures(); // cheap after the first time: every picture is already in the cache
+  renderSide($("#opp"), 1 - v, "opp");
+  renderSide($("#me"), v, "me");
 
   renderRail(S);
   let mid = S.battle ? `<small>ATTACK</small><b>${fmt(Game.attackPower())}</b>` : "";
   const gsh = S.battle ? S.battle.guards.reduce((n, c) => n + (c.shield || 0), 0) : 0;
-  $("#def").innerHTML = S.battle ? `<small>DEFENSE</small><b>${fmt(Game.defensePower())}</b>${gsh ? `<span class="gsh">🛡 +${fmt(gsh)} guard</span>` : ""}${S.battle.perfect ? `<span class="perfect">🛡 Can't be hit</span>` : ""}` : "";
+  setHTML($("#def"), S.battle ? `<small>DEFENSE</small><b>${fmt(Game.defensePower())}</b>${gsh ? `<span class="gsh">🛡 +${fmt(gsh)} guard</span>` : ""}${S.battle.perfect ? `<span class="perfect">🛡 Can't be hit</span>` : ""}` : "");
   if (S.reveal.length) mid += `<span class="reveal">${S.reveal.map((r) => `<span class="rv ${r.card.trigger ? "rt" : ""}">${r.type}: ${esc(r.card.name)} ${r.card.trigger ? TRIG[r.card.trigger].icon : ""}</span>`).join("")}</span>`;
-  $("#mid").innerHTML = mid;
+  setHTML($("#mid"), mid);
   document.querySelector(".center").classList.toggle("fighting", !!S.battle);
   document.body.classList.toggle("mats-classic", ui.mats ? ui.mats.every((m) => !m.img) : true);
   const guards = S.battle ? S.battle.guards : [];
   const shield = guards.reduce((n, c) => n + (c.shield || 0), 0);
-  $("#gc").innerHTML = guards.length
+  setHTML($("#gc"), guards.length
     ? `<div class="gcards" title="+${fmt(shield)} shield">${guards.map((c) => cardHTML(c, {}, null, null, " mini")).join("")}</div>`
-    : `<span class="gl">GC</span>`;
+    : `<span class="gl">GC</span>`);
 
   const mine = S.players[v];
   const picked = (c) => (S.phase === "mulligan" ? ui.mull.has(c.uid) : ui.sel === c.uid) ? " picked" : "";
-  $("#hand").innerHTML = mine.hand.map((c) => `<div class="hc${picked(c)}" data-hand="${c.uid}">${cardHTML(c)}</div>`).join("") || `<span class="hint">No cards in hand</span>`;
-  $("#actions").innerHTML = actionsHTML(S, v);
-  $("#log").innerHTML = S.log.map((l) => `<li>${esc(l)}</li>`).join("");
+  renderHand(mine.hand, picked);
+  setHTML($("#actions"), actionsHTML(S, v));
+  if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = `${S.players[S.winner].name} wins!`;
@@ -329,8 +459,8 @@ function renderPending(S, v) {
   if (!p || p.player !== v) { $("#choice").hidden = true; ui.pick.clear(); return; }
   $("#choice").hidden = false;
   $("#choicePrompt").textContent = p.prompt;
-  $("#choiceOpts").innerHTML = p.options.map((o) => `<button class="opt${ui.pick.has(String(o.id)) ? " picked" : ""}" data-opt="${esc(o.id)}">
-    ${o.card ? cardHTML(o.card, {}, null, null, " mini") : ""}<span>${esc(o.label)}</span></button>`).join("");
+  setHTML($("#choiceOpts"), p.options.map((o) => `<button class="opt${ui.pick.has(String(o.id)) ? " picked" : ""}" data-opt="${esc(o.id)}">
+    ${o.card ? cardHTML(o.card, {}, null, null, " mini") : ""}<span>${esc(o.label)}</span></button>`).join(""));
   const single = p.min === 1 && p.max === 1;
   $("#choiceOk").hidden = single;
   $("#choiceOk").textContent = `Confirm (${ui.pick.size}${p.min === p.max ? "/" + p.max : ", " + p.min + "–" + p.max})`;
@@ -451,15 +581,16 @@ document.addEventListener("click", (e) => {
   const slot = t.closest("[data-key]"); if (slot) return onSlot(slot.dataset.side, slot.dataset.key);
 });
 let infoT;
+let infoUid = null;
 document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-uid]");
   clearTimeout(infoT);
   if (el && seen.has(+el.dataset.uid)) {
-    $("#info").innerHTML = infoPanel(seen.get(+el.dataset.uid));
+    if (infoUid !== el.dataset.uid || $("#info").hidden) { infoUid = el.dataset.uid; $("#info").innerHTML = infoPanel(seen.get(+el.dataset.uid)); }
     $("#info").hidden = false;
   } else infoT = setTimeout(() => ($("#info").hidden = true), 250);
 });
-$("#logBtn").addEventListener("click", () => ($("#logDrawer").hidden = !$("#logDrawer").hidden));
+$("#logBtn").addEventListener("click", () => { $("#logDrawer").hidden = !$("#logDrawer").hidden; render(); });
 $("#logClose").addEventListener("click", () => ($("#logDrawer").hidden = true));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; $("#info").hidden = true; } });
 $("#choiceOk").addEventListener("click", () => {
@@ -478,5 +609,5 @@ $("#netRetry").addEventListener("click", async () => {
 });
 $("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value.toUpperCase()));
 // Host: every engine change goes to the guest too.
-Game.setOnChange(() => { render(); if (ui.online && ONLINE === "host") Net.pushState(); });
+Game.setOnChange(() => { scheduleRender(); if (ui.online && ONLINE === "host") Net.pushState(); });
 loadSetup();
