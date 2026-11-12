@@ -1,0 +1,14 @@
+# Official Bushiroad art: keep it on your PC, never push it to a public repo
+vanguard_images/
+assets/mats/*.jpg
+assets/playmat.jpg
+assets/banner.png
+images/*
+!images/README.txt
+
+# local stuff
+*.zip
+__pycache__/
+.vscode/
+Thumbs.db
+desktop.ini

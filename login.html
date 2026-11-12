@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanguard Table · Sign in</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body class="page login">
+<div class="login-grid">
+  <section class="hero">
+    <svg class="hero-rings" viewBox="0 0 520 520" aria-hidden="true">
+      <circle cx="260" cy="260" r="250" fill="none" stroke="#29446a" stroke-width="1.5"/>
+      <circle cx="260" cy="260" r="190" fill="none" stroke="#29446a"/>
+      <circle cx="260" cy="260" r="120" fill="none" stroke="#f2b94b" stroke-opacity=".5" stroke-width="1.5"/>
+      <path d="M260 10V510M10 260H510" stroke="#29446a"/>
+      <path d="M260 140L380 260L260 380L140 260Z" fill="none" stroke="#f2b94b" stroke-width="2"/>
+    </svg>
+    <img class="vg-banner" src="assets/banner.png" alt="">
+    <div class="brand"><svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 3L53 28L28 53L3 28Z" fill="none" stroke="#f2b94b" stroke-width="3"/><path d="M28 15L41 28L28 41L15 28Z" fill="#f2b94b"/></svg><span>Vanguard Table</span></div>
+    <h1>Ride into<br>the fight.</h1>
+    <p>A private table for cardfights with friends. Build your own cards, ride your deck, and fight on one screen.</p>
+    <div class="steps"><span>Ride</span><i>◆</i><span>Call</span><i>◆</i><span>Battle</span><i>◆</i><span>Trigger</span></div>
+  </section>
+
+  <section class="login-side">
+    <form id="loginForm" class="login-card">
+      <div>
+        <h2>Play as guest</h2>
+        <p class="muted">No account needed. Your name and cards stay on this computer.</p>
+      </div>
+      <div class="who">
+        <span id="av" class="avatar">G</span>
+        <span><b id="who">Guest</b><small class="muted">Guest fighter</small></span>
+      </div>
+      <label class="field">Fighter name
+        <input id="name" maxlength="20" placeholder="Type your name" autocomplete="nickname" required>
+      </label>
+      <div class="field">Card sleeve color
+        <div id="swatches" class="swatches" role="radiogroup" aria-label="Card sleeve color"></div>
+      </div>
+      <button type="submit" class="go big">Enter as guest</button>
+      <div class="later"><span></span>coming later<span></span></div>
+      <button type="button" disabled class="ghost">Sign in with an account</button>
+    </form>
+  </section>
+</div>
+<script src="js/auth.js"></script>
+<script>
+  const COLORS = [["#5fd0ff", "Sky"], ["#f2b94b", "Gold"], ["#e85d74", "Crimson"], ["#6fd39a", "Jade"], ["#b896ff", "Violet"], ["#e8eef8", "Pearl"]];
+  const prev = Auth.get();
+  let color = (prev && prev.color) || COLORS[0][0];
+  const nameEl = document.getElementById("name");
+  nameEl.value = (prev && prev.name) || "";
+  function paint() {
+    const n = nameEl.value.trim();
+    document.getElementById("who").textContent = n || "Guest";
+    const av = document.getElementById("av");
+    av.textContent = (n[0] || "G").toUpperCase();
+    av.style.background = color;
+    document.getElementById("swatches").innerHTML = COLORS.map(([c, l]) =>
+      `<button type="button" role="radio" aria-checked="${c === color}" aria-label="${l} sleeve" data-c="${c}" class="sw${c === color ? " on" : ""}" style="background:${c}"></button>`).join("");
+  }
+  document.getElementById("swatches").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-c]");
+    if (b) { color = b.dataset.c; paint(); }
+  });
+  nameEl.addEventListener("input", paint);
+  document.getElementById("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = nameEl.value.trim();
+    if (!name) return nameEl.focus();
+    Auth.set({ name, color, guest: true, since: (prev && prev.since) || new Date().toISOString() });
+    location.href = "lobby.html";
+  });
+  paint();
+</script>
+</body>
+</html>

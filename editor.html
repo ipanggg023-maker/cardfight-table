@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanguard Table Editor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="editor.css">
+<link rel="stylesheet" href="pages.css">
+<script src="js/auth.js"></script>
+<script>Auth.require();</script>
+</head>
+<body class="ed">
+<header class="edhead">
+  <h1>Card &amp; Deck Editor</h1>
+  <nav>
+    <button data-tab="cards" class="on">Cards</button>
+    <button data-tab="decks">Decks</button>
+    <button data-tab="cgs">Card library</button>
+    <button data-tab="online">Online cards</button>
+    <button data-tab="backup">Backup</button>
+    <a href="lobby.html" class="playlink">← Lobby</a>
+    <a href="index.html" class="playlink">▶ Play</a>
+    <div class="userchip" data-userchip></div>
+  </nav>
+</header>
+
+<section id="tab-cards" class="tab">
+  <div class="listcol">
+    <div class="tools">
+      <input id="q" placeholder="Search name…">
+      <select id="qg"><option value="">All grades</option><option>0</option><option>1</option><option>2</option><option>3</option><option value="o">Orders</option></select>
+      <button id="newCard" class="go">+ New card</button>
+    </div>
+    <ul id="cardList" class="clist"></ul>
+  </div>
+  <div class="formcol" id="cardForm"></div>
+</section>
+
+<section id="tab-decks" class="tab" hidden>
+  <div class="listcol">
+    <div class="tools"><button id="newDeck" class="go">+ New deck</button></div>
+    <ul id="deckList" class="clist"></ul>
+  </div>
+  <div class="formcol" id="deckForm"></div>
+</section>
+
+<section id="tab-cgs" class="tab" hidden>
+  <div class="listcol">
+    <div class="onl-box">
+      <h3>Card library</h3>
+      <p class="muted">Free card data from the Card Game Simulator community files on GitHub. No key needed. Pick a set, or load all sets once to search by name (about 18&nbsp;MB).</p>
+      <label class="field">Set <select id="cgsSets"><option value="">Loading sets…</option></select></label>
+      <div class="btnrow"><button id="cgsAll">Load all sets</button></div>
+      <p id="cgsStatus" class="muted"></p>
+    </div>
+    <div class="onl-box">
+      <h3>Filter</h3>
+      <div class="tools"><input id="cgsQ" placeholder="Card name or clan"></div>
+      <label class="field">Type <select id="cgsType"><option value="">All playable</option><option value="Normal Unit">Normal units</option><option value="Trigger Unit">Trigger units</option><option value="Order">Orders</option></select></label>
+      <label class="chk"><input type="checkbox" id="cgsImages" checked> Show and keep card images (private play only)</label>
+      <label class="chk"><input type="checkbox" id="cgsLocal"> Use pictures from the <b>vanguard_images</b> folder (downloaded with Edit.py)</label>
+      <div class="btnrow"><button id="cgsRelink">Switch my imported cards to local pictures</button></div>
+      <p class="muted">The files have no trigger icons. When a trigger's text doesn't say its type, pick it from the picture before importing. Cards left on "?" are marked ⚠ in the Cards tab.</p>
+    </div>
+  </div>
+  <div class="formcol">
+    <div class="onl-head"><h2 id="cgsTitle">Pick a set</h2><div class="btnrow"><span id="cgsCount" class="pile" hidden></span><button id="cgsImportAll" hidden>Import all shown</button></div></div>
+    <div id="cgsResults" class="onl-grid"><p class="muted">Imported cards appear in the Cards tab with abilities built from their text. Check them before playing.</p></div>
+    <div class="btnrow"><button id="cgsMore" hidden>Show more</button></div>
+  </div>
+</section>
+
+<section id="tab-online" class="tab" hidden>
+  <div class="listcol">
+    <div class="onl-box">
+      <h3>1 · Connect</h3>
+      <p class="muted">Get a free key at <a href="https://tcgapi.dev/quickstart/" target="_blank" rel="noopener">tcgapi.dev</a> (100 requests/day, personal use). Then double-click <b>start-tcgapi-relay.bat</b> in your Vanguard folder and keep its window open.</p>
+      <label class="field">API key <input id="apiKey" type="password" placeholder="tcg_live_…" autocomplete="off"></label>
+      <label class="field">Relay address <input id="apiRelay" placeholder="http://localhost:8787"></label>
+      <div class="btnrow"><button id="apiSave" class="go">Save &amp; test</button></div>
+      <p id="apiStatus" class="muted"></p>
+    </div>
+    <div class="onl-box">
+      <h3>2 · Find cards</h3>
+      <div class="tools"><input id="apiQ" placeholder="Card name, e.g. Vyrgilla"><button id="apiSearch">Search</button></div>
+      <label class="field">…or browse a set <select id="apiSets"><option value="">Load sets (1 request)</option></select></label>
+      <label class="chk"><input type="checkbox" id="apiImages" checked> Use card images from the API (for private play only)</label>
+    </div>
+  </div>
+  <div class="formcol">
+    <div class="onl-head"><h2 id="apiTitle">Results</h2><div class="btnrow"><span id="apiQuota" class="pile"></span><button id="apiImportAll" hidden>Import all on this page</button></div></div>
+    <div id="apiResults" class="onl-grid"><p class="muted">Search for a card or pick a set. Imported cards appear in the Cards tab with abilities built from their text. Check them before playing.</p></div>
+    <div class="btnrow"><button id="apiMore" hidden>Load more</button></div>
+  </div>
+</section>
+
+<section id="tab-backup" class="tab" hidden>
+  <div class="formcol">
+    <h2>Backup</h2>
+    <p class="muted">Cards live inside this browser. Export regularly and keep the file in D:\Vanguard so nothing is lost if browser data is cleared. Share the file with a friend so they get the same cards.</p>
+    <button id="exportBtn" class="go">Export all cards &amp; decks (.json)</button>
+    <label class="filebtn">Import file… <input type="file" id="importFile" accept=".json"></label>
+    <label class="chk"><input type="checkbox" id="importReplace"> Replace everything (otherwise merge)</label>
+
+    <h2>Link card pictures</h2>
+    <p class="muted">Put the pictures in a folder <b>inside D:\Vanguard</b> (for example <b>images</b>), then pick that folder here.
+      Each file is matched to a card by its file name: the card name (<i>Rewrite the Star, Vyrgilla.png</i>) or the card number (<i>DZ-BT01_001EN.png</i>). Matched cards get the picture; nothing is copied into the browser.</p>
+    <div class="btnrow"><label class="filebtn go">Pick picture folder… <input type="file" id="picFolder" webkitdirectory multiple></label></div>
+    <label class="chk"><input type="checkbox" id="picOverwrite"> Also replace pictures cards already have</label>
+    <div id="picResult"></div>
+
+    <h2>Bulk import from a spreadsheet (CSV)</h2>
+    <p class="muted">One card per row. Columns: name, type, grade, power, shield, critical, trigger, sentinel, persona, nation, race, image, text.
+      Only <b>name</b> is required. A card with the same name is updated instead of duplicated.
+      Images: put files in the images folder and write the file name (e.g. vyrgilla.png).
+      Save from Excel/Google Sheets as "CSV UTF-8" so Thai and symbols stay correct.</p>
+    <div class="btnrow"><button id="csvTemplate">Download CSV template</button>
+      <label class="filebtn">Import CSV… <input type="file" id="csvFile" accept=".csv,text/csv"></label></div>
+    <label class="chk"><input type="checkbox" id="csvGuess" checked> Build abilities from the text column (check them afterwards)</label>
+    <div id="csvResult"></div>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/cards.js"></script>
+<script src="js/schema.js"></script>
+<script src="js/db.js"></script>
+<script src="js/textparse.js"></script>
+<script src="js/tcgapi.js"></script>
+<script src="js/cgs.js"></script>
+<script src="js/editor.js"></script>
+<script>mountUserChip(); if (location.hash === "#decks") document.querySelector('[data-tab="decks"]').click();</script>
+</body>
+</html>

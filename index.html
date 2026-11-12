@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanguard Table</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="pages.css">
+<script src="js/auth.js"></script>
+<script>Auth.require();</script>
+</head>
+<body class="game">
+<main class="table">
+  <section id="opp" class="side opp"></section>
+  <div class="center">
+    <div id="mid" class="pw atk"></div>
+    <div id="gc" class="gc"></div>
+    <div id="def" class="pw def"></div>
+  </div>
+  <section id="me" class="side me"></section>
+  <div id="hand" class="hand"></div>
+</main>
+
+<!-- floating HUD: kept to the edges so the field stays clear -->
+<div class="hud-tl">
+  <a href="lobby.html" class="hud-btn" title="Back to lobby" aria-label="Back to lobby">←</a>
+  <button id="logBtn" class="hud-btn" title="Game log" aria-label="Game log">☰</button>
+  <span id="turnTag" class="turntag"></span>
+</div>
+<nav id="rail" class="rail" aria-label="Phases"></nav>
+<div id="actions" class="dock"></div>
+<aside id="info" class="info" hidden></aside>
+<aside id="logDrawer" class="drawer" hidden>
+  <div class="drawer-head"><b>Game log</b><span class="userchip" data-userchip></span><button id="logClose" class="hud-btn" aria-label="Close">✕</button></div>
+  <ul id="log"></ul>
+</aside>
+<div id="banner" class="banner" hidden><span id="bannerText"></span></div>
+
+<div id="setup" class="overlay">
+  <div class="panel">
+    <h1>Vanguard Table</h1>
+    <p class="sub"><a href="lobby.html">← Lobby</a> · <a href="editor.html">Card &amp; deck editor</a></p>
+    <div class="grid2">
+      <label>Player 1 <input id="n1" value="Player 1" maxlength="20"></label>
+      <label>Deck <select id="d1"></select></label>
+      <div class="matpick" data-seat="1"></div>
+      <label>Player 2 <input id="n2" value="Player 2" maxlength="20"></label>
+      <label>Deck <select id="d2"></select></label>
+      <div class="matpick" data-seat="2"></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="hotseat" checked> Hide hands (pass the device between turns)</label>
+    <button id="startBtn" class="go big">Start game</button>
+    <details class="rules">
+      <summary>Quick rules</summary>
+      <ul>
+        <li>Win when the opponent has 6 damage or must draw from an empty deck.</li>
+        <li>Ride phase: ride once from the ride deck (discard 1) or from hand (same grade or +1).</li>
+        <li>Main phase: call units with grade ≤ your vanguard, play 1 normal order, use ACT abilities.</li>
+        <li>Front row attacks; a grade 0–1 unit behind it can boost.</li>
+        <li>A grade 3 vanguard drive checks 2 cards. Triggers let you choose who gets the bonus.</li>
+        <li>Guard with hand cards; grade 2 front rear-guards can intercept; sentinels (◆) discard 1 to stop the hit.</li>
+        <li>Face-up damage pays Counter-Blast. ✦ on a card means it has abilities.</li>
+      </ul>
+    </details>
+  </div>
+</div>
+
+<div id="choice" class="overlay soft" hidden>
+  <div class="panel wide">
+    <p id="choicePrompt" class="prompt"></p>
+    <div id="choiceOpts" class="opts"></div>
+    <button id="choiceOk" class="go">Confirm</button>
+  </div>
+</div>
+
+<div id="zone" class="overlay soft" hidden>
+  <div class="panel wide">
+    <h2 id="zoneTitle"></h2>
+    <div id="zoneCards" class="opts"></div>
+    <button id="zoneClose">Close</button>
+  </div>
+</div>
+
+<div id="curtain" class="overlay curtain" hidden>
+  <div class="panel">
+    <p id="curtainText"></p>
+    <button id="curtainBtn" class="go big">Ready</button>
+  </div>
+</div>
+
+<div id="win" class="overlay" hidden>
+  <div class="panel">
+    <h1 id="winText"></h1>
+    <button id="winBtn" class="go big">New game</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/cards.js"></script>
+<script src="js/schema.js"></script>
+<script src="js/db.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/mats.js"></script>
+<script src="js/ui.js"></script>
+<script>mountUserChip();</script>
+</body>
+</html>

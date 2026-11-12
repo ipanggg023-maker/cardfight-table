@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanguard Table · Lobby</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="pages.css">
+<script src="js/auth.js"></script>
+<script>Auth.require();</script>
+</head>
+<body class="page lobby">
+<header class="topbar">
+  <a class="brand small" href="lobby.html"><svg width="30" height="30" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 3L53 28L28 53L3 28Z" fill="none" stroke="#f2b94b" stroke-width="4"/><path d="M28 15L41 28L28 41L15 28Z" fill="#f2b94b"/></svg><span>Vanguard Table</span></a>
+  <div class="userchip" data-userchip></div>
+</header>
+
+<main class="lobby-grid">
+  <section class="lobby-main">
+    <img class="vg-banner" src="assets/banner.png" alt="">
+    <h1 id="hello">Ready for a cardfight?</h1>
+    <a class="hero-card" href="index.html">
+      <svg class="hero-mat" viewBox="0 0 380 380" aria-hidden="true">
+        <rect x="140" y="40" width="100" height="136" rx="10" fill="none" stroke="#f2b94b" stroke-width="2"/>
+        <rect x="20" y="40" width="100" height="136" rx="10" fill="none" stroke="#5fd0ff" stroke-width="1.5" stroke-dasharray="6 6"/>
+        <rect x="260" y="40" width="100" height="136" rx="10" fill="none" stroke="#5fd0ff" stroke-width="1.5" stroke-dasharray="6 6"/>
+        <rect x="20" y="200" width="100" height="136" rx="10" fill="none" stroke="#29446a" stroke-width="1.5"/>
+        <rect x="140" y="200" width="100" height="136" rx="10" fill="none" stroke="#29446a" stroke-width="1.5"/>
+        <rect x="260" y="200" width="100" height="136" rx="10" fill="none" stroke="#29446a" stroke-width="1.5"/>
+      </svg>
+      <span class="eyebrow">2 players · one screen</span>
+      <span class="big-title">Local match</span>
+      <span class="muted">Pick two decks, pass the device between turns. Hands stay hidden behind a curtain.</span>
+    </a>
+    <div class="tiles">
+      <a class="tile" href="editor.html"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f2b94b" stroke-width="1.8" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><b>Card editor</b><span class="muted">Add cards, paste text, build abilities</span></a>
+      <a class="tile" href="editor.html#decks"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#5fd0ff" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="12" height="15" rx="2"/><path d="M8 3h11a2 2 0 0 1 2 2v13"/></svg><b>Deck builder</b><span class="muted">Ride deck 4 + main deck 50</span></a>
+      <a class="tile" href="#rules" id="rulesTile"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6fd39a" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg><b>How to play</b><span class="muted">Turn flow, triggers, guarding</span></a>
+    </div>
+    <details id="rules" class="rules-box">
+      <summary>How to play</summary>
+      <ol>
+        <li><b>Stand &amp; draw.</b> Your units stand up and you draw 1 (the first player skips the draw on turn 1).</li>
+        <li><b>Ride.</b> Once per turn: ride the next grade from your ride deck by discarding 1 card, or ride a card from hand of the same grade or 1 higher.</li>
+        <li><b>Main.</b> Call units to rear-guard circles (grade ≤ your vanguard), play 1 normal order, use ACT abilities, swap front/back in a column.</li>
+        <li><b>Battle.</b> Front row units attack; a grade 0–1 unit behind can boost. A grade 3 vanguard drive checks 2 cards. Triggers give power, critical, draw or heal.</li>
+        <li><b>Guard.</b> The defender adds cards from hand as shields, intercepts with a front grade 2 rear-guard, or uses a sentinel.</li>
+        <li><b>Win.</b> Deal 6 damage, or your opponent must draw from an empty deck.</li>
+      </ol>
+    </details>
+  </section>
+
+  <aside class="lobby-side">
+    <div class="side-head"><h2>Your decks</h2><a href="editor.html#decks">+ New deck</a></div>
+    <div id="deckList" class="deck-list"><p class="muted">Loading decks…</p></div>
+    <div class="backup-note">
+      <b>Back up your cards</b>
+      <span class="muted">Guest data lives in this browser. Export a backup file from the editor now and then.</span>
+    </div>
+  </aside>
+</main>
+<div class="skinbar"><label class="chk"><input type="checkbox" id="skinMat"> Playmat table &amp; logo</label></div>
+<script>(() => { const b = document.getElementById("skinMat"); b.checked = Skin.get() === "mat"; b.addEventListener("change", () => Skin.set(b.checked ? "mat" : "classic")); })();</script>
+
+<script src="js/cards.js"></script>
+<script src="js/db.js"></script>
+<script>
+  mountUserChip();
+  const u = Auth.get();
+  if (u) document.getElementById("hello").textContent = `Ready for a cardfight, ${u.name}?`;
+  document.getElementById("rulesTile").addEventListener("click", () => (document.getElementById("rules").open = true));
+  const hue = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
+  (async () => {
+    await DB.seedIfEmpty();
+    const decks = await DB.all("decks");
+    const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
+    const box = document.getElementById("deckList");
+    if (!decks.length) { box.innerHTML = `<p class="muted">No decks yet. Build one in the deck builder.</p>`; return; }
+    box.innerHTML = "";
+    for (const d of decks) {
+      const errs = validateDeck(d, byId);
+      const lead = byId[d.ride[3]] || byId[d.ride[0]] || {};
+      const row = document.createElement("a");
+      row.className = "deck-row";
+      row.href = "index.html";
+      row.innerHTML = `<span class="deck-art" style="--h:${hue(lead.nation)}"></span>
+        <span class="deck-info"><b></b><small class="muted"></small></span>
+        <span class="badge ${errs.length ? "warn" : "ok"}"></span>`;
+      row.querySelector("b").textContent = d.name;
+      row.querySelector("small").textContent = `${d.energy ? "Energy" : "No energy"} · ${d.main.length + d.ride.filter(Boolean).length} cards${lead.name ? " · " + lead.name : ""}`;
+      row.querySelector(".badge").textContent = errs.length ? `${d.main.length}/50` : "Legal";
+      if (errs.length) row.title = errs.join("\n");
+      box.appendChild(row);
+    }
+  })();
+</script>
+</body>
+</html>
