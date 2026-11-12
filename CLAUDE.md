@@ -8,6 +8,7 @@ The user enters real card data and images themselves through the editor. Do not 
 - `docs/ARCHITECTURE.md` modules, engine contract, ability DSL, storage keys
 - `docs/ROADMAP.md` done list + next tasks (copy-paste ready)
 - `docs/START-IN-CLAUDE-CODE.md` first prompt and testing tips
+- `docs/rules/` official rules reference (CR ver. 4.59, Aug 2026): history, core game flow, one file per format (Standard / V Premium / Premium), mechanics (Stride, gifts, Legion…), card/ability types, and `08-engine-gaps-and-plan.md` (what the engine gets wrong + the plan to support every card). Read the relevant file before changing rules code. Raw notes: `research_notes/`, long report: `reports/`
 
 ## Run
 No build step. Open `login.html` in Chrome/Edge. Flow: login.html → lobby.html → index.html (game) / editor.html (cards, decks).
