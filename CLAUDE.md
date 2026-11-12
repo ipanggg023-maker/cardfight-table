@@ -42,6 +42,10 @@ CSS: "HUD layout v3" blocks at the end of style.css. Card size scales with the s
 - `Skin` in `js/auth.js` sets `html.skin-mat` from localStorage `vt-skin` ("mat" default, "classic" = original look). Toggle on the lobby page (bottom left).
 - CSS for the skin is the "playmat skin" block at the end of style.css (`.slot::before` circles, `.center::before` ellipse, `.vg-banner`).
 
+## Loading screen & 60 fps
+- `js/loader.js` (in every page <head>, right after auth.js): loading screen from first paint until window load + fonts + `Loader.wait(promise)`; min 1 s, max 5 s. App links fade it in, then navigate (`Loader.go(url)`); `Loader.canLeave` lets a page veto (editor: unsaved changes). `Loader.show(msg)` returns hide() for in-page work; `Loader.progress(0..1)`. The game uses it at start/join/rematch while `Pics` loads (`loadingTable()`).
+- 60 fps rules: never rebuild big lists/tables on small changes. Patch in place (`setHTML` skips unchanged HTML; game: `renderSide`/`placeCard`/`renderHand`; editor deck builder and Quick deck are built once then patched, + / − only updates counts). Draw long picture lists in chunks (`fillChunked`, 48 per task). Debounce typing. Only animate transform/opacity; no layout properties (margin, width) or filters in transitions. Never wait on requestAnimationFrame alone (paused in background tabs): pair it with a timer.
+
 ## Files
 - `js/cards.js` — `TRIG` trigger definitions. No sample cards: `DB.removeSamples()` deletes the old sample decks once per browser (flag `vt-samples-removed`)
 - `js/schema.js` — ability building blocks: `SCHEMA.kinds/zones/events/conds/costs/effects`, `TARGETS`, `describeAbility()`

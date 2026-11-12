@@ -4,6 +4,9 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 let cards = [], decks = [], cur = null, curDeck = null, dirty = false;
 
+// innerHTML only when it really changed (keeps pictures and focus in place)
+function setHTML(el, html) { if (el && el._h !== html) { el.innerHTML = html; el._h = html; } }
+
 // ---------- card pictures ----------
 // Grids use imgTag() instead of <img loading="lazy">: native lazy loading sometimes never starts
 // (pictures stayed blank in the Card library). Pictures load 8 at a time in page order, try the
@@ -40,7 +43,9 @@ new MutationObserver(() => {
   found.forEach((img) => { img.dataset.q = "1"; imgQ.push(img); });
   pumpImages();
 }).observe(document.body, { childList: true, subtree: true });
-const byId = () => Object.fromEntries(cards.map((c) => [c.id, c]));
+// cards is replaced (never mutated) by reload(), so the id map and a version number follow it
+let idsCache = null, idsFor = null, cardsVer = 0, poolQT = 0;
+const byId = () => (idsFor === cards ? idsCache : ((idsFor = cards), cardsVer++, (idsCache = Object.fromEntries(cards.map((c) => [c.id, c])))));
 
 let toastT;
 function toast(m, bad) {
@@ -82,12 +87,16 @@ const cardMatches = (c, f) => c.name.toLowerCase().includes((f.q || "").toLowerC
 // ---------- card list ----------
 function renderList() {
   const f = { q: $("#q").value, g: $("#qg").value, n: fillPick($("#qn"), "All clans", "nation", $("#qn").value), r: fillPick($("#qr"), "All races", "race", $("#qr").value) };
-  $("#cardList").innerHTML = cards.filter((c) => cardMatches(c, f))
+  const LIMIT = 400; // drawing thousands of rows at once stalls the page; search to narrow down
+  const found = cards.filter((c) => cardMatches(c, f));
+  setHTML($("#cardList"), found.slice(0, LIMIT)
     .map((c) => `<li data-id="${esc(c.id)}" class="${cur && cur.id === c.id ? "on" : ""}"><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>${esc(c.name)}
       <span class="x">${c.type === "trigger" && !c.trigger ? "⚠" : ""}${c.trigger ? TRIG[c.trigger].icon : ""}${c.sentinel ? "◆" : ""}${(c.abilities || []).length ? "✦" + c.abilities.length : ""}</span></li>`).join("")
-    || `<li class="muted">No cards</li>`;
+    || `<li class="muted">No cards</li>`) ;
+  if (found.length > LIMIT) $("#cardList").insertAdjacentHTML("beforeend", `<li class="muted">… ${(found.length - LIMIT).toLocaleString()} more. Search or filter to see them.</li>`), ($("#cardList")._h = null);
 }
-$("#q").addEventListener("input", renderList);
+let listT = 0;
+$("#q").addEventListener("input", () => { clearTimeout(listT); listT = setTimeout(renderList, 120); });
 $("#qg").addEventListener("change", renderList);
 $("#qn").addEventListener("change", renderList);
 $("#qr").addEventListener("change", renderList);
@@ -334,33 +343,53 @@ $("#newDeck").addEventListener("click", () => {
   curDeck = { id: DB.newId(), name: "New deck", energy: true, ride: ["", "", "", ""], main: [] };
   renderDecks();
 });
+// The deck builder is built once per deck, then patched: + / − only change counts, stats and
+// the "In this deck" list; the card pictures in "Your cards" are never rebuilt for that.
 function renderDeckForm() {
-  const d = curDeck;
-  if (!d) { if (quick.open) return renderQuick(); $("#deckForm").innerHTML = `<p class="muted">Pick a deck, create one, or try ✨ Quick deck.</p>`; return; }
+  const d = curDeck, root = $("#deckForm");
+  if (!d) {
+    root._deck = null;
+    if (quick.open) return renderQuick();
+    root.innerHTML = `<p class="muted">Pick a deck, create one, or try ✨ Quick deck.</p>`;
+    return;
+  }
   const ids = byId();
-  const errs = validateDeck(d, ids);
+  if (root._deck !== d || !root.querySelector("#dkPool")) { // new deck object (picked, created, built) → fresh form
+    root._deck = d;
+    root._poolKey = root._inKey = null;
+    root.innerHTML = `
+      <h2 id="dkTitle"></h2>
+      <div class="fgrid">
+        <label>Deck name <input type="text" id="deckName" value="${esc(d.name)}"></label>
+        <label class="chk"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (+3 energy each turn, max 10)</label>
+      </div>
+      <h4>Ride deck</h4>
+      <div class="ridegrid" id="dkRide"></div>
+      <div id="dkStats"></div>
+      <div class="btnrow"><button id="saveDeck" class="go">Save deck</button><button id="delDeck" class="del">Delete deck</button></div>
+      <h4 id="dkInTitle"></h4>
+      <div class="pool deck" id="dkIn"></div>
+      <h4 id="dkPoolTitle"></h4>
+      <div class="tools">
+        <input id="poolQ" placeholder="Search name…" value="${esc(poolF.q)}">
+        <select id="poolG"><option value="">All grades</option>${["0", "1", "2", "3"].map((g) => `<option ${poolF.g === g ? "selected" : ""}>${g}</option>`).join("")}<option value="o" ${poolF.g === "o" ? "selected" : ""}>Orders</option></select>
+        <select id="poolN" title="Clan / nation"></select>
+        <select id="poolR" title="Race"></select>
+      </div>
+      <div class="pool cards" id="dkPool"></div>`;
+  }
   const cnt = {};
   d.main.forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
   const mainCards = d.main.map((id) => ids[id]).filter(Boolean);
-  // Each ride slot is a button: click → big picture picker with search
-  const rideSel = (g) => {
+  const errs = validateDeck(d, ids);
+  setHTML($("#dkTitle"), esc(d.name));
+  // Ride deck: each slot is a button that opens the big picture picker
+  setHTML($("#dkRide"), [0, 1, 2, 3].map((g) => {
     const c = ids[d.ride[g]];
     return `<button type="button" class="ridepick" data-ride="${g}" title="Click to choose"><span class="rl">Grade ${g}</span>
       <div class="rideface">${c ? face(c) : `<div class="ph empty">＋ G${g}</div>`}</div><span class="tn">${c ? esc(c.name) : "Click to choose"}</span></button>`;
-  };
-  const inDeck = [...new Set(d.main)].map((id) => ids[id]).filter(Boolean)
-    .sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
-  const pool = cards.filter((c) => cardMatches(c, poolF));
-  const scroll = $(".pool.cards") ? $(".pool.cards").scrollTop : 0;
-  $("#deckForm").innerHTML = `
-    <h2>${esc(d.name)}</h2>
-    <div class="fgrid">
-      <label>Deck name <input type="text" id="deckName" value="${esc(d.name)}"></label>
-      <label class="chk"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (+3 energy each turn, max 10)</label>
-    </div>
-    <h4>Ride deck</h4>
-    <div class="ridegrid">${[0, 1, 2, 3].map(rideSel).join("")}</div>
-    <div class="stats">
+  }).join(""));
+  setHTML($("#dkStats"), `<div class="stats">
       <span class="pile">Main ${mainCards.length}/50</span>
       <span class="pile">Triggers ${mainCards.filter((c) => c.trigger).length}/16</span>
       <span class="pile">Heal ${mainCards.filter((c) => c.trigger === "heal").length}/4</span>
@@ -368,22 +397,50 @@ function renderDeckForm() {
       ${[0, 1, 2, 3].map((g) => `<span class="pile">G${g}: ${mainCards.filter((c) => c.type !== "order" && c.grade === g).length}</span>`).join("")}
       <span class="pile">Orders ${mainCards.filter((c) => c.type === "order").length}</span>
     </div>
-    ${errs.length ? `<ul class="errs">${errs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="okmsg">✓ Deck is legal</p>`}
-    <div class="btnrow"><button id="saveDeck" class="go">Save deck</button><button id="delDeck" class="del">Delete deck</button></div>
-    <h4>In this deck (${d.main.length})</h4>
-    <div class="pool deck">${inDeck.map((c) => tile(c, cnt[c.id])).join("") || `<p class="muted">Empty. Add cards from the list below with +.</p>`}</div>
-    <h4>Your cards (${pool.length})</h4>
-    <div class="tools">
-      <input id="poolQ" placeholder="Search name…" value="${esc(poolF.q)}">
-      <select id="poolG"><option value="">All grades</option>${["0", "1", "2", "3"].map((g) => `<option ${poolF.g === g ? "selected" : ""}>${g}</option>`).join("")}<option value="o" ${poolF.g === "o" ? "selected" : ""}>Orders</option></select>
-      <select id="poolN" title="Clan / nation"></select>
-      <select id="poolR" title="Race"></select>
-    </div>
-    <div class="pool cards">${pool.map((c) => tile(c, cnt[c.id] || 0)).join("") || `<p class="muted">No cards match. Create cards in the Cards tab.</p>`}</div>`;
-  poolF.n = fillPick($("#poolN"), "All clans", "nation", poolF.n);
-  poolF.r = fillPick($("#poolR"), "All races", "race", poolF.r);
-  $(".pool.cards").scrollTop = scroll;
+    ${errs.length ? `<ul class="errs">${errs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="okmsg">✓ Deck is legal</p>`}`);
+  // In this deck: rebuilt only when a card is added or removed completely, otherwise counts are patched
+  const inDeck = [...new Set(d.main)].map((id) => ids[id]).filter(Boolean)
+    .sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
+  setHTML($("#dkInTitle"), `In this deck (${d.main.length})`);
+  const inKey = inDeck.map((c) => c.id).join(",") + "|" + cardsVer;
+  if (root._inKey !== inKey) {
+    root._inKey = inKey;
+    $("#dkIn").innerHTML = inDeck.map((c) => tile(c, cnt[c.id])).join("") || `<p class="muted">Empty. Add cards from the list below with +.</p>`;
+  }
+  // Your cards: rebuilt only when the filters or the card list change
+  const poolKey = JSON.stringify(poolF) + "|" + cardsVer;
+  if (root._poolKey !== poolKey) {
+    root._poolKey = poolKey;
+    poolF.n = fillPick($("#poolN"), "All clans", "nation", poolF.n);
+    poolF.r = fillPick($("#poolR"), "All races", "race", poolF.r);
+    const pool = cards.filter((c) => cardMatches(c, poolF));
+    const box = $("#dkPool"), scroll = box.scrollTop;
+    setHTML($("#dkPoolTitle"), `Your cards (${pool.length})`);
+    if (!pool.length) box.innerHTML = `<p class="muted">No cards match. Create cards in the Cards tab.</p>`;
+    else fillChunked(box, pool, (c) => tile(c, deckCount(c.id)));
+    box.scrollTop = scroll;
+  }
+  // Patch counts everywhere
+  root.querySelectorAll(".tc[data-id]").forEach((t) => {
+    const n = cnt[t.dataset.id] || 0, b = t.querySelector(".tb b");
+    if (b && b.textContent !== String(n)) b.textContent = n;
+    t.classList.toggle("in", n > 0);
+  });
 }
+// Big lists are drawn 48 tiles per task so a frame never waits on hundreds of tiles at once.
+function fillChunked(box, items, html) {
+  const t = (box._chunk = (box._chunk || 0) + 1), N = 48; // a newer fill of the same box cancels this one
+  box.innerHTML = items.slice(0, N).map(html).join("");
+  let i = N;
+  const next = () => {
+    if (t !== box._chunk || !box.isConnected || i >= items.length) return;
+    box.insertAdjacentHTML("beforeend", items.slice(i, i + N).map(html).join(""));
+    i += N;
+    setTimeout(next, 0);
+  };
+  setTimeout(next, 0);
+}
+const deckCount = (id) => (curDeck ? curDeck.main.filter((x) => x === id).length : 0);
 // Deck builder filters, kept while switching decks
 const poolF = { q: "", g: "", n: "", r: "" };
 const hueOf = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
@@ -391,15 +448,15 @@ const hueOf = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCo
 const face = (c) => c.image
   ? imgTag(c.image, c.source && c.source.imageWeb !== c.image ? c.source.imageWeb || "" : "", c.name)
   : `<div class="ph" style="--h:${hueOf(c.nation)}"><b>${c.type === "order" ? "ORDER" : "G" + c.grade}</b><span>${esc(c.name)}</span>${c.type !== "order" ? `<small>${(c.power || 0).toLocaleString("en-US")}</small>` : ""}</div>`;
-const tile = (c, n) => `<div class="tc${n ? " in" : ""}" title="${esc(c.name)}${c.nation ? " · " + esc(c.nation) : ""}">
+const tile = (c, n) => `<div class="tc${n ? " in" : ""}" data-id="${esc(c.id)}" title="${esc(c.name)}${c.nation ? " · " + esc(c.nation) : ""}">
     <div class="face">${face(c)}${c.trigger ? `<span class="tg">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="tg">◆</span>` : ""}</div>
     <div class="tn">${esc(c.name)}</div>
     <div class="tb"><button data-dk="-" data-id="${esc(c.id)}" aria-label="Remove one">−</button><b>${n || 0}</b><button data-dk="+" data-id="${esc(c.id)}" aria-label="Add one">+</button></div>
   </div>`;
 $("#deckForm").addEventListener("input", (e) => {
   if (!curDeck) return;
-  if (e.target.id === "deckName") curDeck.name = e.target.value;
-  if (e.target.id === "poolQ") { poolF.q = e.target.value; renderDeckForm(); const el = $("#poolQ"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  if (e.target.id === "deckName") { curDeck.name = e.target.value; setHTML($("#dkTitle"), esc(curDeck.name)); }
+  if (e.target.id === "poolQ") { poolF.q = e.target.value; clearTimeout(poolQT); poolQT = setTimeout(renderDeckForm, 120); }
 });
 $("#deckForm").addEventListener("change", (e) => {
   if (!curDeck) return;
@@ -457,9 +514,10 @@ function renderPicker() {
   const shown = picker.list.filter((c) => (!picker.n || clanOf(c) === picker.n)
     && (!q || `${c.name} ${c.text || ""} ${c.race || ""}`.toLowerCase().includes(q)));
   $("#pickCount").textContent = `${shown.length} card${shown.length === 1 ? "" : "s"}`;
-  $("#pickGrid").innerHTML = shown.slice(0, 300).map((c) => `<button type="button" class="tc pickv${c.id === picker.current ? " in" : ""}" data-pick="${esc(c.id)}" title="${esc(c.name)}">
-      <div class="face">${face(c)}${c.trigger ? `<span class="tg">${TRIG[c.trigger].icon}</span>` : ""}</div><div class="tn">${esc(c.name)}</div></button>`).join("")
-    || `<p class="muted">No cards match.</p>`;
+  const pickTile = (c) => `<button type="button" class="tc pickv${c.id === picker.current ? " in" : ""}" data-pick="${esc(c.id)}" title="${esc(c.name)}">
+      <div class="face">${face(c)}${c.trigger ? `<span class="tg">${TRIG[c.trigger].icon}</span>` : ""}</div><div class="tn">${esc(c.name)}</div></button>`;
+  if (!shown.length) $("#pickGrid").innerHTML = `<p class="muted">No cards match.</p>`;
+  else fillChunked($("#pickGrid"), shown.slice(0, 300), pickTile);
 }
 function closePicker(result) {
   $("#picker").hidden = true;
@@ -467,14 +525,15 @@ function closePicker(result) {
   picker.resolve = null;
   if (r) r(result);
 }
-$("#pickQ").addEventListener("input", (e) => { picker.q = e.target.value; renderPicker(); });
+let pickT = 0;
+$("#pickQ").addEventListener("input", (e) => { picker.q = e.target.value; clearTimeout(pickT); pickT = setTimeout(renderPicker, 100); });
 $("#pickN").addEventListener("change", (e) => { picker.n = e.target.value; renderPicker(); });
 $("#pickGrid").addEventListener("click", (e) => {
   const b = e.target.closest("[data-pick]");
   if (b) closePicker(picker.list.find((c) => c.id === b.dataset.pick));
 });
 $("#pickQ").addEventListener("keydown", (e) => { // Enter picks the first match
-  if (e.key === "Enter") { const b = $("#pickGrid [data-pick]"); if (b) b.click(); }
+  if (e.key === "Enter") { clearTimeout(pickT); picker.q = e.target.value; renderPicker(); const b = $("#pickGrid [data-pick]"); if (b) b.click(); }
 });
 $("#pickClose").addEventListener("click", () => closePicker(undefined));
 $("#pickClear").addEventListener("click", () => closePicker(null));
@@ -533,13 +592,15 @@ $("#quickDeck").addEventListener("click", () => {
 const chips = (name, items, value) => `<div class="chips-row" data-opt="${name}">${Object.entries(items).map(([k, it]) =>
   `<button type="button" class="chipbtn${String(value) === k ? " on" : ""}" data-val="${esc(k)}"><b>${esc(it.label)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ""}</button>`).join("")}</div>`;
 
+// Built once, then each section is patched (vanguard pictures stay put when you click options)
 function renderQuick() {
+  const root = $("#deckForm");
   const clans = uniq("nation").map((n) => {
     const cs = cards.filter((c) => clanOf(c) === n);
     return { n, units: cs.filter((c) => c.type === "unit").length, trig: cs.filter((c) => c.trigger).length, g3: cs.filter((c) => c.type === "unit" && c.grade === 3).length };
   }).filter((c) => c.g3 && c.n !== "-").sort((a, b) => b.units + b.trig - (a.units + a.trig));
   if (!clans.length) {
-    $("#deckForm").innerHTML = `<h2>✨ Quick deck</h2><p class="muted">No clan has a grade 3 unit yet. Import cards from the Card library, or fill in "Nation / clan" on your cards.</p>`;
+    root.innerHTML = `<h2>✨ Quick deck</h2><p class="muted">No clan has a grade 3 unit yet. Import cards from the Card library, or fill in "Nation / clan" on your cards.</p>`;
     return;
   }
   if (!clans.some((c) => c.n === quick.n)) { quick.n = clans[0].n; quick.ride = ["", "", ""]; }
@@ -547,44 +608,51 @@ function renderQuick() {
   if (!g3s.some((c) => c.id === quick.v)) quick.v = g3s[0] ? g3s[0].id : "";
   const v = cards.find((c) => c.id === quick.v);
   const autoRide = v ? quickRide(quick, v) : [];
+  if (!root.querySelector("#quick")) {
+    root.innerHTML = `<div id="quick" class="quick">
+      <h2>✨ Quick deck</h2>
+      <p class="muted">Choose how you want the deck built. Everything comes from <b>your own cards</b>, and the result opens in the deck builder so you can still change it before you press Save.</p>
+      <h4>1 · Clan</h4>
+      <div class="fgrid"><label>Clan <select id="qkClan"></select></label></div>
+      <h4 id="qkVTitle"></h4>
+      <div class="pool deck vpick" id="qkV"></div>
+      <h4>3 · Deck style</h4>
+      <div class="chips-row" data-preset id="qkStyle"></div>
+      <details class="qkmore" ${quick.preset === "custom" ? "open" : ""}>
+        <summary>Fine-tune (changes the style to Custom)</summary>
+        <div id="qkOpts" class="qkopts"></div>
+        <label class="chk"><input type="checkbox" id="qkOver"> Add 1 Over trigger if this clan has one (instead of 1 Critical)</label>
+        <label class="chk"><input type="checkbox" id="qkEnergy"> Energy Generator crest</label>
+      </details>
+      <h4>4 · Ride deck</h4>
+      <div class="chips-row" data-rideauto id="qkRideMode"></div>
+      <div class="ridegrid" id="qkRide"></div>
+      <div class="btnrow"><button id="qkBuild" class="go">Build deck</button><button id="qkCancel">Cancel</button></div>
+    </div>`;
+  }
+  setHTML($("#qkClan"), clans.map((c) => `<option value="${esc(c.n)}">${esc(c.n)} · ${c.units} units, ${c.trig} triggers</option>`).join(""));
+  $("#qkClan").value = quick.n;
+  setHTML($("#qkVTitle"), `2 · Vanguard (${g3s.length})`);
+  // vanguard pictures: rebuilt only when the clan changes; the selection is just a class
+  setHTML($("#qkV"), g3s.map((c) => `<button type="button" class="tc pickv" data-v="${esc(c.id)}" title="${esc(c.name)}">
+      <div class="face">${face(c)}</div><div class="tn">${esc(c.name)}</div></button>`).join(""));
+  $("#qkV").querySelectorAll("[data-v]").forEach((b) => b.classList.toggle("in", b.dataset.v === quick.v));
+  setHTML($("#qkStyle"), Object.entries(QUICK_PRESETS).map(([k, p]) =>
+    `<button type="button" class="chipbtn big${quick.preset === k ? " on" : ""}" data-val="${k}"><b>${esc(p.label)}</b><small>${esc(p.sub)}</small></button>`).join(""));
+  setHTML($("#qkOpts"), `<div class="qkopt"><span>Triggers</span>${chips("mix", TRIG_MIX, quick.mix)}</div>
+      ${Object.entries(QUICK_OPTS).map(([k, o]) => `<div class="qkopt"><span>${esc(o.label)}</span>${chips(k, o.items, quick[k])}</div>`).join("")}`);
+  $("#qkOver").checked = quick.over;
+  $("#qkEnergy").checked = quick.energy;
+  setHTML($("#qkRideMode"), `<button type="button" class="chipbtn${quick.rideAuto ? " on" : ""}" data-val="1"><b>Auto</b><small>Best fit for your vanguard</small></button>
+      <button type="button" class="chipbtn${quick.rideAuto ? "" : " on"}" data-val="0"><b>I'll choose</b><small>Click a slot to pick</small></button>`);
   const rideSlot = (g) => {
     const c = cards.find((x) => x.id === (quick.rideAuto ? (autoRide[g] || {}).id : quick.ride[g])) || null;
     return `<button type="button" class="ridepick" data-qride="${g}" ${quick.rideAuto ? "disabled" : ""}><span class="rl">Grade ${g}</span>
       <div class="rideface">${c ? face(c) : `<div class="ph empty">G${g}</div>`}</div><span class="tn">${c ? esc(c.name) : "Pick a card"}</span></button>`;
   };
-  $("#deckForm").innerHTML = `<div id="quick" class="quick">
-    <h2>✨ Quick deck</h2>
-    <p class="muted">Choose how you want the deck built. Everything comes from <b>your own cards</b>, and the result opens in the deck builder so you can still change it before you press Save.</p>
-
-    <h4>1 · Clan</h4>
-    <div class="fgrid"><label>Clan <select id="qkClan">${clans.map((c) => `<option value="${esc(c.n)}" ${c.n === quick.n ? "selected" : ""}>${esc(c.n)} · ${c.units} units, ${c.trig} triggers</option>`).join("")}</select></label></div>
-
-    <h4>2 · Vanguard (${g3s.length})</h4>
-    <div class="pool deck vpick">${g3s.map((c) => `<button type="button" class="tc pickv${c.id === quick.v ? " in" : ""}" data-v="${esc(c.id)}" title="${esc(c.name)}">
-      <div class="face">${face(c)}</div><div class="tn">${esc(c.name)}</div></button>`).join("")}</div>
-
-    <h4>3 · Deck style</h4>
-    <div class="chips-row" data-preset>${Object.entries(QUICK_PRESETS).map(([k, p]) =>
-      `<button type="button" class="chipbtn big${quick.preset === k ? " on" : ""}" data-val="${k}"><b>${esc(p.label)}</b><small>${esc(p.sub)}</small></button>`).join("")}</div>
-
-    <details class="qkmore" ${quick.preset === "custom" ? "open" : ""}>
-      <summary>Fine-tune (changes the style to Custom)</summary>
-      <div class="qkopt"><span>Triggers</span>${chips("mix", TRIG_MIX, quick.mix)}</div>
-      ${Object.entries(QUICK_OPTS).map(([k, o]) => `<div class="qkopt"><span>${esc(o.label)}</span>${chips(k, o.items, quick[k])}</div>`).join("")}
-      <label class="chk"><input type="checkbox" id="qkOver" ${quick.over ? "checked" : ""}> Add 1 Over trigger if this clan has one (instead of 1 Critical)</label>
-      <label class="chk"><input type="checkbox" id="qkEnergy" ${quick.energy ? "checked" : ""}> Energy Generator crest</label>
-    </details>
-
-    <h4>4 · Ride deck</h4>
-    <div class="chips-row" data-rideauto>
-      <button type="button" class="chipbtn${quick.rideAuto ? " on" : ""}" data-val="1"><b>Auto</b><small>Best fit for your vanguard</small></button>
-      <button type="button" class="chipbtn${quick.rideAuto ? "" : " on"}" data-val="0"><b>I'll choose</b><small>Click a slot to pick</small></button>
-    </div>
-    <div class="ridegrid">${[0, 1, 2].map(rideSlot).join("")}
-      <div class="ridepick" aria-disabled="true"><span class="rl">Grade 3</span><div class="rideface">${v ? face(v) : `<div class="ph empty">G3</div>`}</div><span class="tn">${v ? esc(v.name) : ""}</span></div></div>
-
-    <div class="btnrow"><button id="qkBuild" class="go" ${quick.v ? "" : "disabled"}>Build deck</button><button id="qkCancel">Cancel</button></div>
-  </div>`;
+  setHTML($("#qkRide"), `${[0, 1, 2].map(rideSlot).join("")}
+      <div class="ridepick" aria-disabled="true"><span class="rl">Grade 3</span><div class="rideface">${v ? face(v) : `<div class="ph empty">G3</div>`}</div><span class="tn">${v ? esc(v.name) : ""}</span></div>`);
+  $("#qkBuild").disabled = !quick.v;
 }
 $("#deckForm").addEventListener("change", (e) => {
   if (!e.target.closest("#quick")) return;
@@ -605,9 +673,7 @@ $("#deckForm").addEventListener("click", async (e) => {
       quick.rideAuto = val === "1";
       if (!quick.rideAuto && !quick.ride.some(Boolean)) { const v = cards.find((c) => c.id === quick.v); if (v) quick.ride = quickRide(quick, v).map((c) => (c ? c.id : "")); }
     } else { quick[row.dataset.opt] = val; quick.preset = "custom"; }
-    const open = $(".qkmore") && $(".qkmore").open;
     renderQuick();
-    if (open && $(".qkmore")) $(".qkmore").open = true;
     return;
   }
   const rp = e.target.closest("[data-qride]");
@@ -1078,10 +1144,12 @@ $("#picFolder").addEventListener("change", async (e) => {
 });
 
 window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+// Leaving through an app link: ask here (before the loading screen), then don't ask again
+Loader.canLeave = () => { if (!dirty) return true; if (!window.confirm("Discard unsaved changes?")) return false; dirty = false; return true; };
 
-(async () => {
+Loader.wait((async () => {
   await DB.removeSamples();
   await reload();
   renderList();
   renderCard();
-})();
+})());

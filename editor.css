@@ -150,3 +150,5 @@ body.ed { min-height: auto; }
 .tc .face .noimg, .rideface .noimg { width: 100%; aspect-ratio: 5 / 7; border-radius: 6px; background: var(--mat); border: 1px dashed var(--line);
   display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; box-sizing: border-box; color: var(--muted); font-size: .72rem; }
 .tc .face img:not([src]), .oc img:not([src]) { background: var(--mat); }
+
+.qkopts { display: grid; gap: 12px; }

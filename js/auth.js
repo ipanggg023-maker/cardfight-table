@@ -29,7 +29,7 @@ function mountUserChip() {
       <button type="button" class="uc-out">Sign out</button>`;
     el.querySelector("b").textContent = u.name;
     el.querySelector(".uc-av").textContent = Auth.initial(u);
-    el.querySelector(".uc-out").addEventListener("click", () => { Auth.clear(); location.href = "login.html"; });
+    el.querySelector(".uc-out").addEventListener("click", () => { Auth.clear(); if (typeof Loader !== "undefined") Loader.go("login.html"); else location.href = "login.html"; });
   });
 }
 

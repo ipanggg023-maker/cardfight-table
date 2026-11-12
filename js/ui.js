@@ -25,15 +25,19 @@ const Pics = (() => {
     img.decoding = "async";
     img.referrerPolicy = "no-referrer";
     e = { img, ok: null, src: url, tries: 0 };
-    img.onload = () => {
-      const done = () => { e.ok = true; e.src = img.src; };
-      (img.decode ? img.decode() : Promise.resolve()).then(done, done);
-    };
-    img.onerror = () => {
-      if (++e.tries < 2) { setTimeout(() => { img.src = url + (url.includes("?") ? "&" : "?") + "r=" + e.tries; }, 1200); return; }
-      e.ok = false;
-      changed();
-    };
+    e.p = new Promise((settle) => {
+      img.onload = () => {
+        const done = () => { e.ok = true; e.src = img.src; settle(true); };
+        // decode() can stall in background tabs: never wait more than 1 s for it
+        Promise.race([img.decode ? img.decode() : Promise.resolve(), new Promise((r) => setTimeout(r, 1000))]).then(done, done);
+      };
+      img.onerror = () => {
+        if (++e.tries < 2) { setTimeout(() => { img.src = url + (url.includes("?") ? "&" : "?") + "r=" + e.tries; }, 1200); return; }
+        e.ok = false;
+        settle(false);
+        changed();
+      };
+    });
     img.src = url;
     st.set(url, e);
     return e;
@@ -48,8 +52,24 @@ const Pics = (() => {
     }
     return "";
   }
-  return { url, load, onRedraw: (f) => (redraw = f), get size() { return st.size; } };
+  // Resolves when every picture started so far has loaded or failed; onProgress(0..1)
+  function settled(onProgress) {
+    const all = [...st.values()];
+    let n = 0;
+    if (!all.length) { if (onProgress) onProgress(1); return Promise.resolve(); }
+    return Promise.all(all.map((e) => e.p.then(() => { n++; if (onProgress) onProgress(n / all.length); })));
+  }
+  return { url, load, settled, onRedraw: (f) => (redraw = f), get size() { return st.size; } };
 })();
+// Loading screen while the table's pictures load (1–5 s, see loader.js), then the table appears complete
+async function loadingTable(msg) {
+  const hide = Loader.show(msg);
+  try {
+    preloadPictures();
+    Loader.progress(0);
+    await Promise.race([Pics.settled((f) => Loader.progress(f)), new Promise((r) => setTimeout(r, 5000))]); // max 5 s
+  } finally { hide(); }
+}
 // Load every picture the game can show: all cards of both players (+ playmats, + online image map)
 function preloadPictures() {
   const S = Game.state();
@@ -111,6 +131,7 @@ function onNet(ev) {
     $("#setup").hidden = true;
     $("#win").hidden = true;
     $("#netLost").hidden = true;
+    loadingTable("Joining the table…");
   } else if (ev.type === "left") {
     if (!ui.online) {                   // still on the setup screen
       netStatus(ONLINE === "host" ? "Opponent left. Waiting for someone to join…" : "Disconnected from the host.");
@@ -152,7 +173,9 @@ async function startHosted() {
   Object.assign(ui, { online: { seat: 0 }, mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   $("#setup").hidden = true;
   Net.startHosted(names, [deck, ui.guest.deck], mats);
+  const loading = loadingTable("Shuffling decks…");
   render();
+  await loading;
 }
 function renderMatPick(seat) {
   const box = document.querySelector(`.matpick[data-seat="${seat}"]`);
@@ -190,7 +213,9 @@ async function startGame() {
     Game.newGame([$("#n1").value.trim() || "Player 1", $("#n2").value.trim() || "Player 2"], decks);
     Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
     $("#setup").hidden = true;
+    const loading = loadingTable("Shuffling decks…");
     render();
+    await loading;
   } catch (e) { toast(e.message); }
 }
 const view = () => (ui.online ? ui.online.seat : ui.hotseat ? ui.shown : Game.state().controller);
@@ -551,6 +576,7 @@ function onAction(a, el) {
         Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
         $("#win").hidden = true;
         Net.rematch();
+        loadingTable("Shuffling decks…");
         return render();
       }
       $("#setup").hidden = false; $("#win").hidden = true; return loadSetup();
@@ -610,4 +636,4 @@ $("#netRetry").addEventListener("click", async () => {
 $("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value.toUpperCase()));
 // Host: every engine change goes to the guest too.
 Game.setOnChange(() => { scheduleRender(); if (ui.online && ONLINE === "host") Net.pushState(); });
-loadSetup();
+Loader.wait(loadSetup());

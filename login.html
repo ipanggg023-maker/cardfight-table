@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="pages.css">
+<script src="js/auth.js"></script>
+<script src="js/loader.js"></script>
 </head>
 <body class="page login">
 <div class="login-grid">
@@ -47,7 +49,6 @@
     </form>
   </section>
 </div>
-<script src="js/auth.js"></script>
 <script>
   const COLORS = [["#5fd0ff", "Sky"], ["#f2b94b", "Gold"], ["#e85d74", "Crimson"], ["#6fd39a", "Jade"], ["#b896ff", "Violet"], ["#e8eef8", "Pearl"]];
   const prev = Auth.get();
@@ -73,7 +74,7 @@
     const name = nameEl.value.trim();
     if (!name) return nameEl.focus();
     Auth.set({ name, color, guest: true, since: (prev && prev.since) || new Date().toISOString() });
-    location.href = "lobby.html";
+    Loader.go("lobby.html");
   });
   paint();
 </script>
