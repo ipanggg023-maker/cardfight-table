@@ -26,16 +26,34 @@ document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click
   if (b.dataset.tab === "decks") renderDecks();
 }));
 
+// ---------- filters (shared by the Cards list and the deck builder) ----------
+const uniq = (key) => [...new Set(cards.map((c) => String(c[key] || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+// Fills a <select> with "All …" + the values found on cards; hides it when there's nothing to pick.
+function fillPick(el, all, key, value) {
+  const vals = uniq(key);
+  el.innerHTML = `<option value="">${esc(all)}</option>` + vals.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  el.value = vals.includes(value) ? value : "";
+  el.hidden = !vals.length;
+  return el.value;
+}
+// f = {q: name text, g: "" | "0".."3" | "o", n: clan/nation, r: race}
+const cardMatches = (c, f) => c.name.toLowerCase().includes((f.q || "").toLowerCase())
+  && (!f.g || (f.g === "o" ? c.type === "order" : c.type !== "order" && c.grade === +f.g))
+  && (!f.n || String(c.nation || "").trim() === f.n)
+  && (!f.r || String(c.race || "").trim() === f.r);
+
 // ---------- card list ----------
 function renderList() {
-  const q = $("#q").value.toLowerCase(), g = $("#qg").value;
-  $("#cardList").innerHTML = cards.filter((c) => c.name.toLowerCase().includes(q) && (!g || (g === "o" ? c.type === "order" : c.type !== "order" && c.grade === +g)))
+  const f = { q: $("#q").value, g: $("#qg").value, n: fillPick($("#qn"), "All clans", "nation", $("#qn").value), r: fillPick($("#qr"), "All races", "race", $("#qr").value) };
+  $("#cardList").innerHTML = cards.filter((c) => cardMatches(c, f))
     .map((c) => `<li data-id="${esc(c.id)}" class="${cur && cur.id === c.id ? "on" : ""}"><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>${esc(c.name)}
       <span class="x">${c.type === "trigger" && !c.trigger ? "⚠" : ""}${c.trigger ? TRIG[c.trigger].icon : ""}${c.sentinel ? "◆" : ""}${(c.abilities || []).length ? "✦" + c.abilities.length : ""}</span></li>`).join("")
     || `<li class="muted">No cards</li>`;
 }
 $("#q").addEventListener("input", renderList);
 $("#qg").addEventListener("change", renderList);
+$("#qn").addEventListener("change", renderList);
+$("#qr").addEventListener("change", renderList);
 $("#cardList").addEventListener("click", (e) => {
   const li = e.target.closest("[data-id]");
   if (!li) return;
@@ -286,9 +304,13 @@ function renderDeckForm() {
   const cnt = {};
   d.main.forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
   const mainCards = d.main.map((id) => ids[id]).filter(Boolean);
-  const q = (d._q || "").toLowerCase();
-  const rideSel = (g) => `<label>Grade ${g} <select data-ride="${g}"><option value="">—</option>${cards.filter((c) => c.grade === g && c.type !== "order")
-    .map((c) => `<option value="${esc(c.id)}" ${d.ride[g] === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>`;
+  const rideSel = (g) => `<label>Grade ${g} <select data-ride="${g}"><option value="">—</option>${cards.filter((c) => c.grade === g && c.type !== "order" && (!poolF.n || String(c.nation || "").trim() === poolF.n || d.ride[g] === c.id))
+    .map((c) => `<option value="${esc(c.id)}" ${d.ride[g] === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
+    <div class="rideface">${ids[d.ride[g]] ? face(ids[d.ride[g]]) : `<div class="ph empty">G${g}</div>`}</div>`;
+  const inDeck = [...new Set(d.main)].map((id) => ids[id]).filter(Boolean)
+    .sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
+  const pool = cards.filter((c) => cardMatches(c, poolF));
+  const scroll = $(".pool.cards") ? $(".pool.cards").scrollTop : 0;
   $("#deckForm").innerHTML = `
     <h2>${esc(d.name)}</h2>
     <div class="fgrid">
@@ -296,7 +318,7 @@ function renderDeckForm() {
       <label class="chk"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (+3 energy each turn, max 10)</label>
     </div>
     <h4>Ride deck</h4>
-    <div class="fgrid">${[0, 1, 2, 3].map(rideSel).join("")}</div>
+    <div class="ridegrid">${[0, 1, 2, 3].map((g) => `<div class="ridecol">${rideSel(g)}</div>`).join("")}</div>
     <div class="stats">
       <span class="pile">Main ${mainCards.length}/50</span>
       <span class="pile">Triggers ${mainCards.filter((c) => c.trigger).length}/16</span>
@@ -306,20 +328,43 @@ function renderDeckForm() {
       <span class="pile">Orders ${mainCards.filter((c) => c.type === "order").length}</span>
     </div>
     ${errs.length ? `<ul class="errs">${errs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="okmsg">✓ Deck is legal</p>`}
-    <input id="poolQ" placeholder="Filter cards…" value="${esc(d._q || "")}">
-    <div class="pool">${cards.filter((c) => c.name.toLowerCase().includes(q)).map((c) => `<div class="pc"><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
-      <span class="n" title="${esc(c.name)}">${esc(c.name)} ${c.trigger ? TRIG[c.trigger].icon : ""}${c.sentinel ? "◆" : ""}</span>
-      <button data-dk="-" data-id="${esc(c.id)}">−</button><b>${cnt[c.id] || 0}</b><button data-dk="+" data-id="${esc(c.id)}">+</button></div>`).join("")}</div>
-    <div class="btnrow"><button id="saveDeck" class="go">Save deck</button><button id="delDeck" class="del">Delete deck</button></div>`;
+    <div class="btnrow"><button id="saveDeck" class="go">Save deck</button><button id="delDeck" class="del">Delete deck</button></div>
+    <h4>In this deck (${d.main.length})</h4>
+    <div class="pool deck">${inDeck.map((c) => tile(c, cnt[c.id])).join("") || `<p class="muted">Empty. Add cards from the list below with +.</p>`}</div>
+    <h4>Your cards (${pool.length})</h4>
+    <div class="tools">
+      <input id="poolQ" placeholder="Search name…" value="${esc(poolF.q)}">
+      <select id="poolG"><option value="">All grades</option>${["0", "1", "2", "3"].map((g) => `<option ${poolF.g === g ? "selected" : ""}>${g}</option>`).join("")}<option value="o" ${poolF.g === "o" ? "selected" : ""}>Orders</option></select>
+      <select id="poolN" title="Clan / nation"></select>
+      <select id="poolR" title="Race"></select>
+    </div>
+    <div class="pool cards">${pool.map((c) => tile(c, cnt[c.id] || 0)).join("") || `<p class="muted">No cards match. Create cards in the Cards tab.</p>`}</div>`;
+  poolF.n = fillPick($("#poolN"), "All clans", "nation", poolF.n);
+  poolF.r = fillPick($("#poolR"), "All races", "race", poolF.r);
+  $(".pool.cards").scrollTop = scroll;
 }
+// Deck builder filters, kept while switching decks
+const poolF = { q: "", g: "", n: "", r: "" };
+const hueOf = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
+// Card face: the picture, or a coloured placeholder with grade, name and power
+const face = (c) => c.image
+  ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy">`
+  : `<div class="ph" style="--h:${hueOf(c.nation)}"><b>${c.type === "order" ? "ORDER" : "G" + c.grade}</b><span>${esc(c.name)}</span>${c.type !== "order" ? `<small>${(c.power || 0).toLocaleString("en-US")}</small>` : ""}</div>`;
+const tile = (c, n) => `<div class="tc${n ? " in" : ""}" title="${esc(c.name)}${c.nation ? " · " + esc(c.nation) : ""}">
+    <div class="face">${face(c)}${c.trigger ? `<span class="tg">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="tg">◆</span>` : ""}</div>
+    <div class="tn">${esc(c.name)}</div>
+    <div class="tb"><button data-dk="-" data-id="${esc(c.id)}" aria-label="Remove one">−</button><b>${n || 0}</b><button data-dk="+" data-id="${esc(c.id)}" aria-label="Add one">+</button></div>
+  </div>`;
 $("#deckForm").addEventListener("input", (e) => {
   if (!curDeck) return;
   if (e.target.id === "deckName") curDeck.name = e.target.value;
-  if (e.target.id === "poolQ") { curDeck._q = e.target.value; renderDeckForm(); const el = $("#poolQ"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  if (e.target.id === "poolQ") { poolF.q = e.target.value; renderDeckForm(); const el = $("#poolQ"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
 });
 $("#deckForm").addEventListener("change", (e) => {
   if (!curDeck) return;
   if (e.target.id === "deckEnergy") curDeck.energy = e.target.checked;
+  const pf = { poolG: "g", poolN: "n", poolR: "r" }[e.target.id];
+  if (pf) { poolF[pf] = e.target.value; renderDeckForm(); }
   if (e.target.dataset.ride !== undefined) { curDeck.ride[+e.target.dataset.ride] = e.target.value; renderDeckForm(); }
 });
 $("#deckForm").addEventListener("click", async (e) => {
@@ -693,7 +738,7 @@ $("#picFolder").addEventListener("change", async (e) => {
 window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 (async () => {
-  await DB.seedIfEmpty();
+  await DB.removeSamples();
   await reload();
   renderList();
   renderCard();

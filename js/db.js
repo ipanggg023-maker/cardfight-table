@@ -28,11 +28,14 @@ const DB = (() => {
   const clear = (s) => tx(s, "readwrite", (o) => o.clear());
   const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  async function seedIfEmpty() {
-    if ((await all("cards")).length) return;
-    const { cards, decks } = seedData();
-    for (const c of cards) await put("cards", c);
-    for (const d of decks) await put("decks", d);
+  // Older versions added two sample decks (card ids "flame-N"/"star-N", decks "deck-flame"/"deck-star").
+  // Remove them once per browser; after that the database only holds the user's own cards.
+  async function removeSamples() {
+    try { if (localStorage.getItem("vt-samples-removed")) return; } catch { return; }
+    const sample = /^(flame|star)-\d+$/;
+    for (const c of await all("cards")) if (sample.test(c.id)) await del("cards", c.id);
+    for (const d of await all("decks")) if (d.id === "deck-flame" || d.id === "deck-star") await del("decks", d.id);
+    try { localStorage.setItem("vt-samples-removed", "1"); } catch {}
   }
   async function exportAll() {
     return { app: "vanguard-table", version: 1, cards: await all("cards"), decks: await all("decks") };
@@ -53,7 +56,7 @@ const DB = (() => {
     if (missing) throw new Error(`${missing} card(s) in this deck were deleted`);
     return { name: deck.name, energy: deck.energy, ride: deck.ride.map(get), main: deck.main.map(get) };
   }
-  return { all, put, del, newId, seedIfEmpty, exportAll, importAll, loadDeck };
+  return { all, put, del, newId, removeSamples, exportAll, importAll, loadDeck };
 })();
 
 // Deck rule check, shared by editor and game setup

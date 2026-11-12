@@ -74,7 +74,7 @@
   document.getElementById("rulesTile").addEventListener("click", () => (document.getElementById("rules").open = true));
   const hue = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
   (async () => {
-    await DB.seedIfEmpty();
+    await DB.removeSamples();
     const decks = await DB.all("decks");
     const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
     const box = document.getElementById("deckList");

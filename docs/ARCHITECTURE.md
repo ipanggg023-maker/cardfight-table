@@ -13,7 +13,7 @@ Every page loads `js/auth.js` in `<head>` (guest login + `Skin` + `Auth.require(
 | File | Role | Depends on |
 |---|---|---|
 | `js/auth.js` | Guest user (`vt-user`), user chip, `Skin` (playmat look on/off) | – |
-| `js/cards.js` | `TRIG` trigger table, `seedData()` sample decks | – |
+| `js/cards.js` | `TRIG` trigger table | – |
 | `js/schema.js` | Ability DSL: `SCHEMA.kinds/zones/events/conds/costs/effects`, `TARGETS`, `describeAbility()` | – |
 | `js/db.js` | IndexedDB `vanguard-table` (stores `cards`, `decks`), export/import, `loadDeck()`, `validateDeck()` | cards |
 | `js/engine.js` | Rules engine `Game` (no DOM). Phases, battle, triggers, abilities, choices | schema |

@@ -21,4 +21,4 @@ reply to me in English, commit after each working step.
 ## Testing tips for Claude Code
 - Engine actions are async and may wait on `S.pending`; in Playwright call them with `void Game.x(...)` then answer pending choices in a loop.
 - `Game` is a top-level `const`, so check `typeof Game !== "undefined"` instead of `window.Game`.
-- Card art is not in the repo. Sample decks (Flame Dragons, Starlight Knights) work without images.
+- Card art is not in the repo and there are no sample decks: make test cards/decks in the editor (or import a backup .json).

@@ -6,7 +6,7 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Guest login, lobby, sign-out
 - Hot-seat game: mulligan, ride (ride deck / hand), call, move, orders (normal 1/turn, blitz), battle, boost, drive check, triggers (crit/front/draw/heal/over), guard, intercept, sentinel, damage check, counter-blast, energy, win/lose
 - Ability engine (AUTO/ACT/CONT/ORDER/BLITZ) built from editor blocks
-- Card editor, deck builder with rule checker, export/import, CSV import, text → ability parser
+- Card editor (clan/race filters), deck builder with card pictures + clan/race/grade filters and rule checker, export/import, CSV import, text → ability parser
 - Card library import (CGS GitHub data, 21k cards), tcgapi.dev import (needs key + relay)
 - Local pictures: `vanguard_images` (Edit.py) + "Link pictures" folder matcher
 - Playmats per player (Classic / overDress Red / Blue / custom upload), DD2-style HUD, phase banner

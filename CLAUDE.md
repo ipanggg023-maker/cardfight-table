@@ -43,7 +43,7 @@ CSS: "HUD layout v3" blocks at the end of style.css. Card size scales with the s
 - CSS for the skin is the "playmat skin" block at the end of style.css (`.slot::before` circles, `.center::before` ellipse, `.vg-banner`).
 
 ## Files
-- `js/cards.js` — `TRIG` trigger definitions + `seedData()` sample cards (only used when the DB is empty)
+- `js/cards.js` — `TRIG` trigger definitions. No sample cards: `DB.removeSamples()` deletes the old sample decks once per browser (flag `vt-samples-removed`)
 - `js/schema.js` — ability building blocks: `SCHEMA.kinds/zones/events/conds/costs/effects`, `TARGETS`, `describeAbility()`
 - `js/db.js` — IndexedDB store `vanguard-table` (stores `cards`, `decks`), export/import, `loadDeck()`, `validateDeck()`
 - `js/engine.js` — rules engine `Game`. No DOM. All actions are async and wrapped in `run()`

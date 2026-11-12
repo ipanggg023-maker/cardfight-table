@@ -14,13 +14,13 @@ const myMove = () => !ui.online || Game.state().controller === ui.online.seat;
 
 // ---------- setup ----------
 async function loadSetup() {
-  await DB.seedIfEmpty();
+  await DB.removeSamples();
   const decks = await DB.all("decks");
   const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
   const opts = decks.map((d) => {
     const bad = validateDeck(d, byId);
     return `<option value="${esc(d.id)}">${esc(d.name)}${bad.length ? " ⚠ " + esc(bad[0]) : ""}</option>`;
-  }).join("");
+  }).join("") || `<option value="">No decks yet: build one in the editor</option>`;
   $("#d1").innerHTML = opts;
   const me = typeof Auth !== "undefined" && Auth.get();
   if (me) { $("#n1").value = me.name; if (me.lastP2) $("#n2").value = me.lastP2; }
@@ -128,6 +128,7 @@ document.addEventListener("change", async (e) => {
   catch (err) { toast(err.message); }
 });
 async function startGame() {
+  if (!$("#d1").value) return toast("Build a deck in the Card & deck editor first");
   if (ONLINE === "join") return joinOnline();
   if (ONLINE === "host") return startHosted().catch((e) => toast(e.message));
   if (typeof Auth !== "undefined" && Auth.get()) Auth.set({ ...Auth.get(), lastP2: $("#n2").value.trim() });
