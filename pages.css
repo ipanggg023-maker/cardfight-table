@@ -204,3 +204,36 @@ button.danger { border-color: var(--red); color: var(--red); }
 }
 @media (prefers-reduced-motion: reduce) { .pk { animation: none; } .pk-in { transition: none; } }
 .tile[hidden] { display: none; }
+
+/* ---------- Admin (admin.html) ---------- */
+.admin-split { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.atable-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.atable { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.atable th { text-align: left; font: 600 .72rem var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px; background: var(--mat2); position: sticky; top: 0; }
+.atable td { padding: 9px 10px; border-top: 1px solid #1f3554; vertical-align: top; }
+.atable .num { text-align: right; white-space: nowrap; }
+.atable .small { font-size: .78rem; }
+.atable tbody tr[data-uid] { cursor: pointer; }
+.atable tbody tr[data-uid]:hover { background: #ffffff08; }
+.atable tbody tr.on { background: #f2b94b14; box-shadow: inset 3px 0 var(--gold); }
+.atable tr.banned td { opacity: .6; }
+.who-mini { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.who-mini i { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; }
+.role, .st { display: inline-block; font: 600 .72rem var(--display); padding: 2px 8px; border-radius: 6px; background: #5d759844; white-space: nowrap; }
+.role.r-admin { background: #f2b94b33; color: var(--gold); }
+.role.r-banned, .st-mismatch { background: #e85d7433; color: #ffb3c0; }
+.st-paid { background: #6fd39a33; color: var(--green); }
+.st-waiting { background: #5fd0ff22; color: var(--cyan); }
+.adetail { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.adetail h3 { margin: 16px 0 6px; }
+.ad-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 1.1rem; }
+.ad-sub { margin: 4px 0 0; font-size: .82rem; word-break: break-all; }
+.adetail .give-row input { flex: 1; min-width: 0; }
+.adetail .give-row input[type=number] { flex: 0 0 90px; }
+.ad-found { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.ad-found button { font-size: .75rem; padding: 4px 8px; }
+.ad-owned { display: grid; gap: 2px; font-size: .8rem; max-height: 320px; overflow-y: auto; }
+.ad-owned div { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 2px 0; border-bottom: 1px solid #1f3554; }
+.ad-owned b { color: var(--gold); }
+.ad-owned button { padding: 1px 6px; font-size: .72rem; }
+@media (max-width: 980px) { .admin-split { grid-template-columns: 1fr; } .adetail { position: static; max-height: none; } }

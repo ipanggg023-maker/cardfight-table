@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanguard Table · Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="pages.css">
+<script src="js/auth.js"></script>
+<script src="js/loader.js"></script>
+<script>if (Auth.require() && !Auth.isAdmin()) location.replace("lobby.html");</script>
+</head>
+<body class="page store admin">
+<header class="topbar">
+  <a class="brand small" href="lobby.html"><svg width="30" height="30" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 3L53 28L28 53L3 28Z" fill="none" stroke="#f2b94b" stroke-width="4"/><path d="M28 15L41 28L28 41L15 28Z" fill="#f2b94b"/></svg><span>Vanguard Table · Admin</span></a>
+  <nav class="stabs" role="tablist">
+    <button data-atab="players" class="on">Players</button>
+    <button data-atab="matches">Matches</button>
+    <button data-atab="packs">Packs</button>
+    <button data-atab="log">Admin log</button>
+    <a href="store.html" class="playlink">Store</a>
+    <a href="lobby.html" class="playlink">← Lobby</a>
+  </nav>
+  <div class="userchip" data-userchip></div>
+</header>
+
+<main class="store-main">
+  <section id="a-players" class="atab">
+    <div class="store-head"><h1>Players</h1><span class="muted" id="pCount"></span></div>
+    <div class="mine-tools">
+      <input id="pQ" placeholder="Search name or email" autocomplete="off">
+      <select id="pRole"><option value="">Everyone</option><option value="admin">Admins</option><option value="player">Players</option><option value="banned">Banned</option></select>
+      <button id="pReload">↻ Reload</button>
+    </div>
+    <div class="admin-split">
+      <div class="atable-wrap"><table class="atable" id="pTable"></table></div>
+      <aside id="pDetail" class="box-edit adetail"><p class="muted">Click a player to manage them.</p></aside>
+    </div>
+  </section>
+
+  <section id="a-matches" class="atab" hidden>
+    <div class="store-head"><h1>Matches</h1><span class="muted">Last 200 online matches</span></div>
+    <div class="atable-wrap"><table class="atable" id="mTable"></table></div>
+  </section>
+
+  <section id="a-packs" class="atab" hidden>
+    <div class="store-head"><h1>Packs opened</h1><span class="muted">Last 200 packs</span></div>
+    <div class="atable-wrap"><table class="atable" id="kTable"></table></div>
+  </section>
+
+  <section id="a-log" class="atab" hidden>
+    <div class="store-head"><h1>Admin log</h1><span class="muted">Every admin action, newest first</span></div>
+    <div class="atable-wrap"><table class="atable" id="lTable"></table></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/cards.js"></script>
+<script src="js/formats.js"></script>
+<script src="js/db.js"></script>
+<script src="js/admin.js"></script>
+<script>mountUserChip();</script>
+</body>
+</html>
