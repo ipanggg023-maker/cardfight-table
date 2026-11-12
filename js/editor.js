@@ -3,6 +3,43 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 let cards = [], decks = [], cur = null, curDeck = null, dirty = false;
+
+// ---------- card pictures ----------
+// Grids use imgTag() instead of <img loading="lazy">: native lazy loading sometimes never starts
+// (pictures stayed blank in the Card library). Pictures load 8 at a time in page order, try the
+// fallback address if the first one fails (local vanguard_images ↔ web), retry once, then show the name.
+const imgTag = (src, fallback = "", alt = "") => src || fallback
+  ? `<img data-src="${esc(src || fallback)}" data-fb="${esc(src ? fallback : "")}" alt="${esc(alt)}" referrerpolicy="no-referrer">`
+  : `<div class="noimg">${esc(alt || "No image")}</div>`;
+const imgQ = [];
+let imgBusy = 0;
+function pumpImages() {
+  while (imgBusy < 8 && imgQ.length) {
+    const img = imgQ.shift();
+    if (!img.isConnected || !img.dataset.src) continue;
+    const src = img.dataset.src;
+    img.removeAttribute("data-src");
+    imgBusy++;
+    const done = () => { img.onload = img.onerror = null; imgBusy--; pumpImages(); };
+    img.onload = done;
+    img.onerror = () => {
+      if (img.dataset.fb) { const fb = img.dataset.fb; img.dataset.fb = ""; img.src = fb; return; }
+      if (!img.dataset.retry) { img.dataset.retry = "1"; const s = img.src; setTimeout(() => { img.src = s + (s.includes("?") ? "&" : "?") + "r=1"; }, 1500); return; }
+      const ph = document.createElement("div");
+      ph.className = "noimg";
+      ph.textContent = img.alt || "Picture not found";
+      img.replaceWith(ph);
+      done();
+    };
+    img.src = src;
+  }
+}
+new MutationObserver(() => {
+  const found = document.querySelectorAll("img[data-src]:not([data-q])");
+  if (!found.length) return;
+  found.forEach((img) => { img.dataset.q = "1"; imgQ.push(img); });
+  pumpImages();
+}).observe(document.body, { childList: true, subtree: true });
 const byId = () => Object.fromEntries(cards.map((c) => [c.id, c]));
 
 let toastT;
@@ -305,9 +342,12 @@ function renderDeckForm() {
   const cnt = {};
   d.main.forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
   const mainCards = d.main.map((id) => ids[id]).filter(Boolean);
-  const rideSel = (g) => `<label>Grade ${g} <select data-ride="${g}"><option value="">—</option>${cards.filter((c) => c.grade === g && c.type !== "order" && (!poolF.n || String(c.nation || "").trim() === poolF.n || d.ride[g] === c.id))
-    .map((c) => `<option value="${esc(c.id)}" ${d.ride[g] === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
-    <div class="rideface">${ids[d.ride[g]] ? face(ids[d.ride[g]]) : `<div class="ph empty">G${g}</div>`}</div>`;
+  // Each ride slot is a button: click → big picture picker with search
+  const rideSel = (g) => {
+    const c = ids[d.ride[g]];
+    return `<button type="button" class="ridepick" data-ride="${g}" title="Click to choose"><span class="rl">Grade ${g}</span>
+      <div class="rideface">${c ? face(c) : `<div class="ph empty">＋ G${g}</div>`}</div><span class="tn">${c ? esc(c.name) : "Click to choose"}</span></button>`;
+  };
   const inDeck = [...new Set(d.main)].map((id) => ids[id]).filter(Boolean)
     .sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
   const pool = cards.filter((c) => cardMatches(c, poolF));
@@ -319,7 +359,7 @@ function renderDeckForm() {
       <label class="chk"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (+3 energy each turn, max 10)</label>
     </div>
     <h4>Ride deck</h4>
-    <div class="ridegrid">${[0, 1, 2, 3].map((g) => `<div class="ridecol">${rideSel(g)}</div>`).join("")}</div>
+    <div class="ridegrid">${[0, 1, 2, 3].map(rideSel).join("")}</div>
     <div class="stats">
       <span class="pile">Main ${mainCards.length}/50</span>
       <span class="pile">Triggers ${mainCards.filter((c) => c.trigger).length}/16</span>
@@ -349,7 +389,7 @@ const poolF = { q: "", g: "", n: "", r: "" };
 const hueOf = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
 // Card face: the picture, or a coloured placeholder with grade, name and power
 const face = (c) => c.image
-  ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy">`
+  ? imgTag(c.image, c.source && c.source.imageWeb !== c.image ? c.source.imageWeb || "" : "", c.name)
   : `<div class="ph" style="--h:${hueOf(c.nation)}"><b>${c.type === "order" ? "ORDER" : "G" + c.grade}</b><span>${esc(c.name)}</span>${c.type !== "order" ? `<small>${(c.power || 0).toLocaleString("en-US")}</small>` : ""}</div>`;
 const tile = (c, n) => `<div class="tc${n ? " in" : ""}" title="${esc(c.name)}${c.nation ? " · " + esc(c.nation) : ""}">
     <div class="face">${face(c)}${c.trigger ? `<span class="tg">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="tg">◆</span>` : ""}</div>
@@ -366,11 +406,18 @@ $("#deckForm").addEventListener("change", (e) => {
   if (e.target.id === "deckEnergy") curDeck.energy = e.target.checked;
   const pf = { poolG: "g", poolN: "n", poolR: "r" }[e.target.id];
   if (pf) { poolF[pf] = e.target.value; renderDeckForm(); }
-  if (e.target.dataset.ride !== undefined) { curDeck.ride[+e.target.dataset.ride] = e.target.value; renderDeckForm(); }
 });
 $("#deckForm").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b || !curDeck) return;
+  if (b.dataset.ride !== undefined) {
+    const g = +b.dataset.ride, deck = curDeck;
+    const others = deck.ride.filter((id, i) => id && i !== g).map((id) => byId()[id]).filter(Boolean);
+    const c = await pickCard({ title: `Ride deck · grade ${g}`, list: rideChoices(g), clan: poolF.n || (others[0] ? clanOf(others[0]) : ""), current: deck.ride[g], allowClear: !!deck.ride[g] });
+    if (c === undefined || curDeck !== deck) return;
+    deck.ride[g] = c ? c.id : "";
+    return renderDeckForm();
+  }
   if (b.dataset.dk === "+") { curDeck.main.push(b.dataset.id); return renderDeckForm(); }
   if (b.dataset.dk === "-") { const i = curDeck.main.lastIndexOf(b.dataset.id); if (i >= 0) curDeck.main.splice(i, 1); return renderDeckForm(); }
   if (b.id === "saveDeck") {
@@ -388,16 +435,93 @@ $("#deckForm").addEventListener("click", async (e) => {
   }
 });
 
+// ---------- card picker: big window with pictures + search ----------
+// pickCard({title, list, clan, current}) → Promise<card | null | undefined>  (null = "clear", undefined = closed)
+const picker = { list: [], resolve: null, q: "", n: "" };
+function pickCard({ title, list, clan = "", current = "", allowClear = false }) {
+  Object.assign(picker, { list, q: "", n: list.some((c) => clanOf(c) === clan) ? clan : "", current, allowClear });
+  $("#pickTitle").textContent = title;
+  $("#pickQ").value = "";
+  const clans = [...new Set(list.map(clanOf).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  $("#pickN").innerHTML = `<option value="">All clans</option>` + clans.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  $("#pickN").value = picker.n;
+  $("#pickN").hidden = clans.length < 2;
+  $("#pickClear").hidden = !allowClear;
+  renderPicker();
+  $("#picker").hidden = false;
+  setTimeout(() => $("#pickQ").focus(), 0);
+  return new Promise((res) => (picker.resolve = res));
+}
+function renderPicker() {
+  const q = picker.q.toLowerCase();
+  const shown = picker.list.filter((c) => (!picker.n || clanOf(c) === picker.n)
+    && (!q || `${c.name} ${c.text || ""} ${c.race || ""}`.toLowerCase().includes(q)));
+  $("#pickCount").textContent = `${shown.length} card${shown.length === 1 ? "" : "s"}`;
+  $("#pickGrid").innerHTML = shown.slice(0, 300).map((c) => `<button type="button" class="tc pickv${c.id === picker.current ? " in" : ""}" data-pick="${esc(c.id)}" title="${esc(c.name)}">
+      <div class="face">${face(c)}${c.trigger ? `<span class="tg">${TRIG[c.trigger].icon}</span>` : ""}</div><div class="tn">${esc(c.name)}</div></button>`).join("")
+    || `<p class="muted">No cards match.</p>`;
+}
+function closePicker(result) {
+  $("#picker").hidden = true;
+  const r = picker.resolve;
+  picker.resolve = null;
+  if (r) r(result);
+}
+$("#pickQ").addEventListener("input", (e) => { picker.q = e.target.value; renderPicker(); });
+$("#pickN").addEventListener("change", (e) => { picker.n = e.target.value; renderPicker(); });
+$("#pickGrid").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]");
+  if (b) closePicker(picker.list.find((c) => c.id === b.dataset.pick));
+});
+$("#pickQ").addEventListener("keydown", (e) => { // Enter picks the first match
+  if (e.key === "Enter") { const b = $("#pickGrid [data-pick]"); if (b) b.click(); }
+});
+$("#pickClose").addEventListener("click", () => closePicker(undefined));
+$("#pickClear").addEventListener("click", () => closePicker(null));
+$("#picker").addEventListener("click", (e) => { if (e.target.id === "picker") closePicker(undefined); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#picker").hidden) closePicker(undefined); });
+// Cards that can go in ride deck slot g (grade 0 may also be a trigger)
+const rideChoices = (g) => cards.filter((c) => c.grade === g && (c.type === "unit" || (g === 0 && c.type === "trigger")));
+
 // ---------- quick deck: builds a legal deck from your own cards of one clan ----------
 const TRIG_MIX = {
-  balanced: { label: "Balanced · 8 Critical, 4 Draw, 4 Heal", want: { crit: 8, draw: 4, heal: 4 } },
-  crit: { label: "Aggressive · 12 Critical, 4 Heal", want: { crit: 12, heal: 4 } },
-  draw: { label: "Card advantage · 4 Critical, 8 Draw, 4 Heal", want: { crit: 4, draw: 8, heal: 4 } },
-  front: { label: "Front row · 4 Critical, 8 Front, 4 Heal", want: { crit: 4, front: 8, heal: 4 } },
+  balanced: { label: "Balanced", sub: "8 Critical · 4 Draw · 4 Heal", want: { crit: 8, draw: 4, heal: 4 } },
+  crit: { label: "Aggressive", sub: "12 Critical · 4 Heal", want: { crit: 12, heal: 4 } },
+  draw: { label: "Card advantage", sub: "4 Critical · 8 Draw · 4 Heal", want: { crit: 4, draw: 8, heal: 4 } },
+  front: { label: "Front row", sub: "4 Critical · 8 Front · 4 Heal", want: { crit: 4, front: 8, heal: 4 } },
 };
-// Non-trigger part of the main deck (34 cards): grade 1 incl. sentinels, grade 2, grade 3 incl. 3 more copies of the vanguard
-const QUICK_GRADES = { 1: 14, 2: 12, 3: 8 };
-const quick = { open: false, n: "", v: "", mix: "balanced", over: true, energy: true };
+// Option menus. Each preset fills them in; you can change any of them afterwards.
+const QUICK_OPTS = {
+  grades: { label: "Grade split (34 non-trigger cards)", items: {
+    std: { label: "Standard", sub: "G1 14 · G2 12 · G3 8", v: [14, 12, 8] },
+    low: { label: "Low grades", sub: "G1 16 · G2 12 · G3 6", v: [16, 12, 6] },
+    mid: { label: "Grade 2 heavy", sub: "G1 13 · G2 15 · G3 6", v: [13, 15, 6] },
+    high: { label: "Grade 3 heavy", sub: "G1 12 · G2 12 · G3 10", v: [12, 12, 10] },
+  } },
+  sent: { label: "Sentinels (perfect guards)", items: {
+    4: { label: "4", sub: "Safest" }, 2: { label: "2", sub: "Some" }, 0: { label: "None", sub: "More attackers" },
+  } },
+  prio: { label: "Pick cards with", items: {
+    abil: { label: "Most abilities", sub: "Skills first" },
+    link: { label: "Vanguard support", sub: "Cards that name your vanguard" },
+    power: { label: "High power", sub: "Hit harder" },
+    shield: { label: "High shield", sub: "Guard better" },
+  } },
+  copies: { label: "Copies of each card", items: {
+    4: { label: "4 each", sub: "Most consistent" }, 3: { label: "3 each", sub: "Mix" }, 2: { label: "2 each", sub: "Most variety" },
+  } },
+  orders: { label: "Order cards", items: {
+    0: { label: "None", sub: "" }, 2: { label: "Up to 2", sub: "" }, 4: { label: "Up to 4", sub: "" },
+  } },
+};
+const QUICK_PRESETS = {
+  standard: { label: "Standard", sub: "Solid, all-round deck", o: { mix: "balanced", grades: "std", sent: "4", prio: "abil", copies: "4", orders: "0" } },
+  rush: { label: "Rush", sub: "Many attackers, high power", o: { mix: "crit", grades: "low", sent: "2", prio: "power", copies: "4", orders: "0" } },
+  defend: { label: "Defensive", sub: "Big shields, draws, sentinels", o: { mix: "draw", grades: "std", sent: "4", prio: "shield", copies: "4", orders: "2" } },
+  combo: { label: "Vanguard combo", sub: "Cards that support your vanguard", o: { mix: "balanced", grades: "high", sent: "4", prio: "link", copies: "4", orders: "2" } },
+  variety: { label: "Variety", sub: "Many different cards", o: { mix: "balanced", grades: "std", sent: "4", prio: "abil", copies: "2", orders: "4" } },
+};
+const quick = { open: false, n: "", v: "", preset: "standard", over: true, energy: true, rideAuto: true, ride: ["", "", ""], ...QUICK_PRESETS.standard.o };
 const clanOf = (c) => String(c.nation || "").trim();
 $("#quickDeck").addEventListener("click", () => {
   if (dirty && !window.confirm("Discard unsaved changes?")) return;
@@ -405,6 +529,9 @@ $("#quickDeck").addEventListener("click", () => {
   quick.open = true;
   renderDecks();
 });
+
+const chips = (name, items, value) => `<div class="chips-row" data-opt="${name}">${Object.entries(items).map(([k, it]) =>
+  `<button type="button" class="chipbtn${String(value) === k ? " on" : ""}" data-val="${esc(k)}"><b>${esc(it.label)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ""}</button>`).join("")}</div>`;
 
 function renderQuick() {
   const clans = uniq("nation").map((n) => {
@@ -415,37 +542,81 @@ function renderQuick() {
     $("#deckForm").innerHTML = `<h2>✨ Quick deck</h2><p class="muted">No clan has a grade 3 unit yet. Import cards from the Card library, or fill in "Nation / clan" on your cards.</p>`;
     return;
   }
-  if (!clans.some((c) => c.n === quick.n)) quick.n = clans[0].n;
-  const g3s = quickScore(cards.filter((c) => clanOf(c) === quick.n && c.type === "unit" && c.grade === 3), null);
+  if (!clans.some((c) => c.n === quick.n)) { quick.n = clans[0].n; quick.ride = ["", "", ""]; }
+  const g3s = quickScore(cards.filter((c) => clanOf(c) === quick.n && c.type === "unit" && c.grade === 3), null, "abil");
   if (!g3s.some((c) => c.id === quick.v)) quick.v = g3s[0] ? g3s[0].id : "";
+  const v = cards.find((c) => c.id === quick.v);
+  const autoRide = v ? quickRide(quick, v) : [];
+  const rideSlot = (g) => {
+    const c = cards.find((x) => x.id === (quick.rideAuto ? (autoRide[g] || {}).id : quick.ride[g])) || null;
+    return `<button type="button" class="ridepick" data-qride="${g}" ${quick.rideAuto ? "disabled" : ""}><span class="rl">Grade ${g}</span>
+      <div class="rideface">${c ? face(c) : `<div class="ph empty">G${g}</div>`}</div><span class="tn">${c ? esc(c.name) : "Pick a card"}</span></button>`;
+  };
   $("#deckForm").innerHTML = `<div id="quick" class="quick">
     <h2>✨ Quick deck</h2>
-    <p class="muted">Pick a clan and a grade 3 vanguard. A legal deck (ride deck 4 + main deck 50) is built from <b>your own cards</b>.
-      It opens in the deck builder so you can change anything before you press Save.</p>
-    <div class="fgrid">
-      <label>Clan <select id="qkClan">${clans.map((c) => `<option value="${esc(c.n)}" ${c.n === quick.n ? "selected" : ""}>${esc(c.n)} · ${c.units} units, ${c.trig} triggers</option>`).join("")}</select></label>
-      <label>Triggers <select id="qkMix">${Object.entries(TRIG_MIX).map(([k, m]) => `<option value="${k}" ${k === quick.mix ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select></label>
+    <p class="muted">Choose how you want the deck built. Everything comes from <b>your own cards</b>, and the result opens in the deck builder so you can still change it before you press Save.</p>
+
+    <h4>1 · Clan</h4>
+    <div class="fgrid"><label>Clan <select id="qkClan">${clans.map((c) => `<option value="${esc(c.n)}" ${c.n === quick.n ? "selected" : ""}>${esc(c.n)} · ${c.units} units, ${c.trig} triggers</option>`).join("")}</select></label></div>
+
+    <h4>2 · Vanguard (${g3s.length})</h4>
+    <div class="pool deck vpick">${g3s.map((c) => `<button type="button" class="tc pickv${c.id === quick.v ? " in" : ""}" data-v="${esc(c.id)}" title="${esc(c.name)}">
+      <div class="face">${face(c)}</div><div class="tn">${esc(c.name)}</div></button>`).join("")}</div>
+
+    <h4>3 · Deck style</h4>
+    <div class="chips-row" data-preset>${Object.entries(QUICK_PRESETS).map(([k, p]) =>
+      `<button type="button" class="chipbtn big${quick.preset === k ? " on" : ""}" data-val="${k}"><b>${esc(p.label)}</b><small>${esc(p.sub)}</small></button>`).join("")}</div>
+
+    <details class="qkmore" ${quick.preset === "custom" ? "open" : ""}>
+      <summary>Fine-tune (changes the style to Custom)</summary>
+      <div class="qkopt"><span>Triggers</span>${chips("mix", TRIG_MIX, quick.mix)}</div>
+      ${Object.entries(QUICK_OPTS).map(([k, o]) => `<div class="qkopt"><span>${esc(o.label)}</span>${chips(k, o.items, quick[k])}</div>`).join("")}
+      <label class="chk"><input type="checkbox" id="qkOver" ${quick.over ? "checked" : ""}> Add 1 Over trigger if this clan has one (instead of 1 Critical)</label>
+      <label class="chk"><input type="checkbox" id="qkEnergy" ${quick.energy ? "checked" : ""}> Energy Generator crest</label>
+    </details>
+
+    <h4>4 · Ride deck</h4>
+    <div class="chips-row" data-rideauto>
+      <button type="button" class="chipbtn${quick.rideAuto ? " on" : ""}" data-val="1"><b>Auto</b><small>Best fit for your vanguard</small></button>
+      <button type="button" class="chipbtn${quick.rideAuto ? "" : " on"}" data-val="0"><b>I'll choose</b><small>Click a slot to pick</small></button>
     </div>
-    <label class="chk"><input type="checkbox" id="qkOver" ${quick.over ? "checked" : ""}> Add 1 Over trigger if this clan has one (instead of 1 Critical)</label>
-    <label class="chk"><input type="checkbox" id="qkEnergy" ${quick.energy ? "checked" : ""}> Energy Generator crest</label>
-    <h4>Choose your vanguard (${g3s.length})</h4>
-    <div class="pool deck">${g3s.map((c) => `<button type="button" class="tc pickv${c.id === quick.v ? " in" : ""}" data-v="${esc(c.id)}" title="${esc(c.name)}">
-      <div class="face">${face(c)}</div><div class="tn">${esc(c.name)}</div></button>`).join("") || `<p class="muted">No grade 3 units in this clan.</p>`}</div>
+    <div class="ridegrid">${[0, 1, 2].map(rideSlot).join("")}
+      <div class="ridepick" aria-disabled="true"><span class="rl">Grade 3</span><div class="rideface">${v ? face(v) : `<div class="ph empty">G3</div>`}</div><span class="tn">${v ? esc(v.name) : ""}</span></div></div>
+
     <div class="btnrow"><button id="qkBuild" class="go" ${quick.v ? "" : "disabled"}>Build deck</button><button id="qkCancel">Cancel</button></div>
   </div>`;
 }
 $("#deckForm").addEventListener("change", (e) => {
   if (!e.target.closest("#quick")) return;
   const id = e.target.id;
-  if (id === "qkClan") { quick.n = e.target.value; quick.v = ""; renderQuick(); }
-  if (id === "qkMix") quick.mix = e.target.value;
+  if (id === "qkClan") { quick.n = e.target.value; quick.v = ""; quick.ride = ["", "", ""]; renderQuick(); }
   if (id === "qkOver") quick.over = e.target.checked;
   if (id === "qkEnergy") quick.energy = e.target.checked;
 });
-$("#deckForm").addEventListener("click", (e) => {
+$("#deckForm").addEventListener("click", async (e) => {
   if (!e.target.closest("#quick")) return;
   const pv = e.target.closest("[data-v]");
   if (pv) { quick.v = pv.dataset.v; return renderQuick(); }
+  const chip = e.target.closest(".chipbtn");
+  if (chip) {
+    const row = chip.closest(".chips-row"), val = chip.dataset.val;
+    if (row.hasAttribute("data-preset")) Object.assign(quick, { preset: val }, QUICK_PRESETS[val].o);
+    else if (row.hasAttribute("data-rideauto")) {
+      quick.rideAuto = val === "1";
+      if (!quick.rideAuto && !quick.ride.some(Boolean)) { const v = cards.find((c) => c.id === quick.v); if (v) quick.ride = quickRide(quick, v).map((c) => (c ? c.id : "")); }
+    } else { quick[row.dataset.opt] = val; quick.preset = "custom"; }
+    const open = $(".qkmore") && $(".qkmore").open;
+    renderQuick();
+    if (open && $(".qkmore")) $(".qkmore").open = true;
+    return;
+  }
+  const rp = e.target.closest("[data-qride]");
+  if (rp && !quick.rideAuto) {
+    const g = +rp.dataset.qride;
+    const c = await pickCard({ title: `Ride deck · grade ${g}`, list: rideChoices(g), clan: quick.n, current: quick.ride[g] });
+    if (c) { quick.ride[g] = c.id; renderQuick(); }
+    return;
+  }
   if (e.target.id === "qkCancel") { quick.open = false; return renderDecks(); }
   if (e.target.id === "qkBuild") {
     const r = quickBuild(quick);
@@ -457,54 +628,79 @@ $("#deckForm").addEventListener("click", (e) => {
   }
 });
 
-// Best cards first: more abilities, linked to the vanguard by name, higher power
-function quickScore(list, v) {
+// Sort best first. prio: abil | link | power | shield
+function quickScore(list, v, prio = "abil") {
   const vName = v ? v.name.toLowerCase() : "", vText = v ? String(v.text || "").toLowerCase() : "";
-  const sc = (c) => (c.abilities || []).length * 2 + (c.text ? 1 : 0) + (c.power || 0) / 10000
-    + (v && c.id !== v.id && String(c.text || "").toLowerCase().includes(vName) ? 3 : 0)
-    + (v && c.id !== v.id && vText.includes(c.name.toLowerCase()) ? 3 : 0)
-    + (/ride deck/i.test(c.text || "") ? 1 : 0);
+  const link = (c) => (v && c.id !== v.id && String(c.text || "").toLowerCase().includes(vName) ? 3 : 0)
+    + (v && c.id !== v.id && vText.includes(c.name.toLowerCase()) ? 3 : 0);
+  const abil = (c) => (c.abilities || []).length * 2 + (c.text ? 1 : 0);
+  const sc = {
+    abil: (c) => abil(c) + link(c) + (c.power || 0) / 10000 + (/ride deck/i.test(c.text || "") ? 1 : 0),
+    link: (c) => link(c) * 3 + abil(c) + (c.power || 0) / 10000,
+    power: (c) => (c.power || 0) / 1000 + abil(c) * 0.5 + link(c),
+    shield: (c) => (c.shield || 0) / 1000 + abil(c) * 0.5 + link(c),
+  }[prio] || ((c) => abil(c));
   return [...list].sort((a, b) => sc(b) - sc(a) || a.name.localeCompare(b.name));
+}
+// Ride line chosen automatically: grade 0 starter (non-trigger if possible), best grade 1 and 2 for the vanguard
+function quickRide(o, v) {
+  const clan = cards.filter((c) => clanOf(c) === o.n && !c.needsTrigger);
+  return [0, 1, 2].map((g) => {
+    const units = quickScore(clan.filter((c) => c.grade === g && c.type === "unit"), v, "link");
+    return units[0] || (g === 0 ? quickScore(clan.filter((c) => c.grade === 0 && c.type === "trigger"), v)[0] : null) || null;
+  });
 }
 function quickBuild(o) {
   const v = cards.find((c) => c.id === o.v);
   const clan = cards.filter((c) => clanOf(c) === o.n && !c.needsTrigger);
   const notes = [];
   const copies = {}; // name -> copies used (ride deck + main), max 4
-  const room = (c) => 4 - (copies[c.name.toLowerCase()] || 0);
-  const use = (c, k) => { copies[c.name.toLowerCase()] = (copies[c.name.toLowerCase()] || 0) + k; };
-  // Ride deck: grade 0 starter (non-trigger if possible), then the best grade 1 and 2, then the vanguard
-  const ride = [0, 1, 2].map((g) => {
-    const units = quickScore(clan.filter((c) => c.grade === g && c.type === "unit"), v);
-    const pick = units[0] || (g === 0 ? quickScore(clan.filter((c) => c.grade === 0 && c.type === "trigger"), v)[0] : null);
-    if (!pick) notes.push(`No grade ${g} unit for the ride deck`);
-    return pick;
-  });
+  const used = (c) => copies[c.name.toLowerCase()] || 0;
+  const use = (c, k) => { copies[c.name.toLowerCase()] = used(c) + k; };
+  const ride = o.rideAuto ? quickRide(o, v) : [0, 1, 2].map((g) => cards.find((c) => c.id === o.ride[g]) || quickRide(o, v)[g]);
+  ride.forEach((c, g) => { if (!c) notes.push(`No grade ${g} unit for the ride deck`); });
   ride.push(v);
   ride.forEach((c) => c && use(c, 1));
   const main = [];
-  // take up to n cards from list (4 copies of each name max), returns how many are still missing
-  const take = (list, n) => { for (const c of list) { if (n <= 0) break; const k = Math.min(room(c), n); if (k > 0) { for (let i = 0; i < k; i++) main.push(c.id); use(c, k); n -= k; } } return n; };
+  const cap = +o.copies || 4;
+  // take up to n from list; first pass keeps to `cap` copies per name, second pass allows 4 if still short
+  const take = (list, n, perName = cap) => {
+    for (const lim of perName < 4 ? [perName, 4] : [4]) {
+      for (const c of list) {
+        if (n <= 0) break;
+        const k = Math.min(lim - used(c), 4 - used(c), n);
+        if (k > 0) { for (let i = 0; i < k; i++) main.push(c.id); use(c, k); n -= k; }
+      }
+    }
+    return n;
+  };
+  const sc = (list) => quickScore(list, v, o.prio);
   // Triggers: 16, heal max 4, over max 1
-  const trigOf = (t) => quickScore(clan.filter((c) => c.trigger === t), v);
+  const trigOf = (t) => sc(clan.filter((c) => c.trigger === t));
   const want = { ...TRIG_MIX[o.mix].want };
   let trigLeft = 16;
   if (o.over && trigOf("over").length) { take(trigOf("over"), 1); trigLeft--; if (want.crit) want.crit--; else want[Object.keys(want)[0]]--; }
   for (const [t, n] of Object.entries(want)) trigLeft -= n - take(trigOf(t), n);
-  if (trigLeft > 0) { // not enough of the chosen kinds: fill with any other non-heal triggers
+  if (trigLeft > 0) {
     for (const t of ["crit", "draw", "front"]) if (trigLeft > 0) trigLeft = take(trigOf(t), trigLeft);
     if (trigLeft > 0) notes.push(`Only ${16 - trigLeft}/16 trigger units in this clan (import more sets or set trigger types ⚠)`);
   }
   const extra = Math.max(0, trigLeft); // missing triggers are replaced by grade 1 units so the deck still has 50
-  // Grade 1: sentinels first (max 4), then the rest
-  const units = (g) => quickScore(clan.filter((c) => c.type === "unit" && c.grade === g), v);
-  let g1 = QUICK_GRADES[1] + extra;
-  g1 -= 4 - take(units(1).filter((c) => c.sentinel), 4);
+  const [G1, G2, G3] = (QUICK_OPTS.grades.items[o.grades] || QUICK_OPTS.grades.items.std).v;
+  const units = (g) => sc(clan.filter((c) => c.type === "unit" && c.grade === g));
+  // Orders come out of the grade 1 slots
+  const nOrders = Math.min(+o.orders || 0, 4);
+  const ordersTaken = nOrders - take(sc(clan.filter((c) => c.type === "order")), nOrders, 2);
+  let g1 = G1 + extra - ordersTaken;
+  const nSent = Math.min(+o.sent || 0, 4);
+  g1 -= nSent - take(units(1).filter((c) => c.sentinel), nSent, 4);
   let short = take(units(1).filter((c) => !c.sentinel), g1);
-  short = take(units(2), QUICK_GRADES[2] + short);
-  short = take([v, ...units(3).filter((c) => c.id !== v.id)], QUICK_GRADES[3] + short);
-  if (short > 0) short = take([...units(1), ...units(2)], short);                     // leftovers in lower grades
-  if (short > 0) short = take(quickScore(clan.filter((c) => c.type === "order"), v), short); // then orders
+  short = take(units(2), G2 + short);
+  const vAdded = 3 - take([v], 3, 4);    // the vanguard: 4 copies in total (1 in the ride deck)
+  short = take(units(3).filter((c) => c.id !== v.id), G3 - vAdded + short);
+  if (short > 0) short = take([...units(1).filter((c) => !c.sentinel), ...units(2)], short);
+  if (short > 0) short = take(sc(clan.filter((c) => c.type === "order")), short);
+  if (short > 0) short = take(units(1).filter((c) => c.sentinel), short, 4);
   if (short > 0) notes.push(`${short} card(s) short of 50`);
   return {
     deck: { id: DB.newId(), name: `${o.n} · ${v.name}`.slice(0, 60), energy: !!o.energy, ride: ride.map((c) => (c ? c.id : "")), main },
@@ -652,7 +848,7 @@ function renderApi() {
     const have = names.has(c.name.toLowerCase());
     const stats = hasAttrs(d) ? `${c.type === "order" ? "Order" : "G" + c.grade} · ${c.power} · SH ${c.shield}${c.trigger ? " · " + TRIG[c.trigger].name : ""}` : "Stats load on import";
     return `<div class="oc${have ? " done" : ""}">
-      ${useImg && d.image_url ? `<img src="${esc($("#cgsLocal").checked ? cgsLocalImage(d._set, d.number) : d.image_url)}" alt="" loading="lazy">` : `<div class="noimg">No image</div>`}
+      ${useImg && d.image_url ? imgTag(d.image_url, "", c.name) : `<div class="noimg">No image</div>`}
       <b>${esc(c.name)}</b>
       <small>${esc([d.number, d.rarity, d.set_name].filter(Boolean).join(" · "))}</small>
       <small>${esc(stats)}</small>
@@ -745,7 +941,7 @@ $("#cgsRelink").addEventListener("click", async () => {
   const old = cards.filter((c) => c.source && c.source.from === "cgs" && !c.source.setCode).length;
   if (!todo.length) return toast(old ? "Re-import these cards once from the Card library so they know their set, then try again." : "No cards imported from the Card library yet.", true);
   if (!window.confirm(`Point ${todo.length} cards at pictures in vanguard_images?`)) return;
-  for (const c of todo) await DB.put("cards", { ...c, image: cgsLocalImage(c.source.setCode, c.source.number) });
+  for (const c of todo) await DB.put("cards", { ...c, image: cgsLocalImage(c.source.setCode, c.source.number), source: { ...c.source, imageWeb: c.source.imageWeb || (/^https?:/.test(c.image || "") ? c.image : "") } });
   await reload(); renderList();
   toast(`${todo.length} cards now use local pictures.${old ? ` ${old} older imports need a re-import first.` : ""}`);
 });
@@ -780,7 +976,7 @@ function renderCgs() {
     const have = names.has(d.name.trim().toLowerCase());
     const stats = /Order/.test(d.type) ? d.type : `G${d.grade ?? "?"} · ${d.power ?? "-"} · SH ${d.shield ?? "-"}`;
     return `<div class="oc${have ? " done" : ""}">
-      ${useImg && d.image_url ? `<img src="${esc(d.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="noimg">No image</div>`}
+      ${useImg && d.image_url ? ($("#cgsLocal").checked ? imgTag(cgsLocalImage(d._set, d.number), d.image_url, d.name) : imgTag(d.image_url, "", d.name)) : `<div class="noimg">No image</div>`}
       <b>${esc(d.name)}</b>
       <small>${esc([d.number, d.clan].filter(Boolean).join(" · "))}</small>
       <small>${esc(stats)}</small>
@@ -802,6 +998,7 @@ async function importCgsItem(d, byName) {
   const c = cgsToCard(d, picked === undefined ? undefined : (picked || null));
   if (!$("#cgsImages").checked) c.image = "";
   else if ($("#cgsLocal").checked) c.image = cgsLocalImage(d._set, d.number);
+  if (d.image_url) c.source.imageWeb = d.image_url; // backup picture when the local file is missing (e.g. on the website)
   const key = c.name.toLowerCase();
   const old = byName ? byName.get(key) : cards.find((x) => x.name.toLowerCase() === key);
   let saved;

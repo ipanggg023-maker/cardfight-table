@@ -125,6 +125,18 @@
   </div>
 </section>
 
+<div id="picker" class="overlay soft" hidden>
+  <div class="panel wide picker" role="dialog" aria-labelledby="pickTitle">
+    <div class="pickhead"><h2 id="pickTitle">Choose a card</h2><span id="pickCount" class="pile"></span><button id="pickClose" aria-label="Close">✕</button></div>
+    <div class="tools">
+      <input id="pickQ" placeholder="Type to search name or text… (Enter picks the first)" autocomplete="off">
+      <select id="pickN" title="Clan / nation"></select>
+      <button id="pickClear" class="del">Clear slot</button>
+    </div>
+    <div id="pickGrid" class="pool deck pickgrid"></div>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
 <script src="js/cards.js"></script>

@@ -151,7 +151,7 @@ function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
   const pw = pi !== null && key ? Game.power(pi, key) : c.power;
   const cr = pi !== null && key ? Game.crit(pi, key) : c.crit || 1;
   const src = imgOf(c);
-  const img = src ? ` style="--h:${hue(c.nation)};background-image:linear-gradient(#0000 45%,#000c),url('${esc(src)}')"` : ` style="--h:${hue(c.nation)}"`;
+  const img = src ? ` style="--h:${hue(c.nation)};background-image:linear-gradient(#0000 45%,#000c),url('${esc(src)}')${c.source && c.source.imageWeb && c.source.imageWeb !== src ? `,url('${esc(c.source.imageWeb)}')` : ""}"` : ` style="--h:${hue(c.nation)}"`;
   return `<div class="card${src ? " img" : ""}${s.rest ? " rest" : ""}${extra}" data-uid="${c.uid}"${img}>
     <div class="ctop"><span class="cg">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
       ${c.trigger ? `<span class="ct t-${c.trigger}">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="ct t-sent">◆</span>` : ""}${(c.abilities || []).length ? `<span class="ab">✦</span>` : ""}</div>
