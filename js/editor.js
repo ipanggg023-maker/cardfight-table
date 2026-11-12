@@ -293,12 +293,13 @@ $("#deckList").addEventListener("click", (e) => {
   renderDecks();
 });
 $("#newDeck").addEventListener("click", () => {
+  quick.open = false;
   curDeck = { id: DB.newId(), name: "New deck", energy: true, ride: ["", "", "", ""], main: [] };
   renderDecks();
 });
 function renderDeckForm() {
   const d = curDeck;
-  if (!d) { $("#deckForm").innerHTML = `<p class="muted">Pick a deck or create one.</p>`; return; }
+  if (!d) { if (quick.open) return renderQuick(); $("#deckForm").innerHTML = `<p class="muted">Pick a deck, create one, or try ✨ Quick deck.</p>`; return; }
   const ids = byId();
   const errs = validateDeck(d, ids);
   const cnt = {};
@@ -386,6 +387,130 @@ $("#deckForm").addEventListener("click", async (e) => {
     renderDecks();
   }
 });
+
+// ---------- quick deck: builds a legal deck from your own cards of one clan ----------
+const TRIG_MIX = {
+  balanced: { label: "Balanced · 8 Critical, 4 Draw, 4 Heal", want: { crit: 8, draw: 4, heal: 4 } },
+  crit: { label: "Aggressive · 12 Critical, 4 Heal", want: { crit: 12, heal: 4 } },
+  draw: { label: "Card advantage · 4 Critical, 8 Draw, 4 Heal", want: { crit: 4, draw: 8, heal: 4 } },
+  front: { label: "Front row · 4 Critical, 8 Front, 4 Heal", want: { crit: 4, front: 8, heal: 4 } },
+};
+// Non-trigger part of the main deck (34 cards): grade 1 incl. sentinels, grade 2, grade 3 incl. 3 more copies of the vanguard
+const QUICK_GRADES = { 1: 14, 2: 12, 3: 8 };
+const quick = { open: false, n: "", v: "", mix: "balanced", over: true, energy: true };
+const clanOf = (c) => String(c.nation || "").trim();
+$("#quickDeck").addEventListener("click", () => {
+  if (dirty && !window.confirm("Discard unsaved changes?")) return;
+  curDeck = null;
+  quick.open = true;
+  renderDecks();
+});
+
+function renderQuick() {
+  const clans = uniq("nation").map((n) => {
+    const cs = cards.filter((c) => clanOf(c) === n);
+    return { n, units: cs.filter((c) => c.type === "unit").length, trig: cs.filter((c) => c.trigger).length, g3: cs.filter((c) => c.type === "unit" && c.grade === 3).length };
+  }).filter((c) => c.g3 && c.n !== "-").sort((a, b) => b.units + b.trig - (a.units + a.trig));
+  if (!clans.length) {
+    $("#deckForm").innerHTML = `<h2>✨ Quick deck</h2><p class="muted">No clan has a grade 3 unit yet. Import cards from the Card library, or fill in "Nation / clan" on your cards.</p>`;
+    return;
+  }
+  if (!clans.some((c) => c.n === quick.n)) quick.n = clans[0].n;
+  const g3s = quickScore(cards.filter((c) => clanOf(c) === quick.n && c.type === "unit" && c.grade === 3), null);
+  if (!g3s.some((c) => c.id === quick.v)) quick.v = g3s[0] ? g3s[0].id : "";
+  $("#deckForm").innerHTML = `<div id="quick" class="quick">
+    <h2>✨ Quick deck</h2>
+    <p class="muted">Pick a clan and a grade 3 vanguard. A legal deck (ride deck 4 + main deck 50) is built from <b>your own cards</b>.
+      It opens in the deck builder so you can change anything before you press Save.</p>
+    <div class="fgrid">
+      <label>Clan <select id="qkClan">${clans.map((c) => `<option value="${esc(c.n)}" ${c.n === quick.n ? "selected" : ""}>${esc(c.n)} · ${c.units} units, ${c.trig} triggers</option>`).join("")}</select></label>
+      <label>Triggers <select id="qkMix">${Object.entries(TRIG_MIX).map(([k, m]) => `<option value="${k}" ${k === quick.mix ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select></label>
+    </div>
+    <label class="chk"><input type="checkbox" id="qkOver" ${quick.over ? "checked" : ""}> Add 1 Over trigger if this clan has one (instead of 1 Critical)</label>
+    <label class="chk"><input type="checkbox" id="qkEnergy" ${quick.energy ? "checked" : ""}> Energy Generator crest</label>
+    <h4>Choose your vanguard (${g3s.length})</h4>
+    <div class="pool deck">${g3s.map((c) => `<button type="button" class="tc pickv${c.id === quick.v ? " in" : ""}" data-v="${esc(c.id)}" title="${esc(c.name)}">
+      <div class="face">${face(c)}</div><div class="tn">${esc(c.name)}</div></button>`).join("") || `<p class="muted">No grade 3 units in this clan.</p>`}</div>
+    <div class="btnrow"><button id="qkBuild" class="go" ${quick.v ? "" : "disabled"}>Build deck</button><button id="qkCancel">Cancel</button></div>
+  </div>`;
+}
+$("#deckForm").addEventListener("change", (e) => {
+  if (!e.target.closest("#quick")) return;
+  const id = e.target.id;
+  if (id === "qkClan") { quick.n = e.target.value; quick.v = ""; renderQuick(); }
+  if (id === "qkMix") quick.mix = e.target.value;
+  if (id === "qkOver") quick.over = e.target.checked;
+  if (id === "qkEnergy") quick.energy = e.target.checked;
+});
+$("#deckForm").addEventListener("click", (e) => {
+  if (!e.target.closest("#quick")) return;
+  const pv = e.target.closest("[data-v]");
+  if (pv) { quick.v = pv.dataset.v; return renderQuick(); }
+  if (e.target.id === "qkCancel") { quick.open = false; return renderDecks(); }
+  if (e.target.id === "qkBuild") {
+    const r = quickBuild(quick);
+    curDeck = r.deck;
+    quick.open = false;
+    renderDecks();
+    const errs = validateDeck(curDeck, byId());
+    toast(errs.length ? `Built, but not legal yet: ${errs[0]}${r.notes.length ? " · " + r.notes[0] : ""}` : "Deck built! Check it, then press Save deck.", errs.length > 0);
+  }
+});
+
+// Best cards first: more abilities, linked to the vanguard by name, higher power
+function quickScore(list, v) {
+  const vName = v ? v.name.toLowerCase() : "", vText = v ? String(v.text || "").toLowerCase() : "";
+  const sc = (c) => (c.abilities || []).length * 2 + (c.text ? 1 : 0) + (c.power || 0) / 10000
+    + (v && c.id !== v.id && String(c.text || "").toLowerCase().includes(vName) ? 3 : 0)
+    + (v && c.id !== v.id && vText.includes(c.name.toLowerCase()) ? 3 : 0)
+    + (/ride deck/i.test(c.text || "") ? 1 : 0);
+  return [...list].sort((a, b) => sc(b) - sc(a) || a.name.localeCompare(b.name));
+}
+function quickBuild(o) {
+  const v = cards.find((c) => c.id === o.v);
+  const clan = cards.filter((c) => clanOf(c) === o.n && !c.needsTrigger);
+  const notes = [];
+  const copies = {}; // name -> copies used (ride deck + main), max 4
+  const room = (c) => 4 - (copies[c.name.toLowerCase()] || 0);
+  const use = (c, k) => { copies[c.name.toLowerCase()] = (copies[c.name.toLowerCase()] || 0) + k; };
+  // Ride deck: grade 0 starter (non-trigger if possible), then the best grade 1 and 2, then the vanguard
+  const ride = [0, 1, 2].map((g) => {
+    const units = quickScore(clan.filter((c) => c.grade === g && c.type === "unit"), v);
+    const pick = units[0] || (g === 0 ? quickScore(clan.filter((c) => c.grade === 0 && c.type === "trigger"), v)[0] : null);
+    if (!pick) notes.push(`No grade ${g} unit for the ride deck`);
+    return pick;
+  });
+  ride.push(v);
+  ride.forEach((c) => c && use(c, 1));
+  const main = [];
+  // take up to n cards from list (4 copies of each name max), returns how many are still missing
+  const take = (list, n) => { for (const c of list) { if (n <= 0) break; const k = Math.min(room(c), n); if (k > 0) { for (let i = 0; i < k; i++) main.push(c.id); use(c, k); n -= k; } } return n; };
+  // Triggers: 16, heal max 4, over max 1
+  const trigOf = (t) => quickScore(clan.filter((c) => c.trigger === t), v);
+  const want = { ...TRIG_MIX[o.mix].want };
+  let trigLeft = 16;
+  if (o.over && trigOf("over").length) { take(trigOf("over"), 1); trigLeft--; if (want.crit) want.crit--; else want[Object.keys(want)[0]]--; }
+  for (const [t, n] of Object.entries(want)) trigLeft -= n - take(trigOf(t), n);
+  if (trigLeft > 0) { // not enough of the chosen kinds: fill with any other non-heal triggers
+    for (const t of ["crit", "draw", "front"]) if (trigLeft > 0) trigLeft = take(trigOf(t), trigLeft);
+    if (trigLeft > 0) notes.push(`Only ${16 - trigLeft}/16 trigger units in this clan (import more sets or set trigger types ⚠)`);
+  }
+  const extra = Math.max(0, trigLeft); // missing triggers are replaced by grade 1 units so the deck still has 50
+  // Grade 1: sentinels first (max 4), then the rest
+  const units = (g) => quickScore(clan.filter((c) => c.type === "unit" && c.grade === g), v);
+  let g1 = QUICK_GRADES[1] + extra;
+  g1 -= 4 - take(units(1).filter((c) => c.sentinel), 4);
+  let short = take(units(1).filter((c) => !c.sentinel), g1);
+  short = take(units(2), QUICK_GRADES[2] + short);
+  short = take([v, ...units(3).filter((c) => c.id !== v.id)], QUICK_GRADES[3] + short);
+  if (short > 0) short = take([...units(1), ...units(2)], short);                     // leftovers in lower grades
+  if (short > 0) short = take(quickScore(clan.filter((c) => c.type === "order"), v), short); // then orders
+  if (short > 0) notes.push(`${short} card(s) short of 50`);
+  return {
+    deck: { id: DB.newId(), name: `${o.n} · ${v.name}`.slice(0, 60), energy: !!o.energy, ride: ride.map((c) => (c ? c.id : "")), main },
+    notes,
+  };
+}
 
 // ---------- backup ----------
 $("#exportBtn").addEventListener("click", async () => {

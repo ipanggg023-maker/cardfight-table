@@ -106,3 +106,12 @@ body.ed { min-height: auto; }
 #formcol h4, #deckForm h4 { margin: 4px 0 0; font: 600 .85rem var(--display); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .tools select[hidden] { display: none; }
 @media (max-width: 760px) { .ridegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* quick deck */
+.quick { display: grid; gap: 12px; }
+.quick p { margin: 0; }
+.tc.pickv { cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.tc.pickv:hover { border-color: var(--cyan); }
+#quickDeck { white-space: nowrap; }
+.quick .fgrid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.quick .chk { justify-self: start; }
