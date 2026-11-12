@@ -66,6 +66,18 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- accounts made before this file was run get a profile now; the oldest becomes admin if there is no admin yet
+insert into public.profiles (id, name, color, created_at)
+select u.id,
+  coalesce(left(nullif(trim(u.raw_user_meta_data ->> 'name'), ''), 20), 'Fighter'),
+  case when (u.raw_user_meta_data ->> 'color') ~ '^#[0-9a-fA-F]{6}$' then u.raw_user_meta_data ->> 'color' else '#5fd0ff' end,
+  u.created_at
+from auth.users u
+where not exists (select 1 from public.profiles p where p.id = u.id);
+update public.profiles set role = 'admin'
+where not exists (select 1 from public.profiles where role = 'admin')
+  and id = (select id from public.profiles order by created_at, id limit 1);
+
 -- ---------- admin tools (checked on the server, players get "admins only") ----------
 create or replace function public.admin_set_role(target uuid, new_role text) returns void
 language plpgsql security definer set search_path = '' as $$

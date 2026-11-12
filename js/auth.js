@@ -90,7 +90,10 @@ const Cloud = {
     const { data: { session } } = await c.auth.getSession();
     if (!session) return null;
     const { data: p, error } = await c.from("profiles").select("id, name, color, role, coins, banned, created_at").eq("id", session.user.id).single();
-    if (error) throw error;
+    if (error) {
+      if (error.code === "PGRST205" || error.code === "PGRST116") throw new Error("The account server isn't set up yet (the admin needs to run supabase/001_accounts.sql).");
+      throw error;
+    }
     if (p.banned) { await c.auth.signOut(); throw new Error("This account is banned."); }
     const u = { id: p.id, name: p.name, color: p.color, role: p.role, coins: p.coins, guest: false, since: p.created_at };
     Auth.set(u);
