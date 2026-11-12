@@ -86,6 +86,17 @@ function cgsToCard(d, trigger) {
     source: { from: "cgs", number: d.number || "", set: d.productName || "", setCode: d._set || "", url: d.url || "", cardType: d.type },
   };
   if (isTrig && !card.trigger) card.needsTrigger = true;
+  if (d.type === "Set Order") card.setOrder = true;
+  if (/Regalis Piece/i.test(text)) card.regalis = true;
+  if (/Alchemagic/i.test(text)) card.alchemagic = true;
+  const armsM = isOrder && text.match(/\bArms\s*[-–]\s*["“]?([^"”\n\]]+)["”]?/i);
+  if (armsM) { card.arms = true; card.armsName = armsM[1].trim(); }
+  if (!isOrder && /XoverDress/i.test(text)) card.xoverDress = card.xoverDress || "";
+  else if (!isOrder && /overDress/i.test(text)) {
+    card.dress = true;
+    const od = text.match(/overDress\s*[-–]\s*["“]([^"”]+)["”]/i);
+    if (od) card.overDress = od[1].trim();
+  }
   const giftM = text.match(/Imaginary Gift\s*[:：]?\s*(Force|Accel|Protect)/i);
   if (giftM && !isG) card.gift = giftM[1].toLowerCase();
   if (isG) { card.gKind = gKind; if (/Ultimate Stride/i.test(text)) card.ultimate = true; if (gKind === "stride") card.drive = 3; }

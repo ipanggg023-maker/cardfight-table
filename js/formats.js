@@ -142,6 +142,7 @@ function validateDeck(deck, byId) {
   if (!F.standTrigger && count((c) => c.trigger === "stand")) errs.push("Stand triggers are not allowed in this format");
   if (count((c) => c.sentinel) > 4) errs.push("Max 4 sentinels");
   if (count((c) => c.regalis) > 1) errs.push("Max 1 Regalis Piece");
+  if (count((c) => c.ace) > 1) errs.push("Max 1 Ace Unit (CR 14.56)");
   const names = {};
   both.forEach((c) => (names[c.name] = (names[c.name] || 0) + 1));
   Object.entries(names).forEach(([n, k]) => { if (k > 4) errs.push(`"${n}": ${k} copies (max 4${F.rideDeck ? " incl. ride deck" : ""})`); });

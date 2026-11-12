@@ -445,3 +445,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
   color: #10213a; background: var(--gold); border-radius: 6px; padding: 1px 5px; white-space: nowrap; pointer-events: none; }
 .card .heart.mate { color: #9fd7ff; }
 .chip.gift b { color: var(--green); }
+
+/* D era: order zone / World chips */
+.chip.oz b, .chip.world b { color: var(--cyan); }

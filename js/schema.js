@@ -29,7 +29,7 @@ const SCHEMA = {
     ORDER: "Normal Order (play from hand, main phase)",
     BLITZ: "Blitz Order (play from hand while guarding)",
   },
-  zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", any: "Anywhere" },
+  zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", any: "Anywhere" },
   events: {
     placedVC: "When placed on VC (ridden)",
     riddenUpon: "When this unit is ridden upon",
@@ -49,10 +49,14 @@ const SCHEMA = {
     oppTurnEnd: "At the end of your opponent's turn",
     overDrive: "When revealed as an over trigger in your drive check (its over-trigger text)",
     onStride: "When this G unit strides",
+    dressed: "When this unit is put on RC with overDress / XoverDress",
   },
 
   conds: {
     myTurn: { label: "It is your turn", params: [], text: () => "it is your turn" },
+    dressed: { label: "This unit is in overDress state", params: [], text: () => "this unit is in overDress state" },
+    world: { label: "Your World is", params: [["text", "text", "World"]], text: (p) => `your World is "${p.text}"` },
+    orderZone: { label: "Your order zone has N+ cards", params: [["n", "num"]], text: (p) => `your order zone has ${p.n}+ cards` },
     legion: { label: "Your vanguard is in Legion", params: [], text: () => "your vanguard is in Legion" },
     genBreak: { label: "Generation Break N (face-up G cards ≥ N)", params: [["n", "num"]], text: (p) => `[Generation Break ${p.n}]` },
     limitBreak: { label: "Limit Break N (your damage ≥ N)", params: [["n", "num"]], text: (p) => `[Limit Break ${p.n}]` },
@@ -108,6 +112,7 @@ const SCHEMA = {
     lookTop: { label: "Look at top N, take some", params: [["n", "num", "look at"], ["pick", "num", "take up to"], ["filter", "filter"], ["dest", "dest"], ["rest", "restDest"]],
       text: (p) => `look at the top ${p.n} cards, choose up to ${p.pick} ${flt(p.filter)} and ${destT(p.dest)}, ${p.rest === "bottom" ? "put the rest on the bottom" : "shuffle the deck"}` },
     seekMate: { label: "Seek Mate: legion with a card from the deck", params: [["text", "text", "mate name contains"]], text: (p) => `search your deck for "${p.text || "?"}" and Legion with it, then shuffle` },
+    setWorld: { label: "Set your World", params: [["text", "text", "World (e.g. Dark Night)"]], text: (p) => `your World becomes "${p.text || "?"}"` },
     gift: { label: "Gain an Imaginary Gift", params: [["kind", "giftKind", "gift"]], text: (p) => `gain Imaginary Gift: ${({ force: "Force", accel: "Accel", protect: "Protect" })[p.kind || "force"]}` },
     callFromHand: { label: "Call from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `call up to ${p.n} ${flt(p.filter)} from hand to RC` },
   },
@@ -145,6 +150,8 @@ function describeAbility(ab) {
   if (["AUTO", "ACT", "CONT"].includes(ab.kind)) s += `(${ab.zone || "VC"})`;
   if (ab.once === "turn") s += "[1/Turn]";
   if (ab.once === "game") s += "[1/Game]";
+  if (ab.once === "divine") s += "[Divine Skill]";
+  if (ab.once === "unique") s += "[Unique Skill]";
   if (ab.kind === "AUTO" && ab.mandatory) s += "[Mandatory]";
   s += ": ";
   if (ab.kind === "AUTO") s += (SCHEMA.events[ab.when] || "?") + ", ";

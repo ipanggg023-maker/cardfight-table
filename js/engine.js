@@ -56,6 +56,7 @@ const Game = (() => {
       hand: [], soul: [], damage: [], drop: [], bind: [], removed: [],
       gDeck: (deck.g || []).map(inst), gUp: [], vcGradeAtStart: 0, // G zone: face down / face up (CR 4.14)
       giftType: "", giftVariant: {}, marks: {}, accel: [], legionUsed: [], // imaginary gifts, Legion
+      orderZone: [], world: "", regalisUsed: 0, divineUsed: false, uniqueUsed: false, // D era: set orders, World, once-per-game skills
       slots: { vc: slot(first), fl: null, fr: null, bl: null, bc: null, br: null },
       driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
       orderTurn: -1, egTurn: -1, // turn number of the last order played / Energy Generator draw (1 each per turn)
@@ -177,20 +178,22 @@ const Game = (() => {
   function contTargets(pi, t, k) {
     return { self: [k], vc: ["vc"], allFront: frontOf(pi), allFrontRC: frontOf(pi).filter((x) => x !== "vc"), allMyRC: rcOf(pi), allMyUnits: unitsOf(pi) }[t || "self"] || [];
   }
+  // Cards whose abilities work from a circle: the unit, plus arms attached to the vanguard (CR 17.7)
+  const sourcesAt = (p, k) => (p.slots[k] ? [p.slots[k].card, ...(k === "vc" ? p.slots.vc.arms || [] : [])] : []);
   function cont(pi, key, stat) {
     const p = P(pi);
     let sum = 0;
-    for (const k of unitsOf(pi)) {
-      const s = p.slots[k];
-      if (!s) continue;
-      for (const ab of s.card.abilities || []) {
-        if (ab.kind !== "CONT" || !zoneOK(ab.zone, zoneOf(k))) continue;
-        if (!(ab.conds || []).every((c) => condOK(pi, c, { key: k, card: s.card }))) continue;
+    const add = (card, k, zone) => {
+      for (const ab of card.abilities || []) {
+        if (ab.kind !== "CONT" || !zoneOK(ab.zone, zone)) continue;
+        if (!(ab.conds || []).every((c) => condOK(pi, c, { key: k, card }))) continue;
         for (const e of ab.effects || []) {
           if (e.type === stat && contTargets(pi, e.target, k).includes(key) && match(p.slots[key].card, e.filter)) sum += +e.amount || 0;
         }
       }
-    }
+    };
+    for (const k of unitsOf(pi)) for (const card of sourcesAt(p, k)) add(card, k, zoneOf(k));
+    for (const card of p.orderZone || []) add(card, null, "OZ"); // set orders in the order zone (CR 4.17)
     return sum;
   }
   function power(pi, key) {
@@ -227,6 +230,9 @@ const Game = (() => {
       case "myTurn": return S.active === pi;
       case "oppTurn": return S.active !== pi;
       case "legion": return !!p.slots.vc.mate;
+      case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
+      case "world": return (p.world || "").toLowerCase() === String(c.text || "").toLowerCase();
+      case "orderZone": return (p.orderZone || []).length >= n;
       case "vcName": return [p.slots.vc.card, p.slots.vc.heart, p.slots.vc.mate].some((x) => x && x.name.toLowerCase().includes((c.text || "").toLowerCase()));
       case "genBreak": return gFaceUp(p) >= n;   // Generation Break N (CR 14.14)
       case "limitBreak": return p.damage.length >= n; // Limit Break N (CR 14.7)
@@ -303,6 +309,10 @@ const Game = (() => {
   const usedKey = (card, i) => `${card.uid}:${i}`;
   const gameKey = (pi, card, i) => `${pi}:${card.name}:${i}`;
   function ready(pi, card, ab, i, ctx) {
+    const pl = P(pi);
+    if (card.regalis && pl.regalisUsed >= 1) return false;       // Regalis Piece: once per game (CR 14.51)
+    if (ab.once === "divine" && pl.divineUsed) return false;     // Divine Skill: one per game across all your cards (CR 12.3.3)
+    if (ab.once === "unique" && pl.uniqueUsed) return false;     // Unique Skill: same, separate icon
     if (ab.once === "turn" && S.used.has(usedKey(card, i))) return false;
     if (ab.once === "game" && S.usedGame.has(gameKey(pi, card, i))) return false;
     if (!(ab.conds || []).every((c) => condOK(pi, c, ctx))) return false;
@@ -319,6 +329,9 @@ const Game = (() => {
     if (!ready(pi, card, ab, i, ctx)) return false;
     if (ab.once === "turn") S.used.add(usedKey(card, i));
     if (ab.once === "game") S.usedGame.add(gameKey(pi, card, i));
+    if (ab.once === "divine") P(pi).divineUsed = true;
+    if (ab.once === "unique") P(pi).uniqueUsed = true;
+    if (card.regalis) P(pi).regalisUsed++;
     log(`✦ ${card.name}: ${describeAbility(ab)}`);
     depth++; // abilities triggered while this resolves wait for the next check timing
     try {
@@ -334,15 +347,20 @@ const Game = (() => {
   // choose, then the other player; abilities triggered meanwhile join the queue.
   let depth = 0, inCheck = false, qN = 0;
   function collect(pi, key, event, extra = {}) {
-    const card = extra.card || (key && P(pi).slots[key] && P(pi).slots[key].card);
-    if (!card || over()) return;
+    if (over()) return;
+    const cards = extra.card ? [extra.card] : key ? sourcesAt(P(pi), key) : [];
     const zone = extra.zone || zoneOf(key);
-    (card.abilities || []).forEach((ab, i) => {
-      if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) return;
-      S.queue.push({ id: ++qN, pi, i, card, ctx: { key, zone, ...extra, card } });
-    });
+    for (const card of cards) {
+      (card.abilities || []).forEach((ab, i) => {
+        if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) return;
+        S.queue.push({ id: ++qN, pi, i, card, ctx: { key, zone, ...extra, card } });
+      });
+    }
   }
-  function collectAll(pi, event, extra = {}) { for (const k of unitsOf(pi)) if (P(pi).slots[k]) collect(pi, k, event, extra); }
+  function collectAll(pi, event, extra = {}) {
+    for (const k of unitsOf(pi)) if (P(pi).slots[k]) collect(pi, k, event, extra);
+    for (const card of P(pi).orderZone || []) collect(pi, null, event, { ...extra, card, zone: "OZ" });
+  }
   async function settle() { if (depth === 0 && !inCheck) await checkTiming(); }
   async function fire(pi, key, event, extra = {}) { collect(pi, key, event, extra); await settle(); }
   async function fireAll(pi, event, extra = {}) { collectAll(pi, event, extra); await settle(); }
@@ -386,6 +404,7 @@ const Game = (() => {
       toGZone(p, s.card);
       if (key === "vc" && s.heart) { s.card = s.heart; s.heart = null; s.mate = s.heartMate || null; s.heartMate = null; return; }
     } else p[dest].push(s.card);
+    if (s.under && s.under.length) p.drop.push(...s.under); // the originalDress separates (CR 6.7)
     p.slots[key] = null;
   }
   function retire(pi, key) { leaveCircle(pi, key, "drop"); }
@@ -476,6 +495,7 @@ const Game = (() => {
         break;
       }
       case "gift": await giveGift(pi, e.kind || "force", false); break;
+      case "setWorld": p.world = e.text || ""; log(`🌐 ${p.name}'s World is now ${p.world || "(none)"}`); break;
       case "seekMate": {
         // Seek Mate (CR 6.4, 14.11): legion with a named card from the deck; a unit only legions once
         const vs = p.slots.vc;
@@ -573,6 +593,7 @@ const Game = (() => {
   async function startTurn() {
     const pi = S.active, p = P(pi);
     p.vcGradeAtStart = p.slots.vc.card.grade;
+    (p.orderZone || []).forEach((c) => (c.rest = false));
     Object.values(p.slots).forEach((s) => s && (s.rest = false));
     S.used = new Set();
     Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false });
@@ -702,6 +723,7 @@ const Game = (() => {
     let old = vs.card;
     if (vs.heart) { toGZone(p, old); old = vs.heart; vs.heart = null; if (vs.heartMate) { p.soul.push(vs.heartMate); vs.heartMate = null; } }
     if (vs.mate) { p.soul.push(vs.mate); vs.mate = null; } // riding on a legion puts both into the soul (CR 6.4)
+    if (vs.arms && vs.arms.length && card.name !== old.name) { p.drop.push(...vs.arms); vs.arms = []; } // arms follow only a same-name ride (CR 17.7)
     p.soul.push(old);
     p.slots.vc.card = card;
     S.rode = true;
@@ -766,19 +788,37 @@ const Game = (() => {
   });
 
   // ACT abilities of units on the field
+  // src: 0 = the unit, 1.. = arms attached to the vanguard
   function actList(pi, key) {
-    const s = P(pi).slots[key];
-    if (!s) return [];
-    return (s.card.abilities || []).map((ab, i) => ({ ab, i })).filter(({ ab }) => ab.kind === "ACT" && zoneOK(ab.zone, zoneOf(key)))
-      .map(({ ab, i }) => ({ i, text: describeAbility(ab), ready: ready(pi, s.card, ab, i, { key, card: s.card }) }));
+    const out = [];
+    sourcesAt(P(pi), key).forEach((card, src) => (card.abilities || []).forEach((ab, i) => {
+      if (ab.kind === "ACT" && zoneOK(ab.zone, zoneOf(key)))
+        out.push({ i, src, text: (src ? card.name + ": " : "") + describeAbility(ab), ready: ready(pi, card, ab, i, { key, card }) });
+    }));
+    return out;
   }
-  const activate = (key, i) => run(async () => {
+  const activate = (key, i, src = 0) => run(async () => {
     if (S.phase !== "main" || S.battle) return err("Use ACT abilities in your main phase");
-    const pi = S.active, s = P(pi).slots[key];
-    if (!s) return err("No unit there");
-    const ab = (s.card.abilities || [])[i];
+    const pi = S.active, card = sourcesAt(P(pi), key)[src];
+    if (!card) return err("No unit there");
+    const ab = (card.abilities || [])[i];
     if (!ab || ab.kind !== "ACT") return err("No such ability");
-    if (!(await resolve(pi, s.card, ab, i, { key, zone: zoneOf(key), card: s.card }, false))) return err("Conditions or costs not met");
+    if (!(await resolve(pi, card, ab, i, { key, zone: zoneOf(key), card }, false))) return err("Conditions or costs not met");
+  });
+  // Set orders in the order zone with ACT abilities (zone "Order zone")
+  function orderZoneActs(pi) {
+    const out = [];
+    (P(pi).orderZone || []).forEach((card) => (card.abilities || []).forEach((ab, i) => {
+      if (ab.kind === "ACT" && zoneOK(ab.zone, "OZ")) out.push({ uid: card.uid, i, text: card.name + ": " + describeAbility(ab), ready: ready(pi, card, ab, i, { key: null, zone: "OZ", card }) });
+    }));
+    return out;
+  }
+  const activateOrderZone = (uid, i) => run(async () => {
+    if (S.phase !== "main" || S.battle) return err("Use ACT abilities in your main phase");
+    const pi = S.active, card = (P(pi).orderZone || []).find((c) => c.uid === uid);
+    const ab = card && (card.abilities || [])[i];
+    if (!ab || ab.kind !== "ACT") return err("No such ability");
+    if (!(await resolve(pi, card, ab, i, { key: null, zone: "OZ", card }, false))) return err("Conditions or costs not met");
   });
 
   // Orders from hand
@@ -796,11 +836,44 @@ const Game = (() => {
     if (!found) return err(guarding ? "This is not a blitz order" : "This is not a normal order");
     const ctx = { key: null, zone: "hand", card };
     p.hand.splice(p.hand.indexOf(card), 1);
-    if (!ready(pi, card, found.ab, found.i, ctx)) { p.hand.push(card); return err("Conditions or costs not met"); }
     p.ordersThisTurn++;
     p.orderTurn = S.turn;
+    // A second Regalis Piece goes to the drop without resolving (CR 14.51.2.2.1)
+    if (card.regalis && p.regalisUsed >= 1) { log(`${p.name} plays ${card.name}: Regalis Piece already used this game, it goes to the drop`); p.drop.push(card); return; }
+    let ab = found.ab;
+    // Alchemagic (CR 7.44): also designate a normal order in your drop; its conditions, costs and effects are added after this one's
+    if (!guarding && card.alchemagic) {
+      // (a used Regalis Piece can't come back this way: it resolves once per game)
+      const others = p.drop.filter((c) => c.type === "order" && c.name !== card.name && orderAbility(c, "ORDER") && !(c.regalis && p.regalisUsed >= 1));
+      if (others.length && await yesNo(pi, `Alchemagic: also use a normal order from your drop with ${card.name}?`)) {
+        const [b] = await chooseCards(pi, "Alchemagic: choose the order from your drop", others, 1, 1);
+        const bab = b && orderAbility(b, "ORDER").ab;
+        if (bab) {
+          ab = { ...ab, conds: [...(ab.conds || []), ...(bab.conds || [])], costs: [...(ab.costs || []), ...(bab.costs || [])], effects: [...(ab.effects || []), ...(bab.effects || [])] };
+          if (b.regalis) p.regalisUsed++; // resolving a Regalis Piece's text uses the once-per-game limit
+          log(`⚗ Alchemagic: ${card.name} + ${b.name}`);
+        }
+      }
+    }
+    if (!ready(pi, card, ab, found.i, ctx)) { p.ordersThisTurn--; p.orderTurn = -1; p.hand.push(card); return err("Conditions or costs not met"); }
     log(`${p.name} plays ${card.name}`);
-    await resolve(pi, card, found.ab, found.i, ctx, false);
+    await resolve(pi, card, ab, found.i, ctx, false);
+    const vs = p.slots.vc;
+    if (card.arms) {
+      // Arms (CR 17.7): attaches to your vanguard if its name matches; only the last one with the same name stays
+      const need = String(card.armsName || "").toLowerCase();
+      const names = [vs.card, vs.heart, vs.mate].filter(Boolean).map((c) => c.name.toLowerCase());
+      if (!need || names.some((n) => n.includes(need))) {
+        vs.arms = vs.arms || [];
+        const same = vs.arms.find((a) => a.name === card.name);
+        if (same) { vs.arms.splice(vs.arms.indexOf(same), 1); p.drop.push(same); }
+        vs.arms.push(card);
+        log(`${card.name} is attached to ${vs.card.name} (Arms)`);
+        return;
+      }
+      log(`${card.name}: no vanguard named "${card.armsName}", it goes to the drop`);
+    }
+    if (card.setOrder) { p.orderZone.push(card); log(`${card.name} goes to the order zone`); return; } // set order (CR 4.17)
     p.drop.push(card);
   });
 
@@ -815,6 +888,50 @@ const Game = (() => {
     p.egTurn = S.turn;
     draw(pi, 1);
     log(`${p.name}: Energy Generator, Energy-Blast 7 → draw 1`);
+  });
+
+  // ---------- overDress (CR 6.7) / XoverDress (CR 6.8) ----------
+  // card.dress: has overDress; card.overDress: name the rear-guard must contain ("" = any). card.xoverDress: required names "A | B".
+  const dressTargets = (pi, card) => rcOf(pi).filter((k) => {
+    const s = P(pi).slots[k];
+    return s && (!card.overDress || [s.card, ...(s.under || [])].some((c) => c.name.toLowerCase().includes(String(card.overDress).toLowerCase())));
+  });
+  async function dressOnto(pi, card, key, under) {
+    const p = P(pi);
+    p.hand.splice(p.hand.indexOf(card), 1);
+    const old = p.slots[key];
+    p.slots[key] = { ...slot(card), rest: old ? old.rest : false, under };
+    log(`👗 ${p.name}: ${card.name} ${card.xoverDress ? "XoverDress" : "overDress"} onto ${under.map((c) => c.name).join(" + ")}`);
+    collect(pi, key, "dressed");
+    for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key });
+    await settle();
+  }
+  const overDress = (uid, key) => run(async () => {
+    if (S.phase !== "main" || S.battle) return err("overDress in your main phase");
+    const pi = S.active, p = P(pi), card = p.hand.find((c) => c.uid === uid);
+    if (!card || !card.dress || card.xoverDress) return err("That card has no overDress");
+    if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
+    if (!dressTargets(pi, card).includes(key)) return err(card.overDress ? `overDress onto a rear-guard named "${card.overDress}"` : "overDress onto one of your rear-guards");
+    const s = p.slots[key];
+    await dressOnto(pi, card, key, [s.card, ...(s.under || [])]); // the old unit becomes the originalDress (not a call)
+  });
+  const xoverDress = (uid) => run(async () => {
+    if (S.phase !== "main" || S.battle) return err("XoverDress in your main phase");
+    const pi = S.active, p = P(pi), card = p.hand.find((c) => c.uid === uid);
+    if (!card || !card.xoverDress) return err("That card has no XoverDress");
+    if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
+    const needs = String(card.xoverDress).split("|").map((x) => x.trim().toLowerCase()).filter(Boolean);
+    const keys = [];
+    for (const nm of needs) {
+      const opts = rcOf(pi).filter((k) => p.slots[k] && !keys.includes(k) && p.slots[k].card.name.toLowerCase().includes(nm));
+      if (!opts.length) return err(`XoverDress needs a rear-guard named "${nm}"`);
+      const [k] = await choose(pi, `XoverDress ${card.name}: choose the rear-guard "${nm}"`, opts.map((k) => ({ id: k, label: `${slotName(k)}: ${p.slots[k].card.name}`, card: p.slots[k].card })), 1, 1);
+      keys.push(k);
+    }
+    const [dest] = keys.length > 1 ? await choose(pi, "XoverDress: put it on which of those circles?", keys.map((k) => ({ id: k, label: slotName(k) })), 1, 1) : keys;
+    const under = keys.flatMap((k) => [p.slots[k].card, ...(p.slots[k].under || [])]);
+    keys.forEach((k) => { if (k !== dest) p.slots[k] = null; });
+    await dressOnto(pi, card, dest, under);
   });
 
   // ---------- battle ----------
@@ -987,7 +1104,7 @@ const Game = (() => {
     newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
-    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
+    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
     driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower,
   };
 })();

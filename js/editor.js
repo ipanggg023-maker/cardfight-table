@@ -146,6 +146,9 @@ function renderCard() {
       <label>Nation ${txt("nation", c.nation, "Dragon Empire")}</label>
       <label>Clan (older cards) ${txt("clan", c.clan, "e.g. Kagero")}</label>
       <label>Race ${txt("race", c.race)}</label>
+      ${c.type === "order" && c.arms ? `<label>Arms: vanguard name contains ${txt("armsName", c.armsName, "e.g. Vyrgilla")}</label>` : ""}
+      ${c.type === "unit" && c.dress ? `<label>overDress onto a rear-guard named (blank = any) ${txt("overDress", c.overDress, "e.g. Lianorn")}</label>` : ""}
+      ${c.type === "unit" ? `<label>XoverDress: needed rear-guards (names, separated by |) ${txt("xoverDress", c.xoverDress, "e.g. Name A | Name B")}</label>` : ""}
       ${c.type === "unit" || c.type === "trigger" ? `<label>Imaginary Gift icon ${sel("gift", { "": "None", force: "Force", accel: "Accel", protect: "Protect" }, c.gift || "")}</label>` : ""}
       <label>Format icon ${sel("icon", { "": `Auto (${iconOf(c) || "unknown"})`, D: "D (Standard)", V: "V (V Premium)", "-": "None (Premium only)" }, c.icon || "")}</label>
     </div>
@@ -153,6 +156,11 @@ function renderCard() {
       <label class="chk"><input type="checkbox" data-path="sentinel" ${c.sentinel ? "checked" : ""}> Sentinel (perfect guard: discard 1)</label>
       <label class="chk"><input type="checkbox" data-path="persona" ${c.persona ? "checked" : ""}> Persona Ride</label>
       <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
+      ${c.type === "order" ? `<label class="chk"><input type="checkbox" data-path="setOrder" ${c.setOrder ? "checked" : ""}> Set order (stays in the order zone)</label>
+        <label class="chk"><input type="checkbox" data-path="alchemagic" ${c.alchemagic ? "checked" : ""}> Alchemagic (may add a normal order from your drop)</label>
+        <label class="chk"><input type="checkbox" data-path="arms" ${c.arms ? "checked" : ""}> Arms (attaches to your vanguard)</label>` : ""}
+      ${c.type === "unit" ? `<label class="chk"><input type="checkbox" data-path="dress" ${c.dress ? "checked" : ""}> overDress</label>
+        <label class="chk"><input type="checkbox" data-path="ace" ${c.ace ? "checked" : ""}> Ace Unit (max 1 per deck)</label>` : ""}
       ${c.type === "g" ? `<label class="chk"><input type="checkbox" data-path="ultimate" ${c.ultimate ? "checked" : ""}> Ultimate Stride (needs 3 face-up G cards; removes the G zone when it returns)</label>` : ""}
     </div>
     <div class="imgrow">
@@ -188,7 +196,7 @@ function abilityHTML(ab, ai) {
       <label>Kind ${sel(`${base}.kind`, SCHEMA.kinds, ab.kind)}</label>
       ${order ? "" : `<label>Zone ${sel(`${base}.zone`, SCHEMA.zones, ab.zone || "VC")}</label>`}
       ${ab.kind === "AUTO" ? `<label>When ${sel(`${base}.when`, SCHEMA.events, ab.when)}</label>` : ""}
-      <label>Limit ${sel(`${base}.once`, { "": "No limit", turn: "1/Turn", game: "1/Game" }, ab.once || "")}</label>
+      <label>Limit ${sel(`${base}.once`, { "": "No limit", turn: "1/Turn", game: "1/Game (1/Fight, per card)", divine: "Divine Skill (1 per game, all cards)", unique: "Unique Skill (1 per game, all cards)" }, ab.once || "")}</label>
       ${ab.kind === "AUTO" ? `<label class="chk" title="Tick when the card text has no &quot;you may&quot;: it resolves without asking"><input type="checkbox" data-path="${base}.mandatory" ${ab.mandatory ? "checked" : ""}> Mandatory</label>` : ""}
       <button class="del" data-do="delAb" data-i="${ai}">Remove ability</button>
     </div>

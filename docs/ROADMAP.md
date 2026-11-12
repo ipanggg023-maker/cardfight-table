@@ -10,6 +10,7 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Card library import (CGS GitHub data, 21k cards), tcgapi.dev import (needs key + relay)
 - Local pictures: `vanguard_images` (Edit.py) + "Link pictures" folder matcher
 - Playmats per player (Classic / overDress Red / Blue / custom upload), DD2-style HUD, phase banner
+- D-era mechanics (2026-11-12): set orders + order zone (CONT/AUTO/ACT there), World, Arms, Alchemagic, Regalis Piece once per game, overDress / XoverDress, Divine Skill / Unique Skill, Ace Unit limit
 - Imaginary gifts and Legion (2026-11-12): Force I/II, Accel I/II (extra front-row circles), Protect I/II; Seek Mate / Legion with drop-to-deck cost
 - Stride / G zone (2026-11-12): G units (grade 4) in a G deck, stride step with heart, triple drive, Generation Break, G guardians, Ultimate Stride; Card library imports G units
 - Formats (2026-11-12): Standard / V Premium / Premium / Premium Extreme per deck, format-aware deck check, editable restriction lists (Formats tab), first vanguard from the main deck + G assist for formats without a ride deck, Quick deck for every format

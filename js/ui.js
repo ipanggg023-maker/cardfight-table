@@ -75,7 +75,7 @@ function preloadPictures() {
   const S = Game.state();
   if (!S) return;
   S.players.forEach((p) => {
-    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...(p.gDeck || []), ...(p.gUp || []), ...Object.values(p.slots).filter(Boolean).flatMap((s) => [s.card, s.heart, s.mate, s.heartMate].filter(Boolean))].forEach((c) => Pics.url(c));
+    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...(p.gDeck || []), ...(p.gUp || []), ...Object.values(p.slots).filter(Boolean).flatMap((s) => [s.card, s.heart, s.mate, s.heartMate, ...(s.under || []), ...(s.arms || [])].filter(Boolean)), ...(p.orderZone || [])].forEach((c) => Pics.url(c));
   });
   if (typeof Net !== "undefined") Object.values(Net.images).forEach((u) => u && Pics.load(u));
   (ui.mats || []).forEach((m) => m && m.img && Pics.load(m.img));
@@ -349,7 +349,8 @@ function renderSide(root, pi, side) {
     placeCard(el, s && s.card, s, pi, key);
     // gift markers on this circle (Force I/II, Protect II) and the accel bonus
     const m = (p.marks || {})[key] || {}, a = (p.accel || []).find((x) => x.key === key);
-    const badge = [m.forceI ? `F+${10 * m.forceI}k` : "", m.forceII ? "F★2" : "", m.protectII ? "P+10k" : "", a ? `A${a.variant}` : ""].filter(Boolean).join(" ");
+    const badge = [m.forceI ? `F+${10 * m.forceI}k` : "", m.forceII ? "F★2" : "", m.protectII ? "P+10k" : "", a ? `A${a.variant}` : "",
+      s && s.under && s.under.length ? `Dress${s.under.length > 1 ? "×" + s.under.length : ""}` : "", s && s.arms && s.arms.length ? `Arms×${s.arms.length}` : ""].filter(Boolean).join(" ");
     let mk = el.querySelector(":scope > .mk");
     if (badge && !mk) { mk = document.createElement("span"); mk.className = "mk"; el.appendChild(mk); }
     if (mk) { if (mk.textContent !== badge) mk.textContent = badge; mk.hidden = !badge; }
@@ -366,7 +367,7 @@ function renderSide(root, pi, side) {
     : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
   setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
     <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
+      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.orderZone || []).length ? chip("Orders", p.orderZone.length, "oz", "orderZone") : ""}${p.world ? chip("World", esc(p.world), "world") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
   setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
   const topDrop = p.drop[p.drop.length - 1];
   if (topDrop) seen.set(topDrop.uid, topDrop);
@@ -497,8 +498,11 @@ function actionsHTML(S, v) {
   if (S.phase === "main") {
     h += hint(ui.sel ? "Tap a circle to call" : ui.unitSel ? "Use an ACT, or tap a circle to move" : "Select a card or unit");
     if (selCard && selCard.type === "order") h += b("play", `Play ${esc(selCard.name)}`, "go");
+    if (selCard && selCard.dress && Game.dressTargets(S.active, selCard).length) h += b("dress", ui.mode === "dress" ? "Tap a rear-guard to overDress" : `overDress ${esc(selCard.name)}`, ui.mode === "dress" ? "on" : "go");
+    if (selCard && selCard.xoverDress) h += b("xdress", `XoverDress ${esc(selCard.name)}`, "go");
+    Game.orderZoneActs(S.active).forEach((a) => (h += b("ozact", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-uid="${a.uid}" data-i="${a.i}" title="${esc(a.text)}"`)));
     if (ui.unitSel) {
-      Game.actList(S.active, ui.unitSel).forEach((a) => (h += b("actv", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-i="${a.i}" title="${esc(a.text)}"`)));
+      Game.actList(S.active, ui.unitSel).forEach((a) => (h += b("actv", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-i="${a.i}" data-src="${a.src || 0}" title="${esc(a.text)}"`)));
     }
     const me = S.players[S.active];
     if (me.useEnergy && me.energy >= 7 && me.egTurn !== S.turn) h += b("egdraw", "⚡ Energy-Blast 7: draw 1", "on");
@@ -565,6 +569,7 @@ function onSlot(side, key) {
     return;
   }
   if (S.phase === "main") {
+    if (ui.sel && ui.mode === "dress") { const id = ui.sel; ui.sel = null; ui.mode = null; return act(Game.overDress(id, key)); }
     if (ui.sel) { const id = ui.sel; ui.sel = null; return act(Game.call(id, key)); }
     if (ui.unitSel && ui.unitSel !== key && ui.unitSel !== "vc" && key !== "vc" && S.players[v].slots[ui.unitSel]) {
       const from = ui.unitSel; ui.unitSel = null; return act(Game.move(from, key));
@@ -594,6 +599,7 @@ function onHand(uid) {
   if (ui.mode === "rideDiscard") { ui.mode = null; return act(Game.rideFromDeck(uid)); }
   ui.sel = ui.sel === uid ? null : uid;
   ui.unitSel = null;
+  if (ui.mode === "dress") ui.mode = null; // a new selection cancels a pending overDress
   render();
 }
 function onAction(a, el) {
@@ -603,7 +609,10 @@ function onAction(a, el) {
     case "skipRide": return act(Game.skipRide());
     case "cancel": ui.mode = null; ui.attacker = null; return render();
     case "play": { const id = ui.sel; ui.sel = null; return act(Game.playOrder(id)); }
-    case "actv": return act(Game.activate(ui.unitSel, +el.dataset.i));
+    case "actv": return act(Game.activate(ui.unitSel, +el.dataset.i, +(el.dataset.src || 0)));
+    case "ozact": return act(Game.activateOrderZone(+el.dataset.uid, +el.dataset.i));
+    case "dress": ui.mode = ui.mode === "dress" ? null : "dress"; return render();
+    case "xdress": { const id = ui.sel; ui.sel = null; ui.mode = null; return act(Game.xoverDress(id)); }
     case "egdraw": return act(Game.energyDraw());
     case "stride": return act(Game.stride());
     case "skipStride": return act(Game.skipStride());
@@ -636,7 +645,7 @@ function showZone(z) {
   const [pi, zone] = z.split(":");
   const S = Game.state(), pl = S.players[+pi];
   const cards = zone === "gzone" ? [...(pl.gUp || []), ...(+pi === view() ? (pl.gDeck || []) : [])] : pl[zone];
-  const label = zone === "gzone" ? `G zone: ${(pl.gUp || []).length} face up${+pi === view() ? `, ${(pl.gDeck || []).length} face down` : ""}` : zone;
+  const label = zone === "orderZone" ? "order zone" : zone === "gzone" ? `G zone: ${(pl.gUp || []).length} face up${+pi === view() ? `, ${(pl.gDeck || []).length} face down` : ""}` : zone;
   $("#zoneTitle").textContent = `${pl.name}: ${label} (${cards.length})`;
   $("#zoneCards").innerHTML = cards.map((c) => cardHTML(c, {}, null, null, " mini")).join("") || "<p class='muted'>Empty</p>";
   $("#zone").hidden = false;
