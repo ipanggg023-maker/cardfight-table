@@ -23,8 +23,18 @@ const MAT_LAYOUT = {
 const Mats = (() => {
   const get = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); return true; } catch { return false; } };
+  // The overDress pictures stay on the user's PC (not in git), so the hosted site doesn't have them.
+  // probe() marks mats whose picture can't load; they are hidden and fall back to Classic.
+  let probed = null;
+  const probe = () => (probed ??= Promise.all(Object.values(MATS).filter((m) => m.img).map((m) => new Promise((ok) => {
+    const i = new Image();
+    i.onload = () => ok();
+    i.onerror = () => { m.missing = true; ok(); };
+    i.src = m.thumb || m.img;
+  }))));
   return {
-    choice: (seat) => get(`vt-mat-${seat}`, seat === 1 ? "red" : "blue"),
+    probe,
+    choice: (seat) => { const k = get(`vt-mat-${seat}`, seat === 1 ? "red" : "blue"); return MATS[k] && !MATS[k].missing ? k : "classic"; },
     remember: (seat, key) => set(`vt-mat-${seat}`, key),
     customImg: (seat) => get(`vt-mat-custom-${seat}`, ""),
     // Shrinks an uploaded picture to 1600px wide JPEG so it fits in browser storage.

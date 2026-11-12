@@ -26,6 +26,7 @@ async function loadSetup() {
   if (me) { $("#n1").value = me.name; if (me.lastP2) $("#n2").value = me.lastP2; }
   $("#d2").innerHTML = opts;
   if (decks[1]) $("#d2").value = decks[1].id;
+  await Mats.probe();
   [1, 2].forEach(renderMatPick);
   if (ONLINE && !ui.netReady) setupOnline();
 }
@@ -105,7 +106,7 @@ async function startHosted() {
 function renderMatPick(seat) {
   const box = document.querySelector(`.matpick[data-seat="${seat}"]`);
   const cur = Mats.choice(seat), custom = Mats.customImg(seat);
-  box.innerHTML = `<span class="mp-label">Playmat</span><div class="mp-row">${Object.entries(MATS).map(([k, m]) => {
+  box.innerHTML = `<span class="mp-label">Playmat</span><div class="mp-row">${Object.entries(MATS).filter(([, m]) => !m.missing).map(([k, m]) => {
     const th = k === "custom" ? custom : m.thumb;
     return `<button type="button" class="mp${cur === k ? " on" : ""}" data-mat="${k}" title="${esc(m.name)}">
       ${th ? `<img src="${esc(th)}" alt="">` : `<span class="mp-ph">${k === "custom" ? "＋" : "Classic"}</span>`}<small>${esc(k === "custom" && custom ? "My image" : m.name)}</small></button>`;
