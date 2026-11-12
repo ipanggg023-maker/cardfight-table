@@ -21,7 +21,7 @@ const Game = (() => {
   // Skill icons (CR 2.17, 14.3–14.5). Cards made before these fields existed fall back to the usual
   // values for their grade: Twin Drive on grade 3+, Boost on grade 0–1, Intercept on grade 2.
   const flag = (v, dflt) => (v === true || v === "1" ? true : v === false || v === "0" ? false : dflt);
-  const driveOf = (c) => +c.drive || (c.grade >= 3 ? 2 : 1);
+  const driveOf = (c) => +c.drive || (c.type === "g" ? 3 : c.grade >= 3 ? 2 : 1);
   const canBoostIcon = (c) => c.type !== "order" && flag(c.boost, c.grade <= 1);
   const canInterceptIcon = (c) => c.type !== "order" && flag(c.intercept, c.grade === 2);
   // Trigger power is the number printed on the icon (CR 11.10.5): 10000 on V/D cards, 5000 on old ones
@@ -48,6 +48,7 @@ const Game = (() => {
       useEnergy: !!deck.energy, energy: 0,
       deck: shuffle(main), ride,
       hand: [], soul: [], damage: [], drop: [], bind: [], removed: [],
+      gDeck: (deck.g || []).map(inst), gUp: [], vcGradeAtStart: 0, // G zone: face down / face up (CR 4.14)
       slots: { vc: slot(first), fl: null, fr: null, bl: null, bc: null, br: null },
       driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
       orderTurn: -1, egTurn: -1, // turn number of the last order played / Energy Generator draw (1 each per turn)
@@ -189,7 +190,8 @@ const Game = (() => {
     // Persona Ride: units on your front-row circles get +10000 until end of turn (CR 7.15.1.4).
     // It belongs to the circles, so units called there later this turn get it too.
     const persona = p.personaFront && FRONT.includes(key) ? 10000 : 0;
-    return s.card.power + s.pow + s.powB + persona + cont(pi, key, "power");
+    const heart = s.heart ? +s.heart.power || 0 : 0; // stride: the heart's power is added (CR 6.5.2)
+    return s.card.power + heart + s.pow + s.powB + persona + cont(pi, key, "power");
   }
   function crit(pi, key) {
     const s = P(pi).slots[key];
@@ -202,7 +204,9 @@ const Game = (() => {
     switch (c.type) {
       case "myTurn": return S.active === pi;
       case "oppTurn": return S.active !== pi;
-      case "vcName": return p.slots.vc.card.name.toLowerCase().includes((c.text || "").toLowerCase());
+      case "vcName": return [p.slots.vc.card, p.slots.vc.heart].some((x) => x && x.name.toLowerCase().includes((c.text || "").toLowerCase()));
+      case "genBreak": return gFaceUp(p) >= n;   // Generation Break N (CR 14.14)
+      case "limitBreak": return p.damage.length >= n; // Limit Break N (CR 14.7)
       case "vcGrade": return p.slots.vc.card.grade >= n;
       case "oppVcGrade": return o.slots.vc.card.grade >= n;
       case "myDamage": return p.damage.length >= n;
@@ -324,18 +328,27 @@ const Game = (() => {
   }
 
   // ---------- moving cards ----------
-  function retire(pi, key) {
-    const s = P(pi).slots[key];
-    if (!s) return;
-    P(pi).drop.push(s.card);
-    P(pi).slots[key] = null;
+  // ---------- G zone ----------
+  const gFaceUp = (p) => p.gUp.length + (p.slots.vc && p.slots.vc.card.type === "g" ? 1 : 0);
+  function toGZone(p, g) {
+    if (g.ultimate) { // Ultimate Stride: when it returns, the whole G zone is removed from the game (CR 14.13)
+      p.removed.push(g, ...p.gUp, ...p.gDeck);
+      p.gUp = []; p.gDeck = [];
+      log(`${g.name} returns: the G zone of ${p.name} is removed from the game`);
+    } else p.gUp.push(g);
   }
-  function bindUnit(pi, key) {
-    const s = P(pi).slots[key];
+  // A card leaving a circle: G units go face up to the G zone; a strided vanguard's heart becomes the vanguard again
+  function leaveCircle(pi, key, dest) {
+    const p = P(pi), s = p.slots[key];
     if (!s) return;
-    P(pi).bind.push(s.card);
-    P(pi).slots[key] = null;
+    if (s.card.type === "g") {
+      toGZone(p, s.card);
+      if (key === "vc" && s.heart) { s.card = s.heart; s.heart = null; return; }
+    } else p[dest].push(s.card);
+    p.slots[key] = null;
   }
+  function retire(pi, key) { leaveCircle(pi, key, "drop"); }
+  function bindUnit(pi, key) { leaveCircle(pi, key, "bind"); }
   async function place(pi, card, key) {
     const p = P(pi);
     if (p.slots[key]) { log(`${p.slots[key].card.name} was replaced and retired`); retire(pi, key); }
@@ -466,6 +479,7 @@ const Game = (() => {
   // Stand phase → draw phase (both players draw every turn, CR 9.4.2) → ride phase
   async function startTurn() {
     const pi = S.active, p = P(pi);
+    p.vcGradeAtStart = p.slots.vc.card.grade;
     Object.values(p.slots).forEach((s) => s && (s.rest = false));
     S.used = new Set();
     Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false });
@@ -507,9 +521,73 @@ const Game = (() => {
     shuffle(p.deck);
   }
   async function enterMain() {
+    if (S.phase === "ride" && canStride(S.active)) { S.phase = "stride"; return; } // stride step (CR 9.8)
     S.phase = "main";
     await fireAll(S.active, "mainStart");
   }
+  // ---------- Stride (CR 6.5, 9.8, 14.12) ----------
+  const strideUnits = (p) => p.gDeck.filter((c) => c.gKind !== "guardian" && (!c.ultimate || p.gUp.length >= 3));
+  const handGrades = (cards) => cards.reduce((n, c) => n + (+c.grade || 0), 0);
+  function canStride(pi) {
+    const p = P(pi), o = P(1 - pi);
+    if (!strideUnits(p).length || p.slots.vc.card.type === "g") return false;
+    const ok = (p.slots.vc.card.grade >= 3 && o.slots.vc.card.grade >= 3) || p.vcGradeAtStart >= 3;
+    return ok && handGrades(p.hand) >= 3; // default stride cost: discard cards with total grade 3+
+  }
+  const stride = () => run(async () => {
+    if (S.phase !== "stride") return err("Stride in the stride step, right after the ride step");
+    const pi = S.active, p = P(pi);
+    if (!canStride(pi)) return err("You can't stride now");
+    const [g] = await chooseCards(pi, "Stride: choose a G unit from your G zone", strideUnits(p), 1, 1);
+    if (!g) return err("No G unit chosen");
+    const picked = await chooseCards(pi, `Stride ${g.name}: discard cards from your hand whose grades total 3 or more`, p.hand, 1, p.hand.length);
+    const total = handGrades(picked);
+    if (total < 3) return err(`Those cards total grade ${total}; you need 3 or more`);
+    picked.forEach((x) => { p.hand.splice(p.hand.indexOf(x), 1); p.drop.push(x); });
+    p.gDeck.splice(p.gDeck.indexOf(g), 1);
+    const vs = p.slots.vc;
+    vs.heart = vs.card; // the old vanguard becomes the heart (not a ride: no ride abilities, no gifts)
+    vs.card = g;
+    log(`⇧ ${p.name} strides ${g.name} (heart: ${vs.heart.name}) · discarded total grade ${total}`);
+    collect(pi, "vc", "onStride");
+    await settle();
+    S.phase = "main";
+    await fireAll(pi, "mainStart");
+  });
+  const skipStride = () => run(async () => {
+    if (S.phase !== "stride") return err("Not in the stride step");
+    S.phase = "main";
+    await fireAll(S.active, "mainStart");
+  });
+  // End phase (CR 9.11.1): G units on the field go face up to the G zone; hearts become vanguards again
+  function returnGUnits() {
+    S.players.forEach((p, pi) => { for (const k of UNITS) if (p.slots[k] && p.slots[k].card.type === "g") leaveCircle(pi, k, "drop"); });
+  }
+  // ---------- G guardian (CR 10.5.1.2.3, 14.16) ----------
+  function canGGuard(di) {
+    const d = P(di);
+    if (!S.battle || di === S.active) return false;
+    if (S.players.some((pl) => pl.slots.vc.card.grade < 3)) return false;
+    if (d.gUp.filter((c) => c.gKind === "guardian").length > 3) return false;
+    return d.gDeck.some((c) => c.gKind === "guardian") && d.hand.some((c) => c.type !== "order" && c.grade >= 1);
+  }
+  const gGuard = () => run(async () => {
+    const b = S.battle, di = 1 - S.active, d = P(di);
+    if (!b) return err("No attack");
+    if (!canGGuard(di)) return err("You can't call a G guardian now");
+    const [g] = await chooseCards(di, "G guardian: choose one to call to the guardian circle", d.gDeck.filter((c) => c.gKind === "guardian"), 1, 1);
+    if (!g) return err("No G guardian chosen");
+    // default cost: discard a grade 1 or greater card (card-specific costs can be added as abilities)
+    const [x] = await chooseCards(di, `${g.name}: discard a grade 1 or greater card`, d.hand.filter((c) => c.type !== "order" && c.grade >= 1), 1, 1);
+    if (!x) return err("No card discarded");
+    d.hand.splice(d.hand.indexOf(x), 1);
+    d.drop.push(x);
+    d.gDeck.splice(d.gDeck.indexOf(g), 1);
+    b.guards.push(g);
+    log(`${d.name} calls G guardian ${g.name} (shield ${(g.shield || 0).toLocaleString()})`);
+    collect(di, null, "placedGC", { card: g, zone: "GC" });
+    await settle();
+  });
   const mulligan = (uids) => run(async () => {
     if (S.phase !== "mulligan") return err("Not in mulligan");
     const p = P(S.controller);
@@ -526,7 +604,9 @@ const Game = (() => {
   });
 
   async function doRide(pi, card, fromHand) {
-    const p = P(pi), old = p.slots.vc.card;
+    const p = P(pi), vs = p.slots.vc;
+    let old = vs.card;
+    if (vs.heart) { toGZone(p, old); old = vs.heart; vs.heart = null; }
     p.soul.push(old);
     p.slots.vc.card = card;
     S.rode = true;
@@ -754,7 +834,8 @@ const Game = (() => {
     if (!b) return;
     const ai = S.active;
     const d = P(1 - ai);
-    d.drop.push(...b.guards);
+    b.guards.filter((c) => c.type === "g").forEach((g) => toGZone(d, g));
+    d.drop.push(...b.guards.filter((c) => c.type !== "g"));
     b.guards = [];
     if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { log(`${d.slots[b.tgt].card.name} is retired`); retire(1 - ai, b.tgt); }
     if (!over()) await fire(ai, b.att, "battleEnd");
@@ -766,6 +847,7 @@ const Game = (() => {
   const endTurn = () => run(async () => {
     if (S.battle) return err("Finish the battle first");
     if (S.phase === "mulligan") return err("Still in mulligan");
+    returnGUnits();
     collectAll(S.active, "endTurn");
     collectAll(1 - S.active, "oppTurnEnd");
     await settle();
@@ -789,7 +871,7 @@ const Game = (() => {
     const hide = (cards) => cards.map(() => ({ uid: -(++fake), name: "?", hidden: true, type: "unit", grade: 0, power: 0 }));
     s.players.forEach((p, i) => {
       p.deck = hide(p.deck);
-      if (i !== seat) { p.hand = hide(p.hand); p.ride = hide(p.ride); }
+      if (i !== seat) { p.hand = hide(p.hand); p.ride = hide(p.ride); p.gDeck = hide(p.gDeck || []); }
     });
     if (s.pending && s.pending.player !== seat) s.pending.options = [];
     return s;
@@ -806,7 +888,7 @@ const Game = (() => {
     newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
-    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw,
+    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
     driveOf, canBoostIcon, canInterceptIcon, trigPower,
   };
 })();

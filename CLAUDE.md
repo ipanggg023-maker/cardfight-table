@@ -63,7 +63,7 @@ CSS: "HUD layout v3" blocks at the end of style.css. Card size scales with the s
 ## Data model
 Card: `{id, name, grade, type: unit|trigger|order, power, shield, crit, trigger: null|crit|front|draw|heal|over|stand, trigPower?, drive?, boost?, intercept?, sentinel, persona, nation, race, image, text, abilities[]}`. Missing drive/boost/intercept fall back to grade (Twin Drive on G3+, Boost on G0–1, Intercept on G2); missing trigPower = 10000 (over 100M)
 Ability: `{kind: AUTO|ACT|CONT|ORDER|BLITZ, zone, when, once: ""|turn|game, mandatory?, conds[], costs[], effects[]}`; each row is `{type, ...params}`. `mandatory` AUTOs resolve without asking (no "you may"). `when: "overDrive"` = an over trigger's own text, only on drive checks
-Deck: `{id, name, format, energy, ride:[4 card ids G0..G3] (Standard), starter: card id (formats without a ride deck: a G0 that is one of the 50), main:[50 card ids]}`. Card also has `clan` (older cards), `icon` ("D"|"V"|"-"|"" = auto), `regalis`
+Deck: `{id, name, format, energy, ride:[4 card ids G0..G3] (Standard), starter: card id (formats without a ride deck: a G0 that is one of the 50), main:[50 card ids]}`. Card also has `clan` (older cards), `icon` ("D"|"V"|"-"|"" = auto), `regalis`; G units: `type: "g"`, grade 4, `gKind: "stride"|"guardian"`, `ultimate`, drive 3 by default. Deck also `g:[ids]`, `gUnlock`
 
 ## Engine notes
 - `S.active` = turn player, `S.controller` = who must act now (defender while guarding, chooser during `S.pending`)
@@ -71,6 +71,7 @@ Deck: `{id, name, format, energy, ride:[4 card ids G0..G3] (Standard), starter: 
 - Slots `{card, rest, pow, crit, powB, critB}`; pow/crit reset at end of turn, powB/critB at end of battle. CONT bonuses computed live in `power()`/`crit()`
 - Phases: mulligan → ride → main → battle → (endTurn) ride…. `S.first` = who went first (random unless chosen); both players draw every turn; no attacks on turn 1; mulligan = bottom, draw, shuffle
 - Check timing (CR 11.6): `fire()`/`collect()` put AUTO abilities in `S.queue`; `checkTiming()` runs rule actions, then the turn player resolves their waiting abilities in the order they pick (prompt when 2+), then the other player; abilities triggered while one resolves (`depth`>0) wait. Simultaneous events (attack+boost+attacked, placedRC+allyPlacedRC, riddenUpon+placedVC, turnStart+oppTurnStart) are collected together first
+- Stride / G zone (CR 6.5, 9.8, 14.12–14.16): decks have `g:[≤16 G unit ids]` (Premium/Extreme; Standard only with `deck.gUnlock`). Player `gDeck` (face down, hidden from the opponent online) and `gUp` (face up). Phase `stride` sits between ride and main when `canStride()` (both vanguards G3+ or yours was G3+ at turn start, hand grades ≥3): `Game.stride()` (pick G unit, discard total grade 3+, old vanguard → `slots.vc.heart`, power adds the heart's, names include it) or `skipStride()`. End phase `returnGUnits()`: G units → `gUp`, heart back to vanguard. `leaveCircle()` sends G units to the G zone instead of drop/bind. `gGuard()` in the guard step (both vanguards G3+, ≤3 face-up G guardians, default cost: discard a grade 1+ card [unverified]); G guardians go to `gUp` at end of battle. Ultimate Stride needs 3 face-up G cards and removes the whole G zone when it returns. Conditions `genBreak` / `limitBreak`, event `onStride`
 - Formats in the engine: each player has `hasRideDeck`; without one the first vanguard comes from the main deck and the G assist step runs at the start of the ride phase (`gAssist()`, CR 9.5). Energy only with the Energy Generator crest (Standard)
 - Losses: `lose()` only notes `S.loss[pi]`; `ruleActions()` decides at check timing / after each damage check / after every action. Both at once = draw game (`S.winner = -1`)
 - Rules follow docs/rules (CR 4.59). Fixed: B1–B16 of `docs/rules/08-engine-gaps-and-plan.md`. Still open: formats, zones (G/order/crest), gifts, Stride, Legion, more DSL blocks
@@ -86,7 +87,7 @@ Deck: `{id, name, format, energy, ride:[4 card ids G0..G3] (Standard), starter: 
 Local test: `node tools/serve.mjs` (or the "vanguard" entry in .claude/launch.json), open host and join pages in two tabs.
 
 ## Not implemented yet (good next tasks)
-- Over trigger extra effects, imaginary gifts, set orders/Regalis Piece zones, G zone/Stride, "cannot be called" type restrictions
+- Imaginary gifts, Legion, set orders/order zone, Regalis Piece once-per-game, "cannot be called" type restrictions, Standard stride crests (Chronojet etc.: power/+5000 per face-up G card)
 - Opponent-chosen effects (e.g. "your opponent chooses…"), abilities from soul/drop/hand zones, drop-zone ACT
 - Ride from ride deck alternative costs written on ride-line cards
 - Animations and sound

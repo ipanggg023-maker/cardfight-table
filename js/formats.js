@@ -12,6 +12,7 @@ const FORMATS = {
     identity: "nation",    // one nation (cards with no nation/clan go anywhere)
     trigCaps: { heal: 4, over: 1, crit: 8, draw: 8, front: 8 },
     standTrigger: false,
+    gDeck: "unlock",       // only with a listed ride deck / crest (deck.gUnlock)
     restrictions: true,
   },
   vpremium: {
@@ -20,6 +21,7 @@ const FORMATS = {
     poolIcon: "V", identity: "clan",
     trigCaps: { heal: 4, over: 1 },
     standTrigger: false,
+    gDeck: false,
     restrictions: true,
   },
   premium: {
@@ -28,6 +30,7 @@ const FORMATS = {
     poolIcon: null, identity: "clanPremium", // one clan; D cards must be from that clan's nation
     trigCaps: { heal: 4, over: 1 },
     standTrigger: true,
+    gDeck: true,           // 0–16 G units of the clan
     restrictions: true,
   },
   extreme: {
@@ -36,10 +39,12 @@ const FORMATS = {
     poolIcon: null, identity: null,
     trigCaps: { heal: 4, over: 1 },
     standTrigger: true,
+    gDeck: true,
     restrictions: false,
   },
 };
 const DEFAULT_FORMAT = "standard";
+const gDeckAllowed = (deck) => { const F = FORMATS[formatOf(deck)]; return F.gDeck === true || (F.gDeck === "unlock" && !!deck.gUnlock); };
 const formatOf = (deck) => FORMATS[deck && deck.format] ? deck.format : DEFAULT_FORMAT;
 
 // Old clan → D nation (official at nation level; the clan rows are [unverified], see docs/rules/01).
@@ -114,6 +119,15 @@ function validateDeck(deck, byId) {
     }
   }
   if (main.length !== 50) errs.push(`Main deck has ${main.length}/50 cards`);
+  // G deck (CR 8.1.4.3): up to 16 G units, max 4 per name; G units never go in the main deck
+  const gcards = (deck.g || []).map((id) => byId[id]).filter(Boolean);
+  if (main.some((c) => c.type === "g")) errs.push("G units go in the G deck, not the main deck");
+  if (gcards.some((c) => c.type !== "g")) errs.push("Only G units can go in the G deck");
+  if (gcards.length > 16) errs.push(`G deck has ${gcards.length}/16 cards`);
+  if (gcards.length && !gDeckAllowed(deck)) errs.push(F.gDeck === "unlock" ? "Standard allows a G deck only with a listed ride deck: tick \"My ride deck unlocks a G deck\"" : `${F.label} has no G deck`);
+  const gNames = {};
+  gcards.forEach((c) => (gNames[c.name] = (gNames[c.name] || 0) + 1));
+  Object.entries(gNames).forEach(([n, k]) => { if (k > 4) errs.push(`G deck: "${n}" ${k} copies (max 4)`); });
   // triggers, sentinels and copies count across the main deck and the ride deck (CR 8.1.5–8.1.7)
   const both = [...main, ...ride.filter(Boolean)];
   const count = (fn) => both.filter(fn).length;
@@ -132,14 +146,15 @@ function validateDeck(deck, byId) {
   both.forEach((c) => (names[c.name] = (names[c.name] || 0) + 1));
   Object.entries(names).forEach(([n, k]) => { if (k > 4) errs.push(`"${n}": ${k} copies (max 4${F.rideDeck ? " incl. ride deck" : ""})`); });
   // card pool
+  const all = [...both, ...gcards];
   if (F.poolIcon) {
-    const bad = [...new Set(both.filter((c) => iconOf(c) && iconOf(c) !== F.poolIcon).map((c) => c.name))];
+    const bad = [...new Set(all.filter((c) => iconOf(c) && iconOf(c) !== F.poolIcon).map((c) => c.name))];
     if (bad.length) errs.push(`Not ${F.poolIcon}-icon cards (not legal in ${F.label}): ${bad.slice(0, 4).join(", ")}${bad.length > 4 ? "…" : ""}`);
-    const unknown = both.filter((c) => !iconOf(c)).length;
+    const unknown = all.filter((c) => !iconOf(c)).length;
     if (unknown) errs.push(`${unknown} card(s) have no format icon set (D / V). Set it in the card editor`);
   }
   // one nation / one clan
-  const pool = both.filter((c) => !isNeutral(c));
+  const pool = all.filter((c) => !isNeutral(c));
   if (F.identity === "nation") {
     const ns = [...new Set(pool.map(cardNation).filter(Boolean))];
     if (ns.length > 1) errs.push(`One nation only: ${ns.join(", ")}`);

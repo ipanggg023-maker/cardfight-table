@@ -8,7 +8,7 @@ const Net = (() => {
   const PREFIX = "vgtable-";
   const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
   const ACTIONS = ["answer", "mulligan", "rideFromDeck", "rideFromHand", "skipRide", "call", "move", "activate",
-    "playOrder", "toBattle", "attack", "guard", "intercept", "confirmGuard", "endTurn", "energyDraw"];
+    "playOrder", "toBattle", "attack", "guard", "intercept", "confirmGuard", "endTurn", "energyDraw", "stride", "skipStride", "gGuard"];
   const GUEST = 1;
 
   let peer = null, conn = null, code = "", reqN = 0;
@@ -31,7 +31,7 @@ const Net = (() => {
     });
   }
   const send = (msg) => { if (conn && conn.open) conn.send(msg); };
-  const collectImages = (deck) => [...deck.ride, ...deck.main].forEach((c) => c && c.image && (images[c.id] = c.image));
+  const collectImages = (deck) => [...(deck.ride || []), ...deck.main, ...(deck.g || []), deck.starter].forEach((c) => c && c.image && (images[c.id] = c.image));
   const peerError = (e) => ({
     "unavailable-id": "That room code is taken. Try again.",
     "peer-unavailable": "No room with that code. Check the code and that the host is waiting.",

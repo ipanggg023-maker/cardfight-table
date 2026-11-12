@@ -75,7 +75,7 @@ function preloadPictures() {
   const S = Game.state();
   if (!S) return;
   S.players.forEach((p) => {
-    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...Object.values(p.slots).filter(Boolean).map((s) => s.card)].forEach((c) => Pics.url(c));
+    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...(p.gDeck || []), ...(p.gUp || []), ...Object.values(p.slots).filter(Boolean).flatMap((s) => [s.card, s.heart].filter(Boolean))].forEach((c) => Pics.url(c));
   });
   if (typeof Net !== "undefined") Object.values(Net.images).forEach((u) => u && Pics.load(u));
   (ui.mats || []).forEach((m) => m && m.img && Pics.load(m.img));
@@ -234,6 +234,7 @@ function cardInner(c, pi = null, key = null) {
   return `<div class="ctop"><span class="cg">${c.type === "order" ? "ORD" : "G" + c.grade}</span>
       ${c.trigger ? `<span class="ct t-${c.trigger}">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="ct t-sent">◆</span>` : ""}${(c.abilities || []).length ? `<span class="ab">✦</span>` : ""}</div>
     <div class="cn">${esc(c.name)}</div>
+    ${pi !== null && key === "vc" && Game.state().players[pi].slots.vc && Game.state().players[pi].slots.vc.heart ? `<div class="heart">♥ ${esc(Game.state().players[pi].slots.vc.heart.name)}</div>` : ""}
     <div class="cs">${c.type === "order" ? "" : `<span class="cp${pw !== c.power ? " buffed" : ""}">${fmt(pw)}</span>`}${cr > 1 ? `<span class="cc">★${cr}</span>` : ""}${c.shield ? `<span class="csh">🛡${c.shield / 1000}k</span>` : ""}</div>`;
 }
 function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
@@ -342,7 +343,7 @@ function renderSide(root, pi, side) {
     : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
   setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
     <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
+      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
   setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
   const topDrop = p.drop[p.drop.length - 1];
   if (topDrop) seen.set(topDrop.uid, topDrop);
@@ -356,8 +357,9 @@ let lastBeat = "";
 function renderRail(S) {
   $("#turnTag").textContent = S.phase === "mulligan" ? "Mulligan" : `Turn ${S.turn} · ${S.players[S.active].name}`;
   $("#rail").innerHTML = S.phase === "mulligan" ? "" : PHASES.map(([k, l]) => {
-    const i = PHASES.findIndex(([x]) => x === S.phase), j = PHASES.findIndex(([x]) => x === k);
-    return `<span class="${k === S.phase ? "on" : j < i ? "done" : ""}">${l}</span>`;
+    const ph = S.phase === "stride" ? "ride" : S.phase;
+    const i = PHASES.findIndex(([x]) => x === ph), j = PHASES.findIndex(([x]) => x === k);
+    return `<span class="${k === (S.phase === "stride" ? "ride" : S.phase) ? "on" : j < i ? "done" : ""}">${l}</span>`;
   }).join("");
   const beat = S.winner !== null ? "" : S.phase === "mulligan" ? "mulligan" : `${S.turn}:${S.phase}`;
   if (beat && beat !== lastBeat) {
@@ -454,10 +456,14 @@ function actionsHTML(S, v) {
   if (S.battle && !isActive) {
     let h = hint("Guard from hand · tap a front G2 to intercept");
     if (selCard && selCard.type === "order") h += b("play", `Play ${esc(selCard.name)}`, "go");
+    if (Game.canGGuard(v)) h += b("gguard", "G guard", "on");
     return h + b("confirm", "Done guarding ▶", "go");
   }
   if (!isActive) return "";
   let h = "";
+  if (S.phase === "stride") {
+    return hint("Stride step: put a G unit on your vanguard (discard grade 3+)") + b("stride", "Stride ⇧", "go") + b("skipStride", "Skip stride", "ghost");
+  }
   if (S.phase === "ride") {
     const next = Game.nextRide(S.active);
     if (ui.mode === "rideDiscard") return hint(`Discard 1 card to ride ${esc(next.name)}`) + b("cancel", "Cancel");
@@ -573,6 +579,9 @@ function onAction(a, el) {
     case "play": { const id = ui.sel; ui.sel = null; return act(Game.playOrder(id)); }
     case "actv": return act(Game.activate(ui.unitSel, +el.dataset.i));
     case "egdraw": return act(Game.energyDraw());
+    case "stride": return act(Game.stride());
+    case "skipStride": return act(Game.skipStride());
+    case "gguard": return act(Game.gGuard());
     case "battle": Object.assign(ui, { sel: null, unitSel: null, mode: null }); return act(Game.toBattle());
     case "boost": ui.boost = !ui.boost; return render();
     case "confirm": ui.sel = null; return act(Game.confirmGuard());
@@ -599,8 +608,10 @@ function onOpt(id) {
 const parseId = (id) => (/^\d+$/.test(id) ? +id : id);
 function showZone(z) {
   const [pi, zone] = z.split(":");
-  const S = Game.state(), cards = S.players[+pi][zone];
-  $("#zoneTitle").textContent = `${S.players[+pi].name}: ${zone} (${cards.length})`;
+  const S = Game.state(), pl = S.players[+pi];
+  const cards = zone === "gzone" ? [...(pl.gUp || []), ...(+pi === view() ? (pl.gDeck || []) : [])] : pl[zone];
+  const label = zone === "gzone" ? `G zone: ${(pl.gUp || []).length} face up${+pi === view() ? `, ${(pl.gDeck || []).length} face down` : ""}` : zone;
+  $("#zoneTitle").textContent = `${pl.name}: ${label} (${cards.length})`;
   $("#zoneCards").innerHTML = cards.map((c) => cardHTML(c, {}, null, null, " mini")).join("") || "<p class='muted'>Empty</p>";
   $("#zone").hidden = false;
 }

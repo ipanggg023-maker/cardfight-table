@@ -432,3 +432,7 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 .hand { contain: layout style; }
 .hand .hc { will-change: transform; }
 @media (prefers-reduced-motion: reduce) { .mat .slot > .card, .hand .hc { transition: none; } }
+
+/* Stride: heart name under a strided vanguard; G zone counter */
+.card .heart { font-size: .55em; color: #ff9fb0; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip.gz b { color: var(--gold); }

@@ -48,10 +48,13 @@ const SCHEMA = {
     oppTurnStart: "At the start of your opponent's turn",
     oppTurnEnd: "At the end of your opponent's turn",
     overDrive: "When revealed as an over trigger in your drive check (its over-trigger text)",
+    onStride: "When this G unit strides",
   },
 
   conds: {
     myTurn: { label: "It is your turn", params: [], text: () => "it is your turn" },
+    genBreak: { label: "Generation Break N (face-up G cards ≥ N)", params: [["n", "num"]], text: (p) => `[Generation Break ${p.n}]` },
+    limitBreak: { label: "Limit Break N (your damage ≥ N)", params: [["n", "num"]], text: (p) => `[Limit Break ${p.n}]` },
     oppTurn: { label: "It is opponent's turn", params: [], text: () => "it is opponent's turn" },
     vcName: { label: "Your VC name contains", params: [["text", "text"]], text: (p) => `your vanguard has "${p.text}" in its name` },
     vcGrade: { label: "Your VC grade ≥", params: [["n", "num"]], text: (p) => `your vanguard is grade ${p.n}+` },

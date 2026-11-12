@@ -132,7 +132,8 @@ function renderCard() {
     </details>
     <div class="fgrid">
       <label>Name ${txt("name", c.name)}</label>
-      <label>Card type ${sel("type", { unit: "Normal unit", trigger: "Trigger unit", order: "Order" }, c.type)}</label>
+      <label>Card type ${sel("type", { unit: "Normal unit", trigger: "Trigger unit", order: "Order", g: "G unit (grade 4)" }, c.type)}</label>
+      ${c.type === "g" ? `<label>G unit kind ${sel("gKind", { stride: "Stride (vanguard)", guardian: "G guardian (guard step)" }, c.gKind || "stride")}</label>` : ""}
       <label>Grade ${num("grade", c.grade)}</label>
       <label>Power ${num("power", c.power)}</label>
       <label>Shield ${num("shield", c.shield)}</label>
@@ -151,6 +152,7 @@ function renderCard() {
       <label class="chk"><input type="checkbox" data-path="sentinel" ${c.sentinel ? "checked" : ""}> Sentinel (perfect guard: discard 1)</label>
       <label class="chk"><input type="checkbox" data-path="persona" ${c.persona ? "checked" : ""}> Persona Ride</label>
       <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
+      ${c.type === "g" ? `<label class="chk"><input type="checkbox" data-path="ultimate" ${c.ultimate ? "checked" : ""}> Ultimate Stride (needs 3 face-up G cards; removes the G zone when it returns)</label>` : ""}
     </div>
     <div class="imgrow">
       ${c.image ? `<img src="${esc(c.image)}" alt="">` : ""}
@@ -245,6 +247,7 @@ $("#cardForm").addEventListener("input", (e) => {
   let v = el.type === "checkbox" ? el.checked : el.value;
   if (el.dataset.path === "trigger") v = v || null;
   setPath(el.dataset.path, v);
+  if (el.dataset.path === "type" && v === "g" && !(cur.grade >= 4)) { cur.grade = 4; cur.gKind = cur.gKind || "stride"; } // G units are grade 4
   if (el.tagName === "SELECT" || el.type === "checkbox") renderCard();
   else updatePreviews();
 });
@@ -350,7 +353,7 @@ $("#deckList").addEventListener("click", (e) => {
 $("#newDeck").addEventListener("click", () => {
   quick.open = false;
   const format = lastFormat();
-  curDeck = { id: DB.newId(), name: "New deck", format, energy: FORMATS[format].crest, ride: ["", "", "", ""], starter: "", main: [] };
+  curDeck = { id: DB.newId(), name: "New deck", format, energy: FORMATS[format].crest, ride: ["", "", "", ""], starter: "", main: [], g: [] };
   renderDecks();
 });
 // The deck builder is built once per deck, then patched: + / − only change counts, stats and
@@ -372,6 +375,7 @@ function renderDeckForm() {
       <div class="fgrid">
         <label>Deck name <input type="text" id="deckName" value="${esc(d.name)}"></label>
         <label>Format <select id="deckFormat">${Object.entries(FORMATS).map(([k, F]) => `<option value="${k}" title="${esc(F.sub)}" ${formatOf(d) === k ? "selected" : ""}>${esc(F.label)}</option>`).join("")}</select></label>
+        <label class="chk" id="deckGRow"><input type="checkbox" id="deckGUnlock" ${d.gUnlock ? "checked" : ""}> My ride deck unlocks a G deck (listed combinations only)</label>
         <label class="chk" id="deckEnergyRow"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (5th ride deck card: +3 energy each ride phase, max 10)</label>
       </div>
       <h4 id="dkRideTitle">Ride deck</h4>
@@ -383,20 +387,23 @@ function renderDeckForm() {
       <h4 id="dkPoolTitle"></h4>
       <div class="tools">
         <input id="poolQ" placeholder="Search name…" value="${esc(poolF.q)}">
-        <select id="poolG"><option value="">All grades</option>${["0", "1", "2", "3"].map((g) => `<option ${poolF.g === g ? "selected" : ""}>${g}</option>`).join("")}<option value="o" ${poolF.g === "o" ? "selected" : ""}>Orders</option></select>
+        <select id="poolG"><option value="">All grades</option>${["0", "1", "2", "3"].map((g) => `<option ${poolF.g === g ? "selected" : ""}>${g}</option>`).join("")}<option value="4" ${poolF.g === "4" ? "selected" : ""}>G units (4)</option><option value="o" ${poolF.g === "o" ? "selected" : ""}>Orders</option></select>
         <select id="poolN" title="Clan / nation"></select>
         <select id="poolR" title="Race"></select>
       </div>
       <div class="pool cards" id="dkPool"></div>`;
   }
   const cnt = {};
-  d.main.forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
+  if (!d.g) d.g = [];
+  [...d.main, ...d.g].forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
   const mainCards = d.main.map((id) => ids[id]).filter(Boolean);
   const statCards = FORMATS[formatOf(d)].rideDeck ? [...mainCards, ...(d.ride || []).map((id) => ids[id]).filter(Boolean)] : mainCards;
   const errs = validateDeck(d, ids);
   setHTML($("#dkTitle"), esc(d.name));
   const F = FORMATS[formatOf(d)];
   $("#deckEnergyRow").hidden = !F.crest;
+  $("#deckGRow").hidden = F.gDeck !== "unlock";
+  const gOn = gDeckAllowed(d);
   if (!F.crest) d.energy = false;
   setHTML($("#dkRideTitle"), F.rideDeck ? "Ride deck (grade 0–3 + crest)" : "First vanguard (a grade 0 from your 50 cards)");
   // Ride deck slots / first vanguard slot: buttons that open the big picture picker
@@ -412,12 +419,13 @@ function renderDeckForm() {
       <span class="pile">Sentinel ${statCards.filter((c) => c.sentinel).length}/4</span>
       ${[0, 1, 2, 3].map((g) => `<span class="pile">G${g}: ${mainCards.filter((c) => c.type !== "order" && c.grade === g).length}</span>`).join("")}
       <span class="pile">Orders ${mainCards.filter((c) => c.type === "order").length}</span>
+      ${gOn || d.g.length ? `<span class="pile">G deck ${d.g.length}/16</span>` : ""}
     </div>
     ${errs.length ? `<ul class="errs">${errs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="okmsg">✓ Deck is legal</p>`}`);
   // In this deck: rebuilt only when a card is added or removed completely, otherwise counts are patched
-  const inDeck = [...new Set(d.main)].map((id) => ids[id]).filter(Boolean)
+  const inDeck = [...new Set([...d.main, ...d.g])].map((id) => ids[id]).filter(Boolean)
     .sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
-  setHTML($("#dkInTitle"), `In this deck (${d.main.length})`);
+  setHTML($("#dkInTitle"), `In this deck (${d.main.length}${d.g.length ? ` + G deck ${d.g.length}` : ""})`);
   const inKey = inDeck.map((c) => c.id).join(",") + "|" + cardsVer;
   if (root._inKey !== inKey) {
     root._inKey = inKey;
@@ -456,7 +464,7 @@ function fillChunked(box, items, html) {
   };
   setTimeout(next, 0);
 }
-const deckCount = (id) => (curDeck ? curDeck.main.filter((x) => x === id).length : 0);
+const deckCount = (id) => (curDeck ? [...curDeck.main, ...(curDeck.g || [])].filter((x) => x === id).length : 0);
 const lastFormat = () => { try { const f = localStorage.getItem("vt-last-format"); return FORMATS[f] ? f : DEFAULT_FORMAT; } catch { return DEFAULT_FORMAT; } };
 const rememberFormat = (f) => { try { localStorage.setItem("vt-last-format", f); } catch { /* storage blocked */ } };
 // Deck builder filters, kept while switching decks
@@ -479,6 +487,7 @@ $("#deckForm").addEventListener("input", (e) => {
 $("#deckForm").addEventListener("change", (e) => {
   if (!curDeck) return;
   if (e.target.id === "deckEnergy") { curDeck.energy = e.target.checked; renderDeckForm(); }
+  if (e.target.id === "deckGUnlock") { curDeck.gUnlock = e.target.checked; renderDeckForm(); }
   if (e.target.id === "deckFormat") {
     curDeck.format = e.target.value;
     rememberFormat(curDeck.format);
@@ -510,8 +519,12 @@ $("#deckForm").addEventListener("click", async (e) => {
     if (c && !deck.main.includes(c.id)) deck.main.push(c.id); // the first vanguard is one of the 50
     return renderDeckForm();
   }
-  if (b.dataset.dk === "+") { curDeck.main.push(b.dataset.id); return renderDeckForm(); }
-  if (b.dataset.dk === "-") { const i = curDeck.main.lastIndexOf(b.dataset.id); if (i >= 0) curDeck.main.splice(i, 1); return renderDeckForm(); }
+  if (b.dataset.dk) {
+    const c = byId()[b.dataset.id], list = c && c.type === "g" ? (curDeck.g = curDeck.g || []) : curDeck.main;
+    if (b.dataset.dk === "+") list.push(b.dataset.id);
+    else { const i = list.lastIndexOf(b.dataset.id); if (i >= 0) list.splice(i, 1); }
+    return renderDeckForm();
+  }
   if (b.id === "saveDeck") {
     const { _q, ...clean } = curDeck;
     await DB.put("decks", clean);
@@ -758,7 +771,7 @@ function quickRide(o, v) {
 }
 function quickBuild(o) {
   const v = cards.find((c) => c.id === o.v);
-  const clan = cards.filter((c) => clanOf(c) === o.n && !c.needsTrigger);
+  const clan = cards.filter((c) => clanOf(c) === o.n && !c.needsTrigger && c.type !== "g");
   const notes = [];
   const copies = {}; // name -> copies used (ride deck + main), max 4
   const used = (c) => copies[c.name.toLowerCase()] || 0;
@@ -810,7 +823,12 @@ function quickBuild(o) {
   if (short > 0) short = take(sc(clan.filter((c) => c.type === "order")), short);
   if (short > 0) short = take(units(1).filter((c) => c.sentinel), short, 4);
   if (short > 0) notes.push(`${short} card(s) short of 50`);
-  let deck = { id: DB.newId(), name: `${o.n} · ${v.name}`.slice(0, 60), format: o.format || DEFAULT_FORMAT, energy: !!o.energy, ride: ride.map((c) => (c ? c.id : "")), starter: "", main };
+  let deck = { id: DB.newId(), name: `${o.n} · ${v.name}`.slice(0, 60), format: o.format || DEFAULT_FORMAT, energy: !!o.energy, ride: ride.map((c) => (c ? c.id : "")), starter: "", main, g: [] };
+  if (gDeckAllowed(deck)) {
+    const gs = cards.filter((c) => c.type === "g" && clanOf(c) === o.n);
+    const order = [...quickScore(gs.filter((c) => c.gKind !== "guardian"), v, o.prio), ...quickScore(gs.filter((c) => c.gKind === "guardian"), v, o.prio)];
+    for (const c of order) for (let i = 0; i < 4 && deck.g.length < 16; i++) deck.g.push(c.id);
+  }
   const F = FORMATS[deck.format] || FORMATS.standard;
   if (!F.crest) deck.energy = false;
   if (!F.rideDeck) {

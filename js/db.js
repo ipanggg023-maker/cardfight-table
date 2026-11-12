@@ -56,7 +56,8 @@ const DB = (() => {
     if (missing) throw new Error(`${missing} card(s) in this deck were deleted`);
     const format = typeof formatOf === "function" ? formatOf(deck) : "standard";
     const rideDeck = typeof FORMATS === "undefined" || FORMATS[format].rideDeck;
-    return { name: deck.name, format, energy: rideDeck && !!deck.energy, ride: rideDeck ? (deck.ride || []).map(get) : [], starter: rideDeck ? null : get(deck.starter) || null, main: deck.main.map(get) };
+    const gAllowed = typeof gDeckAllowed === "function" ? gDeckAllowed(deck) : false;
+    return { name: deck.name, format, g: gAllowed ? (deck.g || []).map(get).filter(Boolean) : [], energy: rideDeck && !!deck.energy, ride: rideDeck ? (deck.ride || []).map(get) : [], starter: rideDeck ? null : get(deck.starter) || null, main: deck.main.map(get) };
   }
   return { all, put, del, newId, removeSamples, exportAll, importAll, loadDeck };
 })();

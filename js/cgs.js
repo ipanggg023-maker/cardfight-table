@@ -49,7 +49,7 @@ const Cgs = (() => {
 })();
 
 // Card types the game can use. G units, markers and crests are skipped.
-const CGS_PLAYABLE = /^(Normal Unit|Trigger Unit|Normal Order|Blitz Order|Set Order|Trigger Order)$/;
+const CGS_PLAYABLE = /^(Normal Unit|Trigger Unit|G Unit|Normal Order|Blitz Order|Set Order|Trigger Order)$/;
 
 function cgsTriggerGuess(d) {
   const m = String(d.effect || "").match(/\[(Critical|Draw|Heal|Front|Over)\]\s*trigger/i);
@@ -61,12 +61,15 @@ function cgsToCard(d, trigger) {
   const text = String(d.effect || "").trim();
   const isOrder = /Order/.test(d.type);
   const isTrig = d.type === "Trigger Unit";
+  const isG = d.type === "G Unit";
+  // G units (grade 4): stride units or G guardians (text mentions the guard step / Generation Guard)
+  const gKind = isG ? (/Generation Guard|-Guard Step-|G guardian/i.test(text) ? "guardian" : "stride") : undefined;
   const guessed = text ? TextParse.parse(text) : {};
   const trig = isTrig ? (trigger !== undefined ? trigger : cgsTriggerGuess(d)) : null;
   const card = {
     name: String(d.name || "").trim(),
-    type: isOrder ? "order" : isTrig ? "trigger" : "unit",
-    grade: Number.isFinite(d.grade) ? d.grade : (guessed.grade ?? 0),
+    type: isOrder ? "order" : isTrig ? "trigger" : isG ? "g" : "unit",
+    grade: Number.isFinite(d.grade) ? d.grade : isG ? 4 : (guessed.grade ?? 0),
     power: isOrder ? 0 : (d.power ?? 0),
     shield: isOrder ? 0 : (d.shield ?? 0),
     crit: 1,
@@ -83,6 +86,7 @@ function cgsToCard(d, trigger) {
     source: { from: "cgs", number: d.number || "", set: d.productName || "", setCode: d._set || "", url: d.url || "", cardType: d.type },
   };
   if (isTrig && !card.trigger) card.needsTrigger = true;
+  if (isG) { card.gKind = gKind; if (/Ultimate Stride/i.test(text)) card.ultimate = true; if (gKind === "stride") card.drive = 3; }
   return card;
 }
 
