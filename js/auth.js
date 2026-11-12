@@ -112,6 +112,24 @@ const Cloud = {
     if (error) throw error;
     return data;
   },
+  // Cards this player may use in decks: {cardId: copies}, or null = no limit (guests, admins, offline,
+  // or the admin turned "Players can only put cards they own in decks" off). supabase/003_store.sql
+  async owned() {
+    const u = Auth.get();
+    if (!u || u.guest || u.role === "admin") return null;
+    try {
+      const c = await this.client();
+      const { data: s } = await c.from("app_settings").select("require_collection").eq("id", 1).maybeSingle();
+      if (s && !s.require_collection) return null;
+      const map = {};
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await c.from("collection").select("card_id, count").eq("owner", u.id).range(from, from + 999);
+        if (error) throw error;
+        data.forEach((r) => { if (r.count > 0) map[r.card_id] = r.count; });
+        if (data.length < 1000) return map;
+      }
+    } catch (e) { console.warn("Collection: no limit this time", e.message || e); return null; }
+  },
   // Background check on every page: signed out / banned elsewhere → back to login; otherwise update the chip.
   check() {
     const run = () => this.refresh().then((u) => {

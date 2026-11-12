@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanguard Table · Store</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="pages.css">
+<script src="js/auth.js"></script>
+<script src="js/loader.js"></script>
+<script>Auth.require();</script>
+</head>
+<body class="page store">
+<header class="topbar">
+  <a class="brand small" href="lobby.html"><svg width="30" height="30" viewBox="0 0 56 56" aria-hidden="true"><path d="M28 3L53 28L28 53L3 28Z" fill="none" stroke="#f2b94b" stroke-width="4"/><path d="M28 15L41 28L28 41L15 28Z" fill="#f2b94b"/></svg><span>Vanguard Table</span></a>
+  <nav class="stabs" role="tablist">
+    <button data-stab="shop" class="on">Store</button>
+    <button data-stab="mine">My collection</button>
+    <button data-stab="boxes" data-admin hidden>Manage boxes</button>
+    <button data-stab="settings" data-admin hidden>Settings</button>
+    <a href="lobby.html" class="playlink">← Lobby</a>
+  </nav>
+  <div class="userchip" data-userchip></div>
+</header>
+
+<main class="store-main">
+  <section id="guestNote" class="store-note" hidden>
+    <h2>The Store needs an account</h2>
+    <p class="muted">Guests play with the cards on this computer. Sign out and create a free account to earn coins and open packs.</p>
+  </section>
+
+  <section id="s-shop" class="stab">
+    <div class="store-head"><h1>Store</h1><span class="coins" id="coins">◈ 0</span></div>
+    <p class="muted">Open packs with coins you win in matches. Rates are shown on every box.</p>
+    <div id="boxGrid" class="box-grid"><p class="muted">Loading boxes…</p></div>
+  </section>
+
+  <section id="s-mine" class="stab" hidden>
+    <div class="store-head"><h1>My collection</h1><span class="muted" id="mineCount"></span></div>
+    <div class="mine-tools">
+      <input id="mineQ" placeholder="Search your cards" autocomplete="off">
+      <select id="mineBox"><option value="">All boxes</option></select>
+      <label class="chk"><input type="checkbox" id="mineMissing"> Show cards I don't have</label>
+    </div>
+    <div id="mineGrid" class="card-grid"></div>
+  </section>
+
+  <section id="s-boxes" class="stab" hidden>
+    <div class="boxes-admin">
+      <aside>
+        <button class="go" id="newBox">+ New box</button>
+        <div id="boxList" class="box-list"></div>
+      </aside>
+      <div id="boxEdit" class="box-edit"><p class="muted">Pick a box or make a new one.</p></div>
+    </div>
+  </section>
+
+  <section id="s-settings" class="stab" hidden>
+    <h1>Settings</h1>
+    <form id="setForm" class="set-form">
+      <label class="field">Coins a new account starts with <input type="number" min="0" id="setStart"></label>
+      <label class="field">Coins for a win <input type="number" min="0" id="setWin"></label>
+      <label class="field">Coins for a loss <input type="number" min="0" id="setLoss"></label>
+      <label class="field">Rewarded matches per day <input type="number" min="0" id="setCap"></label>
+      <label class="chk"><input type="checkbox" id="setReq"> Players can only put cards they own in decks</label>
+      <button class="go" type="submit">Save settings</button>
+    </form>
+    <h2>Give coins</h2>
+    <div class="give-row">
+      <input type="number" id="giveAmt" value="1000" step="100">
+      <button id="giveMe">Give to me</button>
+      <span class="muted">Other players: on the admin page (next step).</span>
+    </div>
+  </section>
+</main>
+
+<div id="opening" class="opening" hidden>
+  <div class="opening-in">
+    <h2 id="openTitle"></h2>
+    <div id="openCards" class="open-cards"></div>
+    <div class="open-actions">
+      <button id="openAll">Reveal all</button>
+      <button id="openAgain" class="go">Open another</button>
+      <button id="openDone">Done</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/cards.js"></script>
+<script src="js/formats.js"></script>
+<script src="js/db.js"></script>
+<script src="js/store.js"></script>
+<script>mountUserChip();</script>
+</body>
+</html>

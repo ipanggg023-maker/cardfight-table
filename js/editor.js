@@ -3,6 +3,9 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 let cards = [], decks = [], cur = null, curDeck = null, dirty = false;
+// Players with an account: only cards they own (Store packs) show in the deck builder. owned = {cardId: copies} or null = no limit.
+// allCards keeps the whole library so decks can still show (and flag) cards the player doesn't own.
+let owned = null, allCards = [];
 
 // innerHTML only when it really changed (keeps pictures and focus in place)
 function setHTML(el, html) { if (el && el._h !== html) { el.innerHTML = html; el._h = html; } }
@@ -45,7 +48,7 @@ new MutationObserver(() => {
 }).observe(document.body, { childList: true, subtree: true });
 // cards is replaced (never mutated) by reload(), so the id map and a version number follow it
 let idsCache = null, idsFor = null, cardsVer = 0, poolQT = 0;
-const byId = () => (idsFor === cards ? idsCache : ((idsFor = cards), cardsVer++, (idsCache = Object.fromEntries(cards.map((c) => [c.id, c])))));
+const byId = () => (idsFor === allCards ? idsCache : ((idsFor = allCards), cardsVer++, (idsCache = Object.fromEntries(allCards.map((c) => [c.id, c])))));
 
 let toastT;
 function toast(m, bad) {
@@ -57,7 +60,8 @@ function toast(m, bad) {
   toastT = setTimeout(() => (t.hidden = true), 2200);
 }
 async function reload() {
-  cards = (await DB.all("cards")).sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
+  allCards = (await DB.all("cards")).sort((a, b) => (a.type === "order") - (b.type === "order") || a.grade - b.grade || a.name.localeCompare(b.name));
+  cards = owned ? allCards.filter((c) => owned[c.id]) : allCards;
   decks = await DB.all("decks");
 }
 
@@ -408,7 +412,7 @@ function renderDeckForm() {
   [...d.main, ...d.g].forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
   const mainCards = d.main.map((id) => ids[id]).filter(Boolean);
   const statCards = FORMATS[formatOf(d)].rideDeck ? [...mainCards, ...(d.ride || []).map((id) => ids[id]).filter(Boolean)] : mainCards;
-  const errs = validateDeck(d, ids);
+  const errs = [...validateDeck(d, ids), ...ownErrors(d, ids)];
   setHTML($("#dkTitle"), esc(d.name));
   const F = FORMATS[formatOf(d)];
   $("#deckEnergyRow").hidden = !F.crest;
@@ -450,7 +454,7 @@ function renderDeckForm() {
     const pool = cards.filter((c) => cardMatches(c, poolF));
     const box = $("#dkPool"), scroll = box.scrollTop;
     setHTML($("#dkPoolTitle"), `Your cards (${pool.length})`);
-    if (!pool.length) box.innerHTML = `<p class="muted">No cards match. Create cards in the Cards tab.</p>`;
+    if (!pool.length) box.innerHTML = owned ? `<p class="muted">No cards match. You can only use cards you own: <a href="store.html">open packs in the Store</a>.</p>` : `<p class="muted">No cards match. Create cards in the Cards tab.</p>`;
     else fillChunked(box, pool, (c) => tile(c, deckCount(c.id)));
     box.scrollTop = scroll;
   }
@@ -473,6 +477,14 @@ function fillChunked(box, items, html) {
     setTimeout(next, 0);
   };
   setTimeout(next, 0);
+}
+// copies of one card id in a deck (ride deck + main + G deck)
+const copiesIn = (d, id) => [...(d.ride || []), ...d.main, ...(d.g || [])].filter((x) => x === id).length;
+function ownErrors(d, ids) {
+  if (!owned) return [];
+  return [...new Set([...(d.ride || []), ...d.main, ...(d.g || [])].filter(Boolean))]
+    .filter((id) => copiesIn(d, id) > (owned[id] || 0))
+    .map((id) => `You own ${owned[id] || 0} × ${ids[id] ? ids[id].name : "a deleted card"} but the deck uses ${copiesIn(d, id)}`);
 }
 const deckCount = (id) => (curDeck ? [...curDeck.main, ...(curDeck.g || [])].filter((x) => x === id).length : 0);
 const lastFormat = () => { try { const f = localStorage.getItem("vt-last-format"); return FORMATS[f] ? f : DEFAULT_FORMAT; } catch { return DEFAULT_FORMAT; } };
@@ -531,7 +543,10 @@ $("#deckForm").addEventListener("click", async (e) => {
   }
   if (b.dataset.dk) {
     const c = byId()[b.dataset.id], list = c && c.type === "g" ? (curDeck.g = curDeck.g || []) : curDeck.main;
-    if (b.dataset.dk === "+") list.push(b.dataset.id);
+    if (b.dataset.dk === "+") {
+      if (owned && copiesIn(curDeck, b.dataset.id) >= (owned[b.dataset.id] || 0)) return toast(`You own ${owned[b.dataset.id] || 0} of this card. Open packs in the Store for more.`, true);
+      list.push(b.dataset.id);
+    }
     else { const i = list.lastIndexOf(b.dataset.id); if (i >= 0) list.splice(i, 1); }
     return renderDeckForm();
   }
@@ -1235,6 +1250,8 @@ if (!DB.canEditCards()) {
 }
 Loader.wait((async () => {
   await DB.removeSamples();
+  owned = await Cloud.owned();
+  if (owned) $("#tab-decks").classList.add("owned-only");
   await reload();
   renderList();
   renderCard();
