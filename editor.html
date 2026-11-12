@@ -20,6 +20,7 @@
     <button data-tab="decks">Decks</button>
     <button data-tab="cgs">Card library</button>
     <button data-tab="online">Online cards</button>
+    <button data-tab="formats">Formats</button>
     <button data-tab="backup">Backup</button>
     <a href="lobby.html" class="playlink">← Lobby</a>
     <a href="index.html" class="playlink">▶ Play</a>
@@ -99,6 +100,21 @@
   </div>
 </section>
 
+<section id="tab-formats" class="tab" hidden>
+  <div class="formcol">
+    <h2>Formats &amp; restriction lists</h2>
+    <p class="muted">Each deck has a format (pick it in the deck builder), and the deck check follows that format's rules.
+      Restriction lists change a few times a year: copy the current ones from the official Deck Construction Rules page (cf-vanguard.com → How to play → Fighter's Rules) into the lists below. They are saved in this browser.</p>
+    <div id="fmtRules"></div>
+    <label class="field">Format <select id="rsFormat"></select></label>
+    <table class="rtable"><thead><tr><th>Card name</th><th>Rule</th><th></th></tr></thead><tbody id="rsList"></tbody></table>
+    <div class="tools"><input id="rsName" list="rsNames" placeholder="Card name (exact)"><datalist id="rsNames"></datalist>
+      <select id="rsRule"></select><button id="rsAdd" class="go">Add</button></div>
+    <label class="field">Choice restrictions: one group per line, card names separated by <b>|</b> (only one card of each group may be used)
+      <textarea id="rsChoice" placeholder="Card A | Card B"></textarea></label>
+  </div>
+</section>
+
 <section id="tab-backup" class="tab" hidden>
   <div class="formcol">
     <h2>Backup</h2>
@@ -142,6 +158,7 @@
 
 <script src="js/cards.js"></script>
 <script src="js/schema.js"></script>
+<script src="js/formats.js"></script>
 <script src="js/db.js"></script>
 <script src="js/textparse.js"></script>
 <script src="js/tcgapi.js"></script>

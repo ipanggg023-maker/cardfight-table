@@ -67,6 +67,7 @@
 <script>(() => { const b = document.getElementById("skinMat"); b.checked = Skin.get() === "mat"; b.addEventListener("change", () => Skin.set(b.checked ? "mat" : "classic")); })();</script>
 
 <script src="js/cards.js"></script>
+<script src="js/formats.js"></script>
 <script src="js/db.js"></script>
 <script>
   mountUserChip();
@@ -83,7 +84,7 @@
     box.innerHTML = "";
     for (const d of decks) {
       const errs = validateDeck(d, byId);
-      const lead = byId[d.ride[3]] || byId[d.ride[0]] || {};
+      const lead = byId[(d.ride || [])[3]] || byId[d.starter] || byId[(d.ride || [])[0]] || {};
       const row = document.createElement("a");
       row.className = "deck-row";
       row.href = "index.html";
@@ -91,7 +92,7 @@
         <span class="deck-info"><b></b><small class="muted"></small></span>
         <span class="badge ${errs.length ? "warn" : "ok"}"></span>`;
       row.querySelector("b").textContent = d.name;
-      row.querySelector("small").textContent = `${d.energy ? "Energy" : "No energy"} · ${d.main.length + d.ride.filter(Boolean).length} cards${lead.name ? " · " + lead.name : ""}`;
+      row.querySelector("small").textContent = `${FORMATS[formatOf(d)].label} · ${d.main.length} cards${lead.name ? " · " + lead.name : ""}`;
       row.querySelector(".badge").textContent = errs.length ? `${d.main.length}/50` : "Legal";
       if (errs.length) row.title = errs.join("\n");
       box.appendChild(row);

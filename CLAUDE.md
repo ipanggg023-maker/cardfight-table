@@ -50,7 +50,8 @@ CSS: "HUD layout v3" blocks at the end of style.css. Card size scales with the s
 ## Files
 - `js/cards.js` — `TRIG` trigger definitions. No sample cards: `DB.removeSamples()` deletes the old sample decks once per browser (flag `vt-samples-removed`)
 - `js/schema.js` — ability building blocks: `SCHEMA.kinds/zones/events/conds/costs/effects`, `TARGETS`, `describeAbility()`
-- `js/db.js` — IndexedDB store `vanguard-table` (stores `cards`, `decks`), export/import, `loadDeck()`, `validateDeck()`
+- `js/formats.js` — `FORMATS` (standard / vpremium / premium / extreme: ride deck or not, crest, G assist, card pool icon, one nation/clan, trigger caps), `validateDeck()` (format-aware), `iconOf()` (D/V from the card or its collection number), `CLAN_NATION` (old clan → D nation, clan rows unverified), `Restrictions` (editable lists in localStorage `vt-restrict`, edited in the editor's Formats tab). Loaded before db.js on every page
+- `js/db.js` — IndexedDB store `vanguard-table` (stores `cards`, `decks`), export/import, `loadDeck()` (returns `{format, energy, ride, starter, main}`)
 - `js/engine.js` — rules engine `Game`. No DOM. All actions are async and wrapped in `run()`
 - `js/ui.js` — game screen, drawn from `Game.state()`. Redraws are patches, not rebuilds: `renderSide()` builds each mat once and updates slots/zones in place, `placeCard()`/`patchCard()` keep card elements (and their pictures) alive, `renderHand()` is keyed by uid, `setHTML()` skips unchanged HTML. Engine changes go through `scheduleRender()` (one redraw per frame). Pictures come from `Pics` (preloaded + decoded at game start, retry, fallback to `source.imageWeb`). Only animate transform/opacity in CSS
 - `js/editor.js` — editor; forms are generated from SCHEMA. Quick deck: `quickBuild()` with style presets `QUICK_PRESETS` and option menus `QUICK_OPTS` (triggers, grade split, sentinels, pick priority, copies, orders, ride line auto/manual). `pickCard()` = big picture picker with search (ride deck slots). Pictures in editor grids use `imgTag()` (queued loader, local↔web fallback via `card.source.imageWeb`, retry, name placeholder): don't use `loading="lazy"`, it left Card library pictures blank
@@ -62,7 +63,7 @@ CSS: "HUD layout v3" blocks at the end of style.css. Card size scales with the s
 ## Data model
 Card: `{id, name, grade, type: unit|trigger|order, power, shield, crit, trigger: null|crit|front|draw|heal|over|stand, trigPower?, drive?, boost?, intercept?, sentinel, persona, nation, race, image, text, abilities[]}`. Missing drive/boost/intercept fall back to grade (Twin Drive on G3+, Boost on G0–1, Intercept on G2); missing trigPower = 10000 (over 100M)
 Ability: `{kind: AUTO|ACT|CONT|ORDER|BLITZ, zone, when, once: ""|turn|game, mandatory?, conds[], costs[], effects[]}`; each row is `{type, ...params}`. `mandatory` AUTOs resolve without asking (no "you may"). `when: "overDrive"` = an over trigger's own text, only on drive checks
-Deck: `{id, name, energy, ride:[4 card ids G0..G3], main:[50 card ids]}`
+Deck: `{id, name, format, energy, ride:[4 card ids G0..G3] (Standard), starter: card id (formats without a ride deck: a G0 that is one of the 50), main:[50 card ids]}`. Card also has `clan` (older cards), `icon` ("D"|"V"|"-"|"" = auto), `regalis`
 
 ## Engine notes
 - `S.active` = turn player, `S.controller` = who must act now (defender while guarding, chooser during `S.pending`)
@@ -70,6 +71,7 @@ Deck: `{id, name, energy, ride:[4 card ids G0..G3], main:[50 card ids]}`
 - Slots `{card, rest, pow, crit, powB, critB}`; pow/crit reset at end of turn, powB/critB at end of battle. CONT bonuses computed live in `power()`/`crit()`
 - Phases: mulligan → ride → main → battle → (endTurn) ride…. `S.first` = who went first (random unless chosen); both players draw every turn; no attacks on turn 1; mulligan = bottom, draw, shuffle
 - Check timing (CR 11.6): `fire()`/`collect()` put AUTO abilities in `S.queue`; `checkTiming()` runs rule actions, then the turn player resolves their waiting abilities in the order they pick (prompt when 2+), then the other player; abilities triggered while one resolves (`depth`>0) wait. Simultaneous events (attack+boost+attacked, placedRC+allyPlacedRC, riddenUpon+placedVC, turnStart+oppTurnStart) are collected together first
+- Formats in the engine: each player has `hasRideDeck`; without one the first vanguard comes from the main deck and the G assist step runs at the start of the ride phase (`gAssist()`, CR 9.5). Energy only with the Energy Generator crest (Standard)
 - Losses: `lose()` only notes `S.loss[pi]`; `ruleActions()` decides at check timing / after each damage check / after every action. Both at once = draw game (`S.winner = -1`)
 - Rules follow docs/rules (CR 4.59). Fixed: B1–B16 of `docs/rules/08-engine-gaps-and-plan.md`. Still open: formats, zones (G/order/crest), gifts, Stride, Legion, more DSL blocks
 - Damage cards have `down` (face down) for Counter-Blast

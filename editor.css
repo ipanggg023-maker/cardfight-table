@@ -152,3 +152,11 @@ body.ed { min-height: auto; }
 .tc .face img:not([src]), .oc img:not([src]) { background: var(--mat); }
 
 .qkopts { display: grid; gap: 12px; }
+
+/* formats tab */
+#tab-formats { grid-template-columns: 1fr; max-width: 980px; }
+.rtable { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.rtable th, .rtable td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rtable th { color: var(--muted); font-weight: 600; }
+#rsChoice { width: 100%; min-height: 70px; }
+.clist .fmt { font-size: .68rem; color: var(--cyan); margin-right: 4px; }

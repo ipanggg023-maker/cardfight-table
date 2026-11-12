@@ -74,6 +74,8 @@ function cgsToCard(d, trigger) {
     sentinel: /\[CONT\]\s*:\s*Sentinel/i.test(text),
     persona: /persona ride/i.test(text),
     nation: String(d.clan || ""),
+    clan: /^(D|DZ)-/i.test(String(d.number || "")) ? "" : String(d.clan || ""),
+    icon: /^(D|DZ)-/i.test(String(d.number || "")) ? "D" : /^V-/i.test(String(d.number || "")) ? "V" : "-",
     race: "",
     image: d.image_url || "",
     text,

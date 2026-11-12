@@ -29,13 +29,26 @@ const Game = (() => {
   const log = (m) => { S.log.unshift(m); if (S.log.length > 120) S.log.pop(); };
 
   // ---------- setup ----------
+  // deck: {name, format, energy, ride:[G0..G3 cards] (ride-deck formats), starter (other formats), main:[50]}
   function makePlayer(name, deck) {
-    const ride = deck.ride.map(inst).sort((a, b) => a.grade - b.grade);
+    const hasRideDeck = !!(deck.ride && deck.ride.length);
+    const main = deck.main.map(inst);
+    let ride = [], first;
+    if (hasRideDeck) {
+      ride = deck.ride.map(inst).sort((a, b) => a.grade - b.grade);
+      first = ride.shift(); // the ride deck's grade 0 is the first vanguard
+    } else {
+      // no ride deck (V Premium / Premium): the first vanguard is a grade 0 taken from the main deck (CR 8.2.1.2)
+      let i = deck.starter ? main.findIndex((c) => c.id === deck.starter.id) : -1;
+      if (i < 0) i = main.findIndex((c) => c.grade === 0 && c.type !== "order");
+      first = i >= 0 ? main.splice(i, 1)[0] : main.shift();
+    }
     const p = {
-      name, deckName: deck.name, useEnergy: !!deck.energy, energy: 0,
-      deck: shuffle(deck.main.map(inst)), ride: ride.slice(1),
+      name, deckName: deck.name, format: deck.format || "standard", hasRideDeck,
+      useEnergy: !!deck.energy, energy: 0,
+      deck: shuffle(main), ride,
       hand: [], soul: [], damage: [], drop: [], bind: [], removed: [],
-      slots: { vc: slot(ride[0]), fl: null, fr: null, bl: null, bc: null, br: null },
+      slots: { vc: slot(first), fl: null, fr: null, bl: null, bc: null, br: null },
       driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
       orderTurn: -1, egTurn: -1, // turn number of the last order played / Energy Generator draw (1 each per turn)
     };
@@ -463,11 +476,35 @@ const Game = (() => {
     ruleActions();
     if (over()) return;
     S.phase = "ride";
+    await gAssist(pi);
     // Energy Generator: Energy-Charge 3 at the beginning of your ride phase, max 10
     if (p.useEnergy) p.energy = Math.min(10, p.energy + 3);
     collectAll(pi, "turnStart");
     collectAll(1 - pi, "oppTurnStart");
     await settle();
+  }
+  // G assist step (CR 9.5), only for players without a ride deck: vanguard below grade 3 and no unit
+  // of the next grade in hand → may reveal the hand, look at the top 5, take up to 1 unit of the next
+  // grade; if you take one, remove 2 cards from your hand from the game. Then shuffle.
+  async function gAssist(pi) {
+    const p = P(pi), g = p.slots.vc.card.grade;
+    if (p.hasRideDeck || g >= 3 || !p.deck.length) return;
+    if (p.hand.some((c) => c.type !== "order" && c.grade === g + 1)) return;
+    if (!(await yesNo(pi, `G assist: you have no grade ${g + 1} unit in hand. Reveal your hand and look at the top 5 cards of your deck for one?`))) return;
+    log(`${p.name} uses G assist. Hand: ${p.hand.map((c) => c.name).join(", ") || "(empty)"}`);
+    const top = p.deck.slice(-5);
+    const picks = top.filter((c) => c.type !== "order" && c.grade === g + 1);
+    const [c] = await chooseCards(pi, `G assist: take up to 1 grade ${g + 1} unit from the top 5`, picks, 0, 1);
+    if (c) {
+      p.deck.splice(p.deck.indexOf(c), 1);
+      p.hand.push(c);
+      log(`${p.name} reveals ${c.name} and puts it into hand`);
+      const k = Math.min(2, p.hand.length);
+      const gone = await chooseCards(pi, "G assist: remove 2 cards from your hand from the game", p.hand, k, k);
+      gone.forEach((x) => { p.hand.splice(p.hand.indexOf(x), 1); p.removed.push(x); });
+      if (gone.length) log(`${p.name} removes ${gone.map((x) => x.name).join(", ")} from the game`);
+    } else log(`${p.name} finds no grade ${g + 1}`);
+    shuffle(p.deck);
   }
   async function enterMain() {
     S.phase = "main";

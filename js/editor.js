@@ -69,7 +69,8 @@ document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click
 }));
 
 // ---------- filters (shared by the Cards list and the deck builder) ----------
-const uniq = (key) => [...new Set(cards.map((c) => String(c[key] || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+// key: a card field name, or a function (card → value)
+const uniq = (key) => [...new Set(cards.map((c) => String((typeof key === "function" ? key(c) : c[key]) || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 // Fills a <select> with "All …" + the values found on cards; hides it when there's nothing to pick.
 function fillPick(el, all, key, value) {
   const vals = uniq(key);
@@ -81,12 +82,12 @@ function fillPick(el, all, key, value) {
 // f = {q: name text, g: "" | "0".."3" | "o", n: clan/nation, r: race}
 const cardMatches = (c, f) => c.name.toLowerCase().includes((f.q || "").toLowerCase())
   && (!f.g || (f.g === "o" ? c.type === "order" : c.type !== "order" && c.grade === +f.g))
-  && (!f.n || String(c.nation || "").trim() === f.n)
+  && (!f.n || clanOf(c) === f.n)
   && (!f.r || String(c.race || "").trim() === f.r);
 
 // ---------- card list ----------
 function renderList() {
-  const f = { q: $("#q").value, g: $("#qg").value, n: fillPick($("#qn"), "All clans", "nation", $("#qn").value), r: fillPick($("#qr"), "All races", "race", $("#qr").value) };
+  const f = { q: $("#q").value, g: $("#qg").value, n: fillPick($("#qn"), "All clans", clanOf, $("#qn").value), r: fillPick($("#qr"), "All races", "race", $("#qr").value) };
   const LIMIT = 400; // drawing thousands of rows at once stalls the page; search to narrow down
   const found = cards.filter((c) => cardMatches(c, f));
   setHTML($("#cardList"), found.slice(0, LIMIT)
@@ -142,11 +143,14 @@ function renderCard() {
       <label>Boost ${sel("boost", { "": `Auto (${c.grade <= 1 ? "yes" : "no"})`, 1: "Yes", 0: "No" }, c.boost === true ? "1" : c.boost === false ? "0" : c.boost ?? "")}</label>
       <label>Intercept ${sel("intercept", { "": `Auto (${c.grade === 2 ? "yes" : "no"})`, 1: "Yes", 0: "No" }, c.intercept === true ? "1" : c.intercept === false ? "0" : c.intercept ?? "")}</label>
       <label>Nation ${txt("nation", c.nation, "Dragon Empire")}</label>
+      <label>Clan (older cards) ${txt("clan", c.clan, "e.g. Kagero")}</label>
       <label>Race ${txt("race", c.race)}</label>
+      <label>Format icon ${sel("icon", { "": `Auto (${iconOf(c) || "unknown"})`, D: "D (Standard)", V: "V (V Premium)", "-": "None (Premium only)" }, c.icon || "")}</label>
     </div>
     <div class="btnrow">
       <label class="chk"><input type="checkbox" data-path="sentinel" ${c.sentinel ? "checked" : ""}> Sentinel (perfect guard: discard 1)</label>
       <label class="chk"><input type="checkbox" data-path="persona" ${c.persona ? "checked" : ""}> Persona Ride</label>
+      <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
     </div>
     <div class="imgrow">
       ${c.image ? `<img src="${esc(c.image)}" alt="">` : ""}
@@ -333,7 +337,7 @@ function onImage(e) {
 function renderDecks() {
   $("#deckList").innerHTML = decks.map((d) => {
     const bad = validateDeck(d, byId());
-    return `<li data-id="${esc(d.id)}" class="${curDeck && curDeck.id === d.id ? "on" : ""}">${esc(d.name)}<span class="x">${bad.length ? "⚠" : "✓"} ${d.main.length}</span></li>`;
+    return `<li data-id="${esc(d.id)}" class="${curDeck && curDeck.id === d.id ? "on" : ""}" title="${esc(bad.join(" · "))}">${esc(d.name)}<span class="x"><span class="fmt">${esc(FORMATS[formatOf(d)].label)}</span> ${bad.length ? "⚠" : "✓"} ${d.main.length}</span></li>`;
   }).join("") || `<li class="muted">No decks</li>`;
   renderDeckForm();
 }
@@ -345,7 +349,8 @@ $("#deckList").addEventListener("click", (e) => {
 });
 $("#newDeck").addEventListener("click", () => {
   quick.open = false;
-  curDeck = { id: DB.newId(), name: "New deck", energy: true, ride: ["", "", "", ""], main: [] };
+  const format = lastFormat();
+  curDeck = { id: DB.newId(), name: "New deck", format, energy: FORMATS[format].crest, ride: ["", "", "", ""], starter: "", main: [] };
   renderDecks();
 });
 // The deck builder is built once per deck, then patched: + / − only change counts, stats and
@@ -366,9 +371,10 @@ function renderDeckForm() {
       <h2 id="dkTitle"></h2>
       <div class="fgrid">
         <label>Deck name <input type="text" id="deckName" value="${esc(d.name)}"></label>
-        <label class="chk"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (+3 energy each turn, max 10)</label>
+        <label>Format <select id="deckFormat">${Object.entries(FORMATS).map(([k, F]) => `<option value="${k}" title="${esc(F.sub)}" ${formatOf(d) === k ? "selected" : ""}>${esc(F.label)}</option>`).join("")}</select></label>
+        <label class="chk" id="deckEnergyRow"><input type="checkbox" id="deckEnergy" ${d.energy ? "checked" : ""}> Energy Generator crest (5th ride deck card: +3 energy each ride phase, max 10)</label>
       </div>
-      <h4>Ride deck</h4>
+      <h4 id="dkRideTitle">Ride deck</h4>
       <div class="ridegrid" id="dkRide"></div>
       <div id="dkStats"></div>
       <div class="btnrow"><button id="saveDeck" class="go">Save deck</button><button id="delDeck" class="del">Delete deck</button></div>
@@ -386,19 +392,24 @@ function renderDeckForm() {
   const cnt = {};
   d.main.forEach((id) => (cnt[id] = (cnt[id] || 0) + 1));
   const mainCards = d.main.map((id) => ids[id]).filter(Boolean);
+  const statCards = FORMATS[formatOf(d)].rideDeck ? [...mainCards, ...(d.ride || []).map((id) => ids[id]).filter(Boolean)] : mainCards;
   const errs = validateDeck(d, ids);
   setHTML($("#dkTitle"), esc(d.name));
-  // Ride deck: each slot is a button that opens the big picture picker
-  setHTML($("#dkRide"), [0, 1, 2, 3].map((g) => {
-    const c = ids[d.ride[g]];
-    return `<button type="button" class="ridepick" data-ride="${g}" title="Click to choose"><span class="rl">Grade ${g}</span>
-      <div class="rideface">${c ? face(c) : `<div class="ph empty">＋ G${g}</div>`}</div><span class="tn">${c ? esc(c.name) : "Click to choose"}</span></button>`;
-  }).join(""));
+  const F = FORMATS[formatOf(d)];
+  $("#deckEnergyRow").hidden = !F.crest;
+  if (!F.crest) d.energy = false;
+  setHTML($("#dkRideTitle"), F.rideDeck ? "Ride deck (grade 0–3 + crest)" : "First vanguard (a grade 0 from your 50 cards)");
+  // Ride deck slots / first vanguard slot: buttons that open the big picture picker
+  const slotBtn = (attr, label, c, empty) => `<button type="button" class="ridepick" ${attr} title="Click to choose"><span class="rl">${label}</span>
+      <div class="rideface">${c ? face(c) : `<div class="ph empty">${empty}</div>`}</div><span class="tn">${c ? esc(c.name) : "Click to choose"}</span></button>`;
+  setHTML($("#dkRide"), F.rideDeck
+    ? [0, 1, 2, 3].map((g) => slotBtn(`data-ride="${g}"`, `Grade ${g}`, ids[(d.ride || [])[g]], `＋ G${g}`)).join("")
+    : slotBtn("data-starter", "First vanguard", ids[d.starter], "＋ G0"));
   setHTML($("#dkStats"), `<div class="stats">
       <span class="pile">Main ${mainCards.length}/50</span>
-      <span class="pile">Triggers ${mainCards.filter((c) => c.trigger).length}/16</span>
-      <span class="pile">Heal ${mainCards.filter((c) => c.trigger === "heal").length}/4</span>
-      <span class="pile">Sentinel ${mainCards.filter((c) => c.sentinel).length}/4</span>
+      <span class="pile">Triggers ${statCards.filter((c) => c.trigger).length}/16</span>
+      <span class="pile">Heal ${statCards.filter((c) => c.trigger === "heal").length}/4</span>
+      <span class="pile">Sentinel ${statCards.filter((c) => c.sentinel).length}/4</span>
       ${[0, 1, 2, 3].map((g) => `<span class="pile">G${g}: ${mainCards.filter((c) => c.type !== "order" && c.grade === g).length}</span>`).join("")}
       <span class="pile">Orders ${mainCards.filter((c) => c.type === "order").length}</span>
     </div>
@@ -416,7 +427,7 @@ function renderDeckForm() {
   const poolKey = JSON.stringify(poolF) + "|" + cardsVer;
   if (root._poolKey !== poolKey) {
     root._poolKey = poolKey;
-    poolF.n = fillPick($("#poolN"), "All clans", "nation", poolF.n);
+    poolF.n = fillPick($("#poolN"), "All clans", clanOf, poolF.n);
     poolF.r = fillPick($("#poolR"), "All races", "race", poolF.r);
     const pool = cards.filter((c) => cardMatches(c, poolF));
     const box = $("#dkPool"), scroll = box.scrollTop;
@@ -446,6 +457,8 @@ function fillChunked(box, items, html) {
   setTimeout(next, 0);
 }
 const deckCount = (id) => (curDeck ? curDeck.main.filter((x) => x === id).length : 0);
+const lastFormat = () => { try { const f = localStorage.getItem("vt-last-format"); return FORMATS[f] ? f : DEFAULT_FORMAT; } catch { return DEFAULT_FORMAT; } };
+const rememberFormat = (f) => { try { localStorage.setItem("vt-last-format", f); } catch { /* storage blocked */ } };
 // Deck builder filters, kept while switching decks
 const poolF = { q: "", g: "", n: "", r: "" };
 const hueOf = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
@@ -465,7 +478,14 @@ $("#deckForm").addEventListener("input", (e) => {
 });
 $("#deckForm").addEventListener("change", (e) => {
   if (!curDeck) return;
-  if (e.target.id === "deckEnergy") curDeck.energy = e.target.checked;
+  if (e.target.id === "deckEnergy") { curDeck.energy = e.target.checked; renderDeckForm(); }
+  if (e.target.id === "deckFormat") {
+    curDeck.format = e.target.value;
+    rememberFormat(curDeck.format);
+    if (FORMATS[curDeck.format].crest && curDeck.energy === undefined) curDeck.energy = true;
+    if (!curDeck.ride) curDeck.ride = ["", "", "", ""];
+    renderDecks();
+  }
   const pf = { poolG: "g", poolN: "n", poolR: "r" }[e.target.id];
   if (pf) { poolF[pf] = e.target.value; renderDeckForm(); }
 });
@@ -478,6 +498,16 @@ $("#deckForm").addEventListener("click", async (e) => {
     const c = await pickCard({ title: `Ride deck · grade ${g}`, list: rideChoices(g), clan: poolF.n || (others[0] ? clanOf(others[0]) : ""), current: deck.ride[g], allowClear: !!deck.ride[g] });
     if (c === undefined || curDeck !== deck) return;
     deck.ride[g] = c ? c.id : "";
+    return renderDeckForm();
+  }
+  if (b.dataset.starter !== undefined) {
+    const deck = curDeck, ids = byId();
+    const inDeck = [...new Set(deck.main)].map((id) => ids[id]).filter((c) => c && c.grade === 0 && c.type !== "order");
+    const list = inDeck.length ? inDeck : rideChoices(0);
+    const c = await pickCard({ title: inDeck.length ? "First vanguard · grade 0 cards in this deck" : "First vanguard · grade 0 (add it to the deck too)", list, clan: poolF.n, current: deck.starter, allowClear: !!deck.starter });
+    if (c === undefined || curDeck !== deck) return;
+    deck.starter = c ? c.id : "";
+    if (c && !deck.main.includes(c.id)) deck.main.push(c.id); // the first vanguard is one of the 50
     return renderDeckForm();
   }
   if (b.dataset.dk === "+") { curDeck.main.push(b.dataset.id); return renderDeckForm(); }
@@ -585,8 +615,9 @@ const QUICK_PRESETS = {
   combo: { label: "Vanguard combo", sub: "Cards that support your vanguard", o: { mix: "balanced", grades: "high", sent: "4", prio: "link", copies: "4", orders: "2" } },
   variety: { label: "Variety", sub: "Many different cards", o: { mix: "balanced", grades: "std", sent: "4", prio: "abil", copies: "2", orders: "4" } },
 };
-const quick = { open: false, n: "", v: "", preset: "standard", over: true, energy: true, rideAuto: true, ride: ["", "", ""], ...QUICK_PRESETS.standard.o };
-const clanOf = (c) => String(c.nation || "").trim();
+const quick = { open: false, format: "", n: "", v: "", preset: "standard", over: true, energy: true, rideAuto: true, ride: ["", "", ""], ...QUICK_PRESETS.standard.o };
+// The group a card belongs to in filters and Quick deck: its nation, or its clan for older cards
+const clanOf = (c) => String(c.nation || c.clan || "").trim();
 $("#quickDeck").addEventListener("click", () => {
   if (dirty && !window.confirm("Discard unsaved changes?")) return;
   curDeck = null;
@@ -600,7 +631,7 @@ const chips = (name, items, value) => `<div class="chips-row" data-opt="${name}"
 // Built once, then each section is patched (vanguard pictures stay put when you click options)
 function renderQuick() {
   const root = $("#deckForm");
-  const clans = uniq("nation").map((n) => {
+  const clans = uniq(clanOf).map((n) => {
     const cs = cards.filter((c) => clanOf(c) === n);
     return { n, units: cs.filter((c) => c.type === "unit").length, trig: cs.filter((c) => c.trigger).length, g3: cs.filter((c) => c.type === "unit" && c.grade === 3).length };
   }).filter((c) => c.g3 && c.n !== "-").sort((a, b) => b.units + b.trig - (a.units + a.trig));
@@ -617,7 +648,8 @@ function renderQuick() {
     root.innerHTML = `<div id="quick" class="quick">
       <h2>✨ Quick deck</h2>
       <p class="muted">Choose how you want the deck built. Everything comes from <b>your own cards</b>, and the result opens in the deck builder so you can still change it before you press Save.</p>
-      <h4>1 · Clan</h4>
+      <h4>1 · Format and clan</h4>
+      <div class="chips-row" data-qformat id="qkFormat"></div>
       <div class="fgrid"><label>Clan <select id="qkClan"></select></label></div>
       <h4 id="qkVTitle"></h4>
       <div class="pool deck vpick" id="qkV"></div>
@@ -635,6 +667,8 @@ function renderQuick() {
       <div class="btnrow"><button id="qkBuild" class="go">Build deck</button><button id="qkCancel">Cancel</button></div>
     </div>`;
   }
+  if (!FORMATS[quick.format]) quick.format = lastFormat();
+  setHTML($("#qkFormat"), Object.entries(FORMATS).map(([k, F]) => `<button type="button" class="chipbtn${quick.format === k ? " on" : ""}" data-val="${k}"><b>${esc(F.label)}</b><small>${esc(F.sub)}</small></button>`).join(""));
   setHTML($("#qkClan"), clans.map((c) => `<option value="${esc(c.n)}">${esc(c.n)} · ${c.units} units, ${c.trig} triggers</option>`).join(""));
   $("#qkClan").value = quick.n;
   setHTML($("#qkVTitle"), `2 · Vanguard (${g3s.length})`);
@@ -673,7 +707,8 @@ $("#deckForm").addEventListener("click", async (e) => {
   const chip = e.target.closest(".chipbtn");
   if (chip) {
     const row = chip.closest(".chips-row"), val = chip.dataset.val;
-    if (row.hasAttribute("data-preset")) Object.assign(quick, { preset: val }, QUICK_PRESETS[val].o);
+    if (row.hasAttribute("data-qformat")) { quick.format = val; rememberFormat(val); }
+    else if (row.hasAttribute("data-preset")) Object.assign(quick, { preset: val }, QUICK_PRESETS[val].o);
     else if (row.hasAttribute("data-rideauto")) {
       quick.rideAuto = val === "1";
       if (!quick.rideAuto && !quick.ride.some(Boolean)) { const v = cards.find((c) => c.id === quick.v); if (v) quick.ride = quickRide(quick, v).map((c) => (c ? c.id : "")); }
@@ -775,10 +810,21 @@ function quickBuild(o) {
   if (short > 0) short = take(sc(clan.filter((c) => c.type === "order")), short);
   if (short > 0) short = take(units(1).filter((c) => c.sentinel), short, 4);
   if (short > 0) notes.push(`${short} card(s) short of 50`);
-  return {
-    deck: { id: DB.newId(), name: `${o.n} · ${v.name}`.slice(0, 60), energy: !!o.energy, ride: ride.map((c) => (c ? c.id : "")), main },
-    notes,
-  };
+  let deck = { id: DB.newId(), name: `${o.n} · ${v.name}`.slice(0, 60), format: o.format || DEFAULT_FORMAT, energy: !!o.energy, ride: ride.map((c) => (c ? c.id : "")), starter: "", main };
+  const F = FORMATS[deck.format] || FORMATS.standard;
+  if (!F.crest) deck.energy = false;
+  if (!F.rideDeck) {
+    // No ride deck: the ride line joins the 50 (one copy each, already counted in the 4-copy limit)
+    // and the grade 0 becomes the first vanguard; 4 extra cards from the end of the list make room.
+    const rideIds = deck.ride.filter(Boolean), ids = byId();
+    const m = [...main, ...rideIds];
+    for (let i = m.length - 1; i >= 0 && m.length > 50; i--) {
+      const c = ids[m[i]];
+      if (c && !c.trigger && !c.sentinel && !rideIds.includes(m[i])) m.splice(i, 1);
+    }
+    deck = { ...deck, main: m, starter: rideIds[0] || "", ride: ["", "", "", ""] };
+  }
+  return { deck, notes };
 }
 
 // ---------- backup ----------
@@ -1159,4 +1205,57 @@ Loader.wait((async () => {
   await reload();
   renderList();
   renderCard();
+  // the page may have opened straight on another tab (editor.html#decks) before the data was loaded
+  if (!$("#tab-decks").hidden) renderDecks();
+  if (!$("#tab-formats").hidden) renderFormats();
 })());
+
+// ---------- Formats tab: rule summary + editable restriction lists (js/formats.js) ----------
+function renderFormats() {
+  $("#fmtRules").innerHTML = `<table class="rtable"><thead><tr><th>Format</th><th>Cards</th><th>Ride deck</th><th>Triggers (of 16)</th><th>G assist</th></tr></thead><tbody>${Object.values(FORMATS).map((F) => `<tr>
+      <td><b>${esc(F.label)}</b><br><small class="muted">${esc(F.sub)}</small></td>
+      <td>${F.poolIcon ? F.poolIcon + "-icon cards" : "all cards"} · ${F.identity === "nation" ? "one nation" : F.identity ? "one clan" : "any mix"}</td>
+      <td>${F.rideDeck ? "4 units + Energy Generator crest" : "none (grade 0 first vanguard from the 50)"}</td>
+      <td>${Object.entries(F.trigCaps).map(([t, n]) => `${TRIG[t] ? TRIG[t].name : t} ≤${n}`).join(", ")}${F.standTrigger ? ", stand OK" : ""}</td>
+      <td>${F.gAssist ? "yes" : "no"}</td></tr>`).join("")}</tbody></table>`;
+  if (!$("#rsFormat").options.length) {
+    $("#rsFormat").innerHTML = Object.entries(FORMATS).filter(([, F]) => F.restrictions).map(([k, F]) => `<option value="${k}">${esc(F.label)}</option>`).join("");
+    $("#rsRule").innerHTML = Object.entries(RESTRICT_RULES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  }
+  $("#rsNames").innerHTML = [...new Set(cards.map((c) => c.name))].sort().map((n) => `<option value="${esc(n)}">`).join("");
+  const fmt = $("#rsFormat").value, R = Restrictions.of(fmt);
+  $("#rsList").innerHTML = R.list.map((r, i) => `<tr><td>${esc(r.name)}</td><td>${esc(RESTRICT_RULES[r.rule] || r.rule)}</td><td><button class="del" data-rsdel="${i}">Remove</button></td></tr>`).join("")
+    || `<tr><td colspan="3" class="muted">No restrictions for this format yet.</td></tr>`;
+  if (document.activeElement !== $("#rsChoice")) $("#rsChoice").value = R.choice.map((g) => g.join(" | ")).join("\n");
+}
+function saveRestrictions(fmt, list, choice) {
+  const all = Restrictions.all();
+  all[fmt] = list;
+  all.choice = { ...(all.choice || {}), [fmt]: choice };
+  if (!Restrictions.save(all)) toast("Couldn't save (browser storage blocked)", true);
+}
+document.querySelector('[data-tab="formats"]').addEventListener("click", renderFormats);
+$("#rsFormat").addEventListener("change", renderFormats);
+$("#rsAdd").addEventListener("click", () => {
+  const name = $("#rsName").value.trim();
+  if (!name) return;
+  const fmt = $("#rsFormat").value, R = Restrictions.of(fmt);
+  saveRestrictions(fmt, [...R.list.filter((r) => r.name !== name), { name, rule: $("#rsRule").value }], R.choice);
+  $("#rsName").value = "";
+  renderFormats();
+  toast(`${name}: ${RESTRICT_RULES[$("#rsRule").value]}`);
+});
+$("#rsList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-rsdel]");
+  if (!b) return;
+  const fmt = $("#rsFormat").value, R = Restrictions.of(fmt);
+  R.list.splice(+b.dataset.rsdel, 1);
+  saveRestrictions(fmt, R.list, R.choice);
+  renderFormats();
+});
+$("#rsChoice").addEventListener("change", () => {
+  const fmt = $("#rsFormat").value, R = Restrictions.of(fmt);
+  const groups = $("#rsChoice").value.split("\n").map((l) => l.split("|").map((x) => x.trim()).filter(Boolean)).filter((g) => g.length > 1);
+  saveRestrictions(fmt, R.list, groups);
+  toast("Choice restrictions saved");
+});

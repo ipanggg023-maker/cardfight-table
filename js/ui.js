@@ -90,7 +90,7 @@ async function loadSetup() {
   const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
   const opts = decks.map((d) => {
     const bad = validateDeck(d, byId);
-    return `<option value="${esc(d.id)}">${esc(d.name)}${bad.length ? " ⚠ " + esc(bad[0]) : ""}</option>`;
+    return `<option value="${esc(d.id)}">${esc(d.name)} · ${esc(FORMATS[formatOf(d)].label)}${bad.length ? " ⚠ " + esc(bad[0]) : ""}</option>`;
   }).join("") || `<option value="">No decks yet: build one in the editor</option>`;
   $("#d1").innerHTML = opts;
   const me = typeof Auth !== "undefined" && Auth.get();
@@ -208,6 +208,7 @@ async function startGame() {
   if (typeof Auth !== "undefined" && Auth.get()) Auth.set({ ...Auth.get(), lastP2: $("#n2").value.trim() });
   try {
     const decks = [await DB.loadDeck($("#d1").value), await DB.loadDeck($("#d2").value)];
+    if (decks[0].format !== decks[1].format) toast(`Different formats: ${FORMATS[decks[0].format].label} vs ${FORMATS[decks[1].format].label}. Each deck plays by its own setup.`);
     ui.hotseat = $("#hotseat").checked;
     ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
     const fp = $("#firstP").value;

@@ -52,32 +52,13 @@ const DB = (() => {
     const byId = Object.fromEntries((await all("cards")).map((c) => [c.id, c]));
     if (!deck) throw new Error("Deck not found");
     const get = (cid) => byId[cid];
-    const missing = [...deck.ride, ...deck.main].filter((cid) => !byId[cid]).length;
+    const missing = [...(deck.ride || []), ...deck.main].filter((cid) => cid && !byId[cid]).length;
     if (missing) throw new Error(`${missing} card(s) in this deck were deleted`);
-    return { name: deck.name, energy: deck.energy, ride: deck.ride.map(get), main: deck.main.map(get) };
+    const format = typeof formatOf === "function" ? formatOf(deck) : "standard";
+    const rideDeck = typeof FORMATS === "undefined" || FORMATS[format].rideDeck;
+    return { name: deck.name, format, energy: rideDeck && !!deck.energy, ride: rideDeck ? (deck.ride || []).map(get) : [], starter: rideDeck ? null : get(deck.starter) || null, main: deck.main.map(get) };
   }
   return { all, put, del, newId, removeSamples, exportAll, importAll, loadDeck };
 })();
 
-// Deck rule check, shared by editor and game setup
-function validateDeck(deck, byId) {
-  const errs = [];
-  const main = deck.main.map((id) => byId[id]).filter(Boolean);
-  const ride = deck.ride.map((id) => byId[id]);
-  if (ride.length !== 4 || ride.some((c) => !c)) errs.push("Ride deck needs 4 cards");
-  else if (ride.map((c) => c.grade).join() !== "0,1,2,3") errs.push("Ride deck must be grade 0, 1, 2, 3 in order");
-  if (main.length !== 50) errs.push(`Main deck has ${main.length}/50 cards`);
-  // triggers, sentinels and copies count across the main deck and the ride deck (CR 8.1.6–8.1.7)
-  const both = [...main, ...ride.filter(Boolean)];
-  const count = (fn) => both.filter(fn).length;
-  if (count((c) => c.trigger) !== 16) errs.push(`Triggers: ${count((c) => c.trigger)}/16`);
-  const noType = main.filter((c) => c.type === "trigger" && !c.trigger);
-  if (noType.length) errs.push(`Set the trigger type: ${[...new Set(noType.map((c) => c.name))].join(", ")}`);
-  if (count((c) => c.trigger === "heal") > 4) errs.push("Max 4 heal triggers");
-  if (count((c) => c.trigger === "over") > 1) errs.push("Max 1 over trigger");
-  if (count((c) => c.sentinel) > 4) errs.push("Max 4 sentinels");
-  const names = {};
-  [...main, ...ride.filter(Boolean)].forEach((c) => (names[c.name] = (names[c.name] || 0) + 1));
-  Object.entries(names).forEach(([n, k]) => { if (k > 4) errs.push(`"${n}": ${k} copies (max 4 incl. ride deck)`); });
-  return errs;
-}
+// Deck rule checks live in js/formats.js (validateDeck), one profile per play format.
