@@ -436,3 +436,12 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 /* Stride: heart name under a strided vanguard; G zone counter */
 .card .heart { font-size: .55em; color: #ff9fb0; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip.gz b { color: var(--gold); }
+
+/* Imaginary gifts: accel circles sit outside the mat edges; marker badges on circles; legion mate label */
+.mat { overflow: visible; }
+.mat .slot.accel { border: 1px dashed var(--cyan); border-radius: 9px; }
+.mat.img .slot.accel .sl { display: block; }
+.slot .mk { position: absolute; left: 50%; bottom: -2px; transform: translate(-50%, 100%); z-index: 3; font: 700 .58rem var(--display);
+  color: #10213a; background: var(--gold); border-radius: 6px; padding: 1px 5px; white-space: nowrap; pointer-events: none; }
+.card .heart.mate { color: #9fd7ff; }
+.chip.gift b { color: var(--green); }

@@ -86,6 +86,8 @@ function cgsToCard(d, trigger) {
     source: { from: "cgs", number: d.number || "", set: d.productName || "", setCode: d._set || "", url: d.url || "", cardType: d.type },
   };
   if (isTrig && !card.trigger) card.needsTrigger = true;
+  const giftM = text.match(/Imaginary Gift\s*[:：]?\s*(Force|Accel|Protect)/i);
+  if (giftM && !isG) card.gift = giftM[1].toLowerCase();
   if (isG) { card.gKind = gKind; if (/Ultimate Stride/i.test(text)) card.ultimate = true; if (gKind === "stride") card.drive = 3; }
   return card;
 }

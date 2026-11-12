@@ -7,6 +7,12 @@ const Game = (() => {
   const BACK_OF = { fl: "bl", vc: "bc", fr: "br" };
   const PARTNER = { fl: "bl", bl: "fl", fr: "br", br: "fr" };
   const SLOT_NAME = { vc: "VC", fl: "front-left RC", fr: "front-right RC", bl: "back-left RC", bc: "back-center RC", br: "back-right RC" };
+  const slotName = (k) => SLOT_NAME[k] || "accel circle";
+  // Each player's circles: the 6 standard ones + accel circles from Accel gifts (front row, rear-guard)
+  const accelKeys = (pi) => ((S && S.players[pi].accel) || []).map((a) => a.key);
+  const frontOf = (pi) => [...FRONT, ...accelKeys(pi)];
+  const rcOf = (pi) => [...RC, ...accelKeys(pi)];
+  const unitsOf = (pi) => [...UNITS, ...accelKeys(pi)];
 
   let S = null, uidN = 0, resume = null;
   let onChange = () => {};
@@ -49,6 +55,7 @@ const Game = (() => {
       deck: shuffle(main), ride,
       hand: [], soul: [], damage: [], drop: [], bind: [], removed: [],
       gDeck: (deck.g || []).map(inst), gUp: [], vcGradeAtStart: 0, // G zone: face down / face up (CR 4.14)
+      giftType: "", giftVariant: {}, marks: {}, accel: [], legionUsed: [], // imaginary gifts, Legion
       slots: { vc: slot(first), fl: null, fr: null, bl: null, bc: null, br: null },
       driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
       orderTurn: -1, egTurn: -1, // turn number of the last order played / Energy Generator draw (1 each per turn)
@@ -119,7 +126,7 @@ const Game = (() => {
     return ids.map((id) => cards.find((c) => c.uid === id));
   }
   async function chooseUnits(pi, prompt, units, n, exact = true) {
-    const opts = units.map((u) => ({ id: u.pi + ":" + u.key, label: `${u.pi === pi ? "Your" : "Opponent's"} ${SLOT_NAME[u.key]}: ${P(u.pi).slots[u.key].card.name}`, card: P(u.pi).slots[u.key].card }));
+    const opts = units.map((u) => ({ id: u.pi + ":" + u.key, label: `${u.pi === pi ? "Your" : "Opponent's"} ${slotName(u.key)}: ${P(u.pi).slots[u.key].card.name}`, card: P(u.pi).slots[u.key].card }));
     const ids = await choose(pi, prompt, opts, exact ? n : 0, n);
     return ids.map((id) => ({ pi: +id.split(":")[0], key: id.split(":")[1] }));
   }
@@ -130,6 +137,8 @@ const Game = (() => {
   // Rule actions: 6+ damage loses; pending losses are decided; both at once = draw game (CR 13.2–13.3)
   function ruleActions() {
     if (!S || over()) return;
+    // the Protect gift card only exists in the hand or on the guardian circle (CR 15.3)
+    S.players.forEach((p) => ["drop", "soul", "bind", "damage", "removed", "deck"].forEach((z) => { if (p[z].some((c) => c.protect)) p[z] = p[z].filter((c) => !c.protect); }));
     S.players.forEach((p, pi) => { if (p.damage.length >= 6 && !S.loss[pi]) S.loss[pi] = "6 damage"; });
     const [a, b] = S.loss;
     if (!a && !b) return;
@@ -165,20 +174,20 @@ const Game = (() => {
   const unitsAt = (pi, keys, f) => keys.filter((k) => P(pi).slots[k] && match(P(pi).slots[k].card, f)).map((key) => ({ pi, key }));
 
   // ---------- power (incl. CONT abilities) ----------
-  function contTargets(t, k) {
-    return { self: [k], vc: ["vc"], allFront: FRONT, allFrontRC: ["fl", "fr"], allMyRC: RC, allMyUnits: UNITS }[t || "self"] || [];
+  function contTargets(pi, t, k) {
+    return { self: [k], vc: ["vc"], allFront: frontOf(pi), allFrontRC: frontOf(pi).filter((x) => x !== "vc"), allMyRC: rcOf(pi), allMyUnits: unitsOf(pi) }[t || "self"] || [];
   }
   function cont(pi, key, stat) {
     const p = P(pi);
     let sum = 0;
-    for (const k of UNITS) {
+    for (const k of unitsOf(pi)) {
       const s = p.slots[k];
       if (!s) continue;
       for (const ab of s.card.abilities || []) {
         if (ab.kind !== "CONT" || !zoneOK(ab.zone, zoneOf(k))) continue;
         if (!(ab.conds || []).every((c) => condOK(pi, c, { key: k, card: s.card }))) continue;
         for (const e of ab.effects || []) {
-          if (e.type === stat && contTargets(e.target, k).includes(key) && match(p.slots[key].card, e.filter)) sum += +e.amount || 0;
+          if (e.type === stat && contTargets(pi, e.target, k).includes(key) && match(p.slots[key].card, e.filter)) sum += +e.amount || 0;
         }
       }
     }
@@ -189,13 +198,26 @@ const Game = (() => {
     if (!s) return 0;
     // Persona Ride: units on your front-row circles get +10000 until end of turn (CR 7.15.1.4).
     // It belongs to the circles, so units called there later this turn get it too.
-    const persona = p.personaFront && FRONT.includes(key) ? 10000 : 0;
-    const heart = s.heart ? +s.heart.power || 0 : 0; // stride: the heart's power is added (CR 6.5.2)
-    return s.card.power + heart + s.pow + s.powB + persona + cont(pi, key, "power");
+    const persona = p.personaFront && frontOf(pi).includes(key) ? 10000 : 0;
+    const heart = s.heart ? (+s.heart.power || 0) + (s.heartMate ? +s.heartMate.power || 0 : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
+    const mate = s.mate ? +s.mate.power || 0 : 0; // legion: the mate's power is added (CR 6.4)
+    return s.card.power + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power");
   }
   function crit(pi, key) {
     const s = P(pi).slots[key];
-    return s ? (s.card.crit || 1) + s.crit + s.critB + cont(pi, key, "crit") : 0;
+    if (!s) return 0;
+    const m = P(pi).marks[key];
+    const base = m && m.forceII ? 2 : s.card.crit || 1; // Force II: the unit on that circle has original critical 2
+    return base + s.crit + s.critB + cont(pi, key, "crit");
+  }
+  // Gift bonuses during your turn: Force I +10000 per marker; accel circle +10000 (I) / +5000 (II) (CR 16.3)
+  function giftPower(pi, key) {
+    if (!S || S.active !== pi) return 0;
+    const p = P(pi), m = p.marks[key];
+    let n = m && m.forceI ? 10000 * m.forceI : 0;
+    const a = p.accel.find((x) => x.key === key);
+    if (a) n += a.variant === "II" ? 5000 : 10000;
+    return n;
   }
 
   // ---------- conditions & costs ----------
@@ -204,21 +226,22 @@ const Game = (() => {
     switch (c.type) {
       case "myTurn": return S.active === pi;
       case "oppTurn": return S.active !== pi;
-      case "vcName": return [p.slots.vc.card, p.slots.vc.heart].some((x) => x && x.name.toLowerCase().includes((c.text || "").toLowerCase()));
+      case "legion": return !!p.slots.vc.mate;
+      case "vcName": return [p.slots.vc.card, p.slots.vc.heart, p.slots.vc.mate].some((x) => x && x.name.toLowerCase().includes((c.text || "").toLowerCase()));
       case "genBreak": return gFaceUp(p) >= n;   // Generation Break N (CR 14.14)
       case "limitBreak": return p.damage.length >= n; // Limit Break N (CR 14.7)
       case "vcGrade": return p.slots.vc.card.grade >= n;
       case "oppVcGrade": return o.slots.vc.card.grade >= n;
       case "myDamage": return p.damage.length >= n;
       case "oppDamage": return o.damage.length >= n;
-      case "rearCount": return RC.filter((k) => p.slots[k]).length >= n;
+      case "rearCount": return rcOf(pi).filter((k) => p.slots[k]).length >= n;
       case "soul": return p.soul.length >= n;
       case "drop": return p.drop.length >= n;
       case "hand": return p.hand.length >= n;
       case "persona": return p.personaThisTurn;
       case "playedOrder": return p.ordersThisTurn > 0;
       case "targetVC": return !!S.battle && S.battle.tgt === "vc";
-      case "selfFront": return FRONT.includes(ctx.key);
+      case "selfFront": return frontOf(pi).includes(ctx.key);
       case "selfBack": return BACK.includes(ctx.key);
       default: return true;
     }
@@ -233,7 +256,8 @@ const Game = (() => {
       case "discard": return p.hand.length >= n;
       case "restSelf": return selfThere(pi, ctx) && !P(pi).slots[ctx.key].rest;
       case "retireSelf": case "selfToSoul": return selfThere(pi, ctx) && ctx.key !== "vc";
-      case "retireRC": return RC.filter((k) => p.slots[k] && k !== ctx.key).length >= n;
+      case "retireRC": return rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key).length >= n;
+      case "dropToTop": { const max = c.maxTrig === "" || c.maxTrig === undefined ? n : +c.maxTrig; return p.drop.length >= n && p.drop.filter((x) => !x.trigger).length + Math.min(max, p.drop.filter((x) => x.trigger).length) >= n; }
       default: return true;
     }
   }
@@ -255,8 +279,20 @@ const Game = (() => {
       case "restSelf": p.slots[ctx.key].rest = true; break;
       case "retireSelf": retire(pi, ctx.key); break;
       case "selfToSoul": p.soul.push(p.slots[ctx.key].card); p.slots[ctx.key] = null; break;
+      case "dropToTop": {
+        // choose N drop cards (at most maxTrig trigger units) and put them on top of the deck (CR 14.11)
+        const max = c.maxTrig === "" || c.maxTrig === undefined ? n : +c.maxTrig;
+        let picked = [];
+        for (let tries = 0; tries < 5; tries++) {
+          picked = await chooseCards(pi, `Return ${n} cards from your drop to the top of your deck${max < n ? ` (at most ${max} trigger units)` : ""}`, p.drop, n, n);
+          if (picked.filter((x) => x.trigger).length <= max) break;
+          log(`At most ${max} trigger units. Choose again.`);
+        }
+        picked.forEach((x) => { p.drop.splice(p.drop.indexOf(x), 1); p.deck.push(x); });
+        break;
+      }
       case "retireRC": {
-        const us = await chooseUnits(pi, `Retire ${n} of your rear-guards`, unitsAt(pi, RC).filter((u) => u.key !== ctx.key), n);
+        const us = await chooseUnits(pi, `Retire ${n} of your rear-guards`, unitsAt(pi, rcOf(pi)).filter((u) => u.key !== ctx.key), n);
         us.forEach((u) => retire(u.pi, u.key));
         break;
       }
@@ -270,6 +306,11 @@ const Game = (() => {
     if (ab.once === "turn" && S.used.has(usedKey(card, i))) return false;
     if (ab.once === "game" && S.usedGame.has(gameKey(pi, card, i))) return false;
     if (!(ab.conds || []).every((c) => condOK(pi, c, ctx))) return false;
+    // Seek Mate needs a vanguard that has never been in legion (CR 14.11)
+    if ((ab.effects || []).some((e) => e.type === "seekMate")) {
+      const vs = P(pi).slots.vc;
+      if (vs.mate || vs.card.type === "g" || P(pi).legionUsed.includes(vs.card.uid)) return false;
+    }
     return (ab.costs || []).every((c) => canPay(pi, c, ctx));
   }
   async function resolve(pi, card, ab, i, ctx, ask) {
@@ -301,7 +342,7 @@ const Game = (() => {
       S.queue.push({ id: ++qN, pi, i, card, ctx: { key, zone, ...extra, card } });
     });
   }
-  function collectAll(pi, event, extra = {}) { for (const k of UNITS) if (P(pi).slots[k]) collect(pi, k, event, extra); }
+  function collectAll(pi, event, extra = {}) { for (const k of unitsOf(pi)) if (P(pi).slots[k]) collect(pi, k, event, extra); }
   async function settle() { if (depth === 0 && !inCheck) await checkTiming(); }
   async function fire(pi, key, event, extra = {}) { collect(pi, key, event, extra); await settle(); }
   async function fireAll(pi, event, extra = {}) { collectAll(pi, event, extra); await settle(); }
@@ -343,7 +384,7 @@ const Game = (() => {
     if (!s) return;
     if (s.card.type === "g") {
       toGZone(p, s.card);
-      if (key === "vc" && s.heart) { s.card = s.heart; s.heart = null; return; }
+      if (key === "vc" && s.heart) { s.card = s.heart; s.heart = null; s.mate = s.heartMate || null; s.heartMate = null; return; }
     } else p[dest].push(s.card);
     p.slots[key] = null;
   }
@@ -355,11 +396,11 @@ const Game = (() => {
     p.slots[key] = slot(card);
     log(`${p.name} calls ${card.name}`);
     collect(pi, key, "placedRC");
-    for (const k of UNITS) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key });
+    for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key });
     await settle();
   }
   async function callAnywhere(pi, card) {
-    const opts = RC.map((k) => ({ id: k, label: `${SLOT_NAME[k]}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
+    const opts = rcOf(pi).map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
     const [key] = await choose(pi, `Call ${card.name} to which circle?`, opts, 1, 1);
     await place(pi, card, key);
   }
@@ -380,17 +421,17 @@ const Game = (() => {
       case "vc": return [{ pi, key: "vc" }];
       case "placed": return ctx.placedKey && P(pi).slots[ctx.placedKey] ? [{ pi, key: ctx.placedKey }] : [];
       case "attacker": return S.battle ? [{ pi: S.active, key: S.battle.att }] : [];
-      case "allFront": return unitsAt(pi, FRONT, f);
+      case "allFront": return unitsAt(pi, frontOf(pi), f);
       case "allFrontRC": return unitsAt(pi, ["fl", "fr"], f);
-      case "allMyRC": return unitsAt(pi, RC, f);
-      case "allMyUnits": return unitsAt(pi, UNITS, f);
-      case "chooseMy": return chooseUnits(pi, label, unitsAt(pi, UNITS, f), n);
-      case "chooseMyRC": return chooseUnits(pi, label, unitsAt(pi, RC, f), n);
+      case "allMyRC": return unitsAt(pi, rcOf(pi), f);
+      case "allMyUnits": return unitsAt(pi, unitsOf(pi), f);
+      case "chooseMy": return chooseUnits(pi, label, unitsAt(pi, unitsOf(pi), f), n);
+      case "chooseMyRC": return chooseUnits(pi, label, unitsAt(pi, rcOf(pi), f), n);
       case "chooseMyFrontRC": return chooseUnits(pi, label, unitsAt(pi, ["fl", "fr"], f), n);
       case "chooseMyBackRC": return chooseUnits(pi, label, unitsAt(pi, BACK, f), n);
-      case "chooseOppRC": return chooseUnits(pi, label, unitsAt(o, RC, f), n);
+      case "chooseOppRC": return chooseUnits(pi, label, unitsAt(o, rcOf(o), f), n);
       case "chooseOppFrontRC": return chooseUnits(pi, label, unitsAt(o, ["fl", "fr"], f), n);
-      case "chooseOppUnit": return chooseUnits(pi, label, unitsAt(o, UNITS, f), n);
+      case "chooseOppUnit": return chooseUnits(pi, label, unitsAt(o, unitsOf(o), f), n);
       default: return [];
     }
   }
@@ -434,6 +475,23 @@ const Game = (() => {
         for (const c of picked) await sendTo(pi, c, e.dest);
         break;
       }
+      case "gift": await giveGift(pi, e.kind || "force", false); break;
+      case "seekMate": {
+        // Seek Mate (CR 6.4, 14.11): legion with a named card from the deck; a unit only legions once
+        const vs = p.slots.vc;
+        if (vs.mate || vs.card.type === "g") { log("Already in legion"); break; }
+        if (p.legionUsed.includes(vs.card.uid)) { log(`${vs.card.name} has already been in legion`); break; }
+        const want = (e.text || "").toLowerCase();
+        const found = p.deck.filter((c) => c.type !== "order" && (!want || c.name.toLowerCase().includes(want)));
+        const [m] = await chooseCards(pi, `Seek Mate: choose ${e.text || "a card"} from your deck to legion with`, found, found.length ? 1 : 0, 1);
+        shuffle(p.deck);
+        if (!m) { log("Seek Mate: no mate found (deck shuffled)"); break; }
+        p.deck.splice(p.deck.indexOf(m), 1);
+        vs.mate = m;
+        p.legionUsed.push(vs.card.uid, m.uid);
+        log(`⚭ ${p.name}: ${vs.card.name} and ${m.name} form a Legion`);
+        break;
+      }
       case "callFromHand": {
         const picked = await chooseCards(pi, `Call up to ${n} from hand`, p.hand.filter((c) => c.type !== "order" && match(c, e.filter)), 0, n);
         for (const c of picked) { p.hand.splice(p.hand.indexOf(c), 1); await callAnywhere(pi, c); }
@@ -442,15 +500,50 @@ const Game = (() => {
     }
   }
 
+  // ---------- Imaginary gifts (CR 6.3.7, 16) ----------
+  const GIFT = { force: "Force", accel: "Accel", protect: "Protect" };
+  const GIFT_OPTS = {
+    force: [["I", "Force I: marker on a circle, +10000 during your turn (stacks)"], ["II", "Force II: marker on a circle, the unit there has critical 2"]],
+    accel: [["I", "Accel I: a new front-row rear-guard circle, +10000 during your turn"], ["II", "Accel II: a new front-row rear-guard circle, +5000 during your turn, draw 1"]],
+    protect: [["I", "Protect I: a Protect card in your hand (guard: discard 1, can't be hit)"], ["II", "Protect II: marker on a rear-guard circle, Shield +10000 when it intercepts"]],
+  };
+  async function giveGift(pi, kind, fromRide) {
+    const p = P(pi);
+    if (!GIFT[kind] || p.format === "extreme") return; // no gifts in Extreme Fight
+    if (fromRide) { if (p.giftType && p.giftType !== kind) return; p.giftType = kind; } // one gift type from rides
+    let v = p.giftVariant[kind];
+    if (!v) { // the first I/II choice for a type is kept for the whole game (CR 16.3.1.3)
+      const [pick] = await choose(pi, `Imaginary Gift: ${GIFT[kind]}. Choose I or II (kept for the whole game)`, GIFT_OPTS[kind].map(([id, label]) => ({ id, label })), 1, 1);
+      v = p.giftVariant[kind] = pick || "I";
+    }
+    const circle = async (keys, prompt) => {
+      const [k] = await choose(pi, prompt, keys.map((k) => ({ id: k, label: `${slotName(k)}${p.slots[k] ? ": " + p.slots[k].card.name : " (empty)"}` })), 1, 1);
+      return k;
+    };
+    const mark = (k, name) => { p.marks[k] = p.marks[k] || {}; p.marks[k][name] = (p.marks[k][name] || 0) + 1; };
+    if (kind === "force") mark(await circle(unitsOf(pi), `Force ${v}: put the marker on which circle?`), "force" + v);
+    if (kind === "accel") { // circles are added left, right, left… of the front row (CR 16.3.1.5)
+      const n = p.accel.length, key = "x" + (n + 1);
+      p.accel.push({ key, variant: v, side: n % 2 === 0 ? "L" : "R", idx: Math.floor(n / 2) });
+      p.slots[key] = null;
+      if (v === "II") draw(pi, 1);
+    }
+    if (kind === "protect") {
+      if (v === "I") p.hand.push({ uid: ++uidN, id: "gift-protect", name: "Protect", type: "unit", grade: 0, power: 0, shield: 0, crit: 0, sentinel: true, protect: true, abilities: [], text: "Imaginary gift. Put it on your guardian circle: discard a card, one of your units can't be hit this battle. Only exists in your hand or on the guardian circle." });
+      else mark(await circle(rcOf(pi), "Protect II: put the marker on which rear-guard circle?"), "protectII");
+    }
+    log(`🎁 ${p.name} gets Imaginary Gift: ${GIFT[kind]} ${v}`);
+  }
+
   // ---------- triggers ----------
   // check: "drive" | "damage". The checked card is in the trigger zone while this runs (CR 11.10).
   async function trigger(pi, c, check) {
     const t = c.trigger;
     if (!t || !TRIG[t]) return;
     const p = P(pi), o = P(1 - pi);
-    const mine = unitsAt(pi, UNITS), amt = trigPower(c);
+    const mine = unitsAt(pi, unitsOf(pi)), amt = trigPower(c);
     log(`${TRIG[t].icon} ${TRIG[t].name} trigger!`);
-    if (t === "front") { unitsAt(pi, FRONT).forEach((u) => (p.slots[u.key].pow += amt)); return; }
+    if (t === "front") { unitsAt(pi, frontOf(pi)).forEach((u) => (p.slots[u.key].pow += amt)); return; }
     if (t === "over") draw(pi, 1);
     const [pu] = await chooseUnits(pi, `${TRIG[t].name} trigger: power +${amt.toLocaleString()} to which unit?`, mine, 1);
     if (pu) p.slots[pu.key].pow += amt;
@@ -460,7 +553,7 @@ const Game = (() => {
     }
     if (t === "draw") draw(pi, 1);
     if (t === "stand") { // Premium: stand one of your rear-guards
-      const rested = unitsAt(pi, RC).filter((u) => p.slots[u.key].rest);
+      const rested = unitsAt(pi, rcOf(pi)).filter((u) => p.slots[u.key].rest);
       const [su] = await chooseUnits(pi, "Stand trigger: stand which rear-guard?", rested, 1);
       if (su) { p.slots[su.key].rest = false; log(`${p.slots[su.key].card.name} stands`); }
     }
@@ -547,6 +640,7 @@ const Game = (() => {
     p.gDeck.splice(p.gDeck.indexOf(g), 1);
     const vs = p.slots.vc;
     vs.heart = vs.card; // the old vanguard becomes the heart (not a ride: no ride abilities, no gifts)
+    vs.heartMate = vs.mate || null; vs.mate = null; // a legion stays a legion as the heart
     vs.card = g;
     log(`⇧ ${p.name} strides ${g.name} (heart: ${vs.heart.name}) · discarded total grade ${total}`);
     collect(pi, "vc", "onStride");
@@ -561,7 +655,7 @@ const Game = (() => {
   });
   // End phase (CR 9.11.1): G units on the field go face up to the G zone; hearts become vanguards again
   function returnGUnits() {
-    S.players.forEach((p, pi) => { for (const k of UNITS) if (p.slots[k] && p.slots[k].card.type === "g") leaveCircle(pi, k, "drop"); });
+    S.players.forEach((p, pi) => { for (const k of unitsOf(pi)) if (p.slots[k] && p.slots[k].card.type === "g") leaveCircle(pi, k, "drop"); });
   }
   // ---------- G guardian (CR 10.5.1.2.3, 14.16) ----------
   function canGGuard(di) {
@@ -606,7 +700,8 @@ const Game = (() => {
   async function doRide(pi, card, fromHand) {
     const p = P(pi), vs = p.slots.vc;
     let old = vs.card;
-    if (vs.heart) { toGZone(p, old); old = vs.heart; vs.heart = null; }
+    if (vs.heart) { toGZone(p, old); old = vs.heart; vs.heart = null; if (vs.heartMate) { p.soul.push(vs.heartMate); vs.heartMate = null; } }
+    if (vs.mate) { p.soul.push(vs.mate); vs.mate = null; } // riding on a legion puts both into the soul (CR 6.4)
     p.soul.push(old);
     p.slots.vc.card = card;
     S.rode = true;
@@ -618,6 +713,7 @@ const Game = (() => {
       draw(pi, 1);
       log("✨ Persona Ride! Draw 1, your front row gets +10000 this turn");
     }
+    if (card.gift) await giveGift(pi, card.gift, true); // gifts resolve before AUTOs (CR 11.6.1)
     collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
     collect(pi, "vc", "placedVC");
     await settle();
@@ -638,7 +734,7 @@ const Game = (() => {
     if (S.phase !== "ride") return err("You can only ride in the ride phase");
     const pi = S.active, p = P(pi);
     const card = p.hand.find((c) => c.uid === uid);
-    if (!card || card.type === "order") return err("That card can't ride");
+    if (!card || card.type === "order" || card.protect) return err("That card can't ride");
     const g = p.slots.vc.card.grade;
     if (card.grade !== g && card.grade !== g + 1) return err(`Ride grade ${g} or ${g + 1} only`);
     p.hand.splice(p.hand.indexOf(card), 1);
@@ -652,11 +748,12 @@ const Game = (() => {
 
   const call = (uid, key) => run(async () => {
     if (S.phase !== "main") return err("Call units in the main phase");
-    if (!RC.includes(key)) return err("Rear-guard circles only");
+    if (!rcOf(S.active).includes(key)) return err("Rear-guard circles only");
     const pi = S.active, p = P(pi);
     const card = p.hand.find((c) => c.uid === uid);
     if (!card) return err("Card not in hand");
     if (card.type === "order") return err("Orders are played with the Play button");
+    if (card.protect) return err("Protect can only be put on the guardian circle");
     if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
     p.hand.splice(p.hand.indexOf(card), 1);
     await place(pi, card, key);
@@ -730,7 +827,7 @@ const Game = (() => {
   function canAttack(key) {
     const s = S.players[S.active].slots[key];
     // the first player can't attack on their first turn (CR 10.3.2)
-    return S.phase === "battle" && S.turn > 1 && !S.battle && FRONT.includes(key) && !!s && !s.rest;
+    return S.phase === "battle" && S.turn > 1 && !S.battle && frontOf(S.active).includes(key) && !!s && !s.rest;
   }
   function boosterFor(pi, key) {
     const bk = BACK_OF[key], b = bk && P(pi).slots[bk];
@@ -739,7 +836,7 @@ const Game = (() => {
   const attack = (att, useBoost, tgt) => run(async () => {
     if (!canAttack(att)) return err("That unit can't attack");
     const ai = S.active, di = 1 - ai, p = P(ai);
-    if (!FRONT.includes(tgt) || !P(di).slots[tgt]) return err("Attack an opponent's front row unit");
+    if (!frontOf(di).includes(tgt) || !P(di).slots[tgt]) return err("Attack an opponent's front row unit");
     p.slots[att].rest = true;
     const bk = useBoost ? boosterFor(ai, att) : null;
     if (bk) p.slots[bk].rest = true;
@@ -789,6 +886,8 @@ const Game = (() => {
     if (!canInterceptIcon(s.card)) return err("This unit has no Intercept skill");
     if (key === b.tgt) return err("The attacked unit can't intercept");
     b.guards.push(s.card);
+    const pm = d.marks[key];
+    if (pm && pm.protectII) { b.shieldBonus += 10000 * pm.protectII; log(`Protect II: Shield +${(10000 * pm.protectII).toLocaleString()}`); }
     d.slots[key] = null;
     log(`${s.card.name} intercepts`);
   });
@@ -884,11 +983,11 @@ const Game = (() => {
   }
 
   return {
-    FRONT, RC, UNITS, BACK_OF,
+    FRONT, RC, UNITS, BACK_OF, frontOf, rcOf, unitsOf,
     newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
     toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
-    driveOf, canBoostIcon, canInterceptIcon, trigPower,
+    driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower,
   };
 })();

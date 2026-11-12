@@ -146,6 +146,7 @@ function renderCard() {
       <label>Nation ${txt("nation", c.nation, "Dragon Empire")}</label>
       <label>Clan (older cards) ${txt("clan", c.clan, "e.g. Kagero")}</label>
       <label>Race ${txt("race", c.race)}</label>
+      ${c.type === "unit" || c.type === "trigger" ? `<label>Imaginary Gift icon ${sel("gift", { "": "None", force: "Force", accel: "Accel", protect: "Protect" }, c.gift || "")}</label>` : ""}
       <label>Format icon ${sel("icon", { "": `Auto (${iconOf(c) || "unknown"})`, D: "D (Standard)", V: "V (V Premium)", "-": "None (Premium only)" }, c.icon || "")}</label>
     </div>
     <div class="btnrow">
@@ -215,6 +216,7 @@ function rowHTML(path, row, lib, contOnly) {
       case "from": return lab(sel(p, SCHEMA.paramOptions.from, v || "deck"));
       case "dest": return lab(sel(p, SCHEMA.paramOptions.dest, v || "hand"));
       case "restDest": return lab(sel(p, SCHEMA.paramOptions.restDest, v || "shuffle"));
+      case "giftKind": return lab(sel(p, SCHEMA.paramOptions.gift, v || "force"));
       case "filter": {
         const f = v || {};
         return `<div class="flt"><label>min grade ${num(p + ".gmin", f.gmin)}</label><label>max grade ${num(p + ".gmax", f.gmax)}</label>

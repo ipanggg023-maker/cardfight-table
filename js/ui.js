@@ -75,7 +75,7 @@ function preloadPictures() {
   const S = Game.state();
   if (!S) return;
   S.players.forEach((p) => {
-    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...(p.gDeck || []), ...(p.gUp || []), ...Object.values(p.slots).filter(Boolean).flatMap((s) => [s.card, s.heart].filter(Boolean))].forEach((c) => Pics.url(c));
+    [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...(p.gDeck || []), ...(p.gUp || []), ...Object.values(p.slots).filter(Boolean).flatMap((s) => [s.card, s.heart, s.mate, s.heartMate].filter(Boolean))].forEach((c) => Pics.url(c));
   });
   if (typeof Net !== "undefined") Object.values(Net.images).forEach((u) => u && Pics.load(u));
   (ui.mats || []).forEach((m) => m && m.img && Pics.load(m.img));
@@ -235,6 +235,7 @@ function cardInner(c, pi = null, key = null) {
       ${c.trigger ? `<span class="ct t-${c.trigger}">${TRIG[c.trigger].icon}</span>` : ""}${c.sentinel ? `<span class="ct t-sent">◆</span>` : ""}${(c.abilities || []).length ? `<span class="ab">✦</span>` : ""}</div>
     <div class="cn">${esc(c.name)}</div>
     ${pi !== null && key === "vc" && Game.state().players[pi].slots.vc && Game.state().players[pi].slots.vc.heart ? `<div class="heart">♥ ${esc(Game.state().players[pi].slots.vc.heart.name)}</div>` : ""}
+    ${pi !== null && key === "vc" && Game.state().players[pi].slots.vc && Game.state().players[pi].slots.vc.mate ? `<div class="heart mate">⚭ ${esc(Game.state().players[pi].slots.vc.mate.name)}</div>` : ""}
     <div class="cs">${c.type === "order" ? "" : `<span class="cp${pw !== c.power ? " buffed" : ""}">${fmt(pw)}</span>`}${cr > 1 ? `<span class="cc">★${cr}</span>` : ""}${c.shield ? `<span class="csh">🛡${c.shield / 1000}k</span>` : ""}</div>`;
 }
 function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
@@ -313,6 +314,20 @@ function renderSide(root, pi, side) {
     };
   }
   const P = root._parts;
+  for (const k of Object.keys(P.slots)) { // accel circles from an earlier game
+    if (k[0] === "x" && !(p.accel || []).some((a) => a.key === k)) { P.slots[k].remove(); delete P.slots[k]; }
+  }
+  for (const a of p.accel || []) {
+    if (P.slots[a.key]) continue;
+    const x = a.side === "L" ? -9 - 19 * a.idx : 109 + 19 * a.idx, y = MAT_LAYOUT.slots.fl[1];
+    const el = document.createElement("div");
+    el.className = "slot accel";
+    el.style.cssText = opp ? `left:${100 - x}%;top:${100 - y}%` : `left:${x}%;top:${y}%`;
+    el.dataset.side = side; el.dataset.key = a.key;
+    el.innerHTML = `<span class="sl">ACCEL</span>`;
+    root.querySelector(".mat").appendChild(el);
+    P.slots[a.key] = el;
+  }
   const hl = (key) => {
     const c = [];
     if (S.battle) {
@@ -320,16 +335,24 @@ function renderSide(root, pi, side) {
       if (pi !== S.active && key === S.battle.tgt) c.push("targeted");
     }
     if (side === "me" && (ui.attacker === key || ui.unitSel === key)) c.push("picked");
-    if (opp && ui.attacker && Game.FRONT.includes(key) && p.slots[key]) c.push("can-target");
+    if (opp && ui.attacker && Game.frontOf(pi).includes(key) && p.slots[key]) c.push("can-target");
     if (side === "me" && ui.sel && S.phase === "main" && v === S.active && key !== "vc") c.push("can-drop");
     if (side === "me" && ui.sel && S.phase === "ride" && key === "vc") c.push("can-drop");
     return c.join(" ");
   };
-  for (const key of Object.keys(L.slots)) {
-    const el = P.slots[key], cls = `slot${key === "vc" ? " vcs" : ""}${hl(key) ? " " + hl(key) : ""}`;
+  for (const key of [...Object.keys(L.slots), ...(p.accel || []).map((a) => a.key)]) {
+    const el = P.slots[key];
+    if (!el) continue;
+    const cls = `slot${key === "vc" ? " vcs" : ""}${key[0] === "x" ? " accel" : ""}${hl(key) ? " " + hl(key) : ""}`;
     if (el.className !== cls) el.className = cls;
     const s = p.slots[key];
     placeCard(el, s && s.card, s, pi, key);
+    // gift markers on this circle (Force I/II, Protect II) and the accel bonus
+    const m = (p.marks || {})[key] || {}, a = (p.accel || []).find((x) => x.key === key);
+    const badge = [m.forceI ? `F+${10 * m.forceI}k` : "", m.forceII ? "F★2" : "", m.protectII ? "P+10k" : "", a ? `A${a.variant}` : ""].filter(Boolean).join(" ");
+    let mk = el.querySelector(":scope > .mk");
+    if (badge && !mk) { mk = document.createElement("span"); mk.className = "mk"; el.appendChild(mk); }
+    if (mk) { if (mk.textContent !== badge) mk.textContent = badge; mk.hidden = !badge; }
   }
   p.damage.forEach((c) => seen.set(c.uid, c));
   setHTML(P.damage, Array.from({ length: 6 }, (_, i) => {
@@ -343,7 +366,7 @@ function renderSide(root, pi, side) {
     : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
   setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
     <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
+      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
   setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
   const topDrop = p.drop[p.drop.length - 1];
   if (topDrop) seen.set(topDrop.uid, topDrop);
@@ -494,6 +517,9 @@ function actionsHTML(S, v) {
 function renderPending(S, v) {
   const p = S.pending;
   if (!p || p.player !== v) { $("#choice").hidden = true; ui.pick.clear(); return; }
+  // a new prompt starts with nothing picked (picks never carry over from an earlier prompt)
+  const key = p.prompt + "|" + p.options.map((o) => o.id).join(",");
+  if (ui.pendingKey !== key) { ui.pendingKey = key; ui.pick.clear(); }
   $("#choice").hidden = false;
   $("#choicePrompt").textContent = p.prompt;
   setHTML($("#choiceOpts"), p.options.map((o) => `<button class="opt${ui.pick.has(String(o.id)) ? " picked" : ""}" data-opt="${esc(o.id)}">
@@ -600,7 +626,7 @@ function onAction(a, el) {
 }
 function onOpt(id) {
   const p = Game.state().pending;
-  if (!p) return;
+  if (!p || !p.options.some((o) => String(o.id) === String(id))) return; // only this prompt's options
   if (p.min === 1 && p.max === 1) { ui.pick.clear(); return act(Promise.resolve(Game.answer([parseId(id)]))); }
   ui.pick.has(id) ? ui.pick.delete(id) : ui.pick.size < p.max && ui.pick.add(id);
   render();

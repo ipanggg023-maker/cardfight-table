@@ -53,6 +53,7 @@ const SCHEMA = {
 
   conds: {
     myTurn: { label: "It is your turn", params: [], text: () => "it is your turn" },
+    legion: { label: "Your vanguard is in Legion", params: [], text: () => "your vanguard is in Legion" },
     genBreak: { label: "Generation Break N (face-up G cards ≥ N)", params: [["n", "num"]], text: (p) => `[Generation Break ${p.n}]` },
     limitBreak: { label: "Limit Break N (your damage ≥ N)", params: [["n", "num"]], text: (p) => `[Limit Break ${p.n}]` },
     oppTurn: { label: "It is opponent's turn", params: [], text: () => "it is opponent's turn" },
@@ -81,6 +82,8 @@ const SCHEMA = {
     retireSelf: { label: "Retire this unit", params: [], text: () => "retire this unit" },
     selfToSoul: { label: "Put this unit into soul", params: [], text: () => "put this unit into soul" },
     retireRC: { label: "Retire your rear-guards", params: [["n", "num"]], text: (p) => `retire ${p.n} of your rear-guards` },
+    dropToTop: { label: "Return drop cards to the top of the deck (Seek Mate)", params: [["n", "num"], ["maxTrig", "num", "max trigger units (D-Seek Mate: 2)"]],
+      text: (p) => `return ${p.n || 4} cards from your drop to the top of your deck${p.maxTrig !== undefined && p.maxTrig !== "" ? ` (max ${p.maxTrig} trigger units)` : ""}` },
   },
 
   effects: {
@@ -104,10 +107,13 @@ const SCHEMA = {
       text: (p) => `search your ${p.from} for up to ${p.n} ${flt(p.filter)} and ${destT(p.dest)}` },
     lookTop: { label: "Look at top N, take some", params: [["n", "num", "look at"], ["pick", "num", "take up to"], ["filter", "filter"], ["dest", "dest"], ["rest", "restDest"]],
       text: (p) => `look at the top ${p.n} cards, choose up to ${p.pick} ${flt(p.filter)} and ${destT(p.dest)}, ${p.rest === "bottom" ? "put the rest on the bottom" : "shuffle the deck"}` },
+    seekMate: { label: "Seek Mate: legion with a card from the deck", params: [["text", "text", "mate name contains"]], text: (p) => `search your deck for "${p.text || "?"}" and Legion with it, then shuffle` },
+    gift: { label: "Gain an Imaginary Gift", params: [["kind", "giftKind", "gift"]], text: (p) => `gain Imaginary Gift: ${({ force: "Force", accel: "Accel", protect: "Protect" })[p.kind || "force"]}` },
     callFromHand: { label: "Call from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `call up to ${p.n} ${flt(p.filter)} from hand to RC` },
   },
 
   paramOptions: {
+    gift: { force: "Force", accel: "Accel", protect: "Protect" },
     dur: { turn: "until end of turn", battle: "until end of battle" },
     from: { deck: "deck", drop: "drop", soul: "soul" },
     dest: { hand: "hand", RC: "RC (call)", soul: "soul" },
