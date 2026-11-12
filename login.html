@@ -29,54 +29,107 @@
 
   <section class="login-side">
     <form id="loginForm" class="login-card">
+      <div class="lmodes" role="tablist">
+        <button type="button" data-mode="in" role="tab">Sign in</button>
+        <button type="button" data-mode="up" role="tab">Create account</button>
+        <button type="button" data-mode="guest" role="tab">Guest</button>
+      </div>
       <div>
-        <h2>Play as guest</h2>
-        <p class="muted">No account needed. Your name and cards stay on this computer.</p>
+        <h2 id="lTitle">Sign in</h2>
+        <p id="lSub" class="muted"></p>
       </div>
-      <div class="who">
+      <div class="who" data-show="up guest">
         <span id="av" class="avatar">G</span>
-        <span><b id="who">Guest</b><small class="muted">Guest fighter</small></span>
+        <span><b id="who">Guest</b><small id="whoSub" class="muted">Guest fighter</small></span>
       </div>
-      <label class="field">Fighter name
-        <input id="name" maxlength="20" placeholder="Type your name" autocomplete="nickname" required>
+      <label class="field" data-show="in up">Email
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
       </label>
-      <div class="field">Card sleeve color
+      <label class="field" data-show="in up">Password
+        <input id="pw" type="password" minlength="6" autocomplete="current-password" placeholder="At least 6 characters">
+      </label>
+      <label class="field" data-show="up guest">Fighter name
+        <input id="name" maxlength="20" placeholder="Type your name" autocomplete="nickname">
+      </label>
+      <div class="field" data-show="up guest">Card sleeve color
         <div id="swatches" class="swatches" role="radiogroup" aria-label="Card sleeve color"></div>
       </div>
-      <button type="submit" class="go big">Enter as guest</button>
-      <div class="later"><span></span>coming later<span></span></div>
-      <button type="button" disabled class="ghost">Sign in with an account</button>
+      <p id="lMsg" class="lmsg" hidden></p>
+      <button id="lGo" type="submit" class="go big">Sign in</button>
     </form>
   </section>
 </div>
 <script>
   const COLORS = [["#5fd0ff", "Sky"], ["#f2b94b", "Gold"], ["#e85d74", "Crimson"], ["#6fd39a", "Jade"], ["#b896ff", "Violet"], ["#e8eef8", "Pearl"]];
+  const MODES = {
+    in: ["Sign in", "Your account keeps your coins and cards on every computer.", "Sign in"],
+    up: ["Create account", "Free. Earn coins by playing and open packs in the Store.", "Create account"],
+    guest: ["Play as guest", "No account needed. Your name and cards stay on this computer. No coins or Store.", "Enter as guest"],
+  };
+  const $ = (id) => document.getElementById(id);
   const prev = Auth.get();
-  let color = (prev && prev.color) || COLORS[0][0];
-  const nameEl = document.getElementById("name");
-  nameEl.value = (prev && prev.name) || "";
+  let mode = "in", color = (prev && prev.color) || COLORS[0][0], busy = false;
+  $("name").value = (prev && prev.name) || "";
+  function msg(t, ok) { const m = $("lMsg"); m.hidden = !t; m.textContent = t || ""; m.classList.toggle("ok", !!ok); }
+  function setMode(m) {
+    mode = m;
+    const [t, sub, go] = MODES[m];
+    $("lTitle").textContent = t; $("lSub").textContent = sub; $("lGo").textContent = go;
+    document.querySelectorAll("[data-mode]").forEach((b) => { b.classList.toggle("on", b.dataset.mode === m); b.setAttribute("aria-selected", b.dataset.mode === m); });
+    document.querySelectorAll("[data-show]").forEach((el) => { el.hidden = !el.dataset.show.split(" ").includes(m); });
+    $("pw").autocomplete = m === "up" ? "new-password" : "current-password";
+    $("whoSub").textContent = m === "guest" ? "Guest fighter" : "New player";
+    msg("");
+    paint();
+  }
   function paint() {
-    const n = nameEl.value.trim();
-    document.getElementById("who").textContent = n || "Guest";
-    const av = document.getElementById("av");
+    const n = $("name").value.trim();
+    $("who").textContent = n || (mode === "guest" ? "Guest" : "Fighter");
+    const av = $("av");
     av.textContent = (n[0] || "G").toUpperCase();
     av.style.background = color;
-    document.getElementById("swatches").innerHTML = COLORS.map(([c, l]) =>
+    $("swatches").innerHTML = COLORS.map(([c, l]) =>
       `<button type="button" role="radio" aria-checked="${c === color}" aria-label="${l} sleeve" data-c="${c}" class="sw${c === color ? " on" : ""}" style="background:${c}"></button>`).join("");
   }
-  document.getElementById("swatches").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-c]");
-    if (b) { color = b.dataset.c; paint(); }
-  });
-  nameEl.addEventListener("input", paint);
-  document.getElementById("loginForm").addEventListener("submit", (e) => {
+  document.querySelector(".lmodes").addEventListener("click", (e) => { const b = e.target.closest("[data-mode]"); if (b && !busy) setMode(b.dataset.mode); });
+  $("swatches").addEventListener("click", (e) => { const b = e.target.closest("[data-c]"); if (b) { color = b.dataset.c; paint(); } });
+  $("name").addEventListener("input", paint);
+  const nice = (e) => {
+    const t = (e && e.message) || String(e);
+    if (/invalid login credentials/i.test(t)) return "Wrong email or password.";
+    if (/already registered/i.test(t)) return "That email already has an account. Use Sign in.";
+    if (/email not confirmed/i.test(t)) return "Open the link in the email we sent you first, then sign in.";
+    if (/rate limit/i.test(t)) return "Too many tries. Wait a minute and try again.";
+    return t;
+  };
+  $("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const name = nameEl.value.trim();
-    if (!name) return nameEl.focus();
-    Auth.set({ name, color, guest: true, since: (prev && prev.since) || new Date().toISOString() });
-    Loader.go("lobby.html");
+    if (busy) return;
+    const name = $("name").value.trim(), email = $("email").value.trim(), pw = $("pw").value;
+    if (mode === "guest") {
+      if (!name) return $("name").focus();
+      Auth.set({ name, color, guest: true, since: (prev && prev.guest && prev.since) || new Date().toISOString() });
+      return Loader.go("lobby.html");
+    }
+    if (!email) return $("email").focus();
+    if (pw.length < 6) { msg("The password needs at least 6 characters."); return $("pw").focus(); }
+    if (mode === "up" && !name) return $("name").focus();
+    busy = true; $("lGo").disabled = true; msg("");
+    const hide = Loader.show(mode === "up" ? "Creating your account…" : "Signing in…");
+    try {
+      if (mode === "up") {
+        const r = await Cloud.signUp({ email, password: pw, name, color });
+        if (r.confirm) { hide(); msg("Almost done: open the link in the email we sent you, then come back and sign in.", true); setMode("in"); msg("Almost done: open the link in the email we sent you, then come back and sign in.", true); return; }
+      } else {
+        const u = await Cloud.signIn(email, pw);
+        if (!u) throw new Error("Sign-in failed. Try again.");
+      }
+      Loader.go("lobby.html");
+    } catch (err) {
+      hide(); msg(nice(err));
+    } finally { busy = false; $("lGo").disabled = false; }
   });
-  paint();
+  setMode(prev && prev.guest ? "guest" : "in");
 </script>
 </body>
 </html>

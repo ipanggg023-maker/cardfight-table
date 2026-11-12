@@ -99,3 +99,11 @@ body.online-join .onlinebox .join-only { display: grid; gap: 4px; }
 /* who goes first (hot-seat setup) */
 .firstrow { display: grid; gap: 4px; text-align: left; font-size: .85rem; color: var(--muted); margin: 6px 0; }
 .firstrow select { width: 100%; }
+
+/* sign-in modes: Sign in · Create account · Guest */
+.lmodes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--mat); border: 1px solid var(--line); border-radius: 12px; }
+.lmodes button { background: transparent; border: 0; border-radius: 9px; padding: 10px 6px; color: #a9bbd4; font: 600 .9rem var(--body); }
+.lmodes button.on { background: var(--gold); color: var(--mat); }
+.lmsg { padding: 10px 12px; border-radius: 10px; background: #e85d7422; border-left: 3px solid #e85d74; color: #ffd1d9; font-size: .9rem; }
+.lmsg.ok { background: #6fd39a22; border-left-color: #6fd39a; color: #d6ffe6; }
+.login-card [hidden] { display: none !important; }

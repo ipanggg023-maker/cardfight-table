@@ -13,8 +13,11 @@ The user enters real card data and images themselves through the editor. Do not 
 ## Run
 No build step. Open `login.html` in Chrome/Edge. Flow: login.html → lobby.html → index.html (game) / editor.html (cards, decks).
 
-## Sign-in
-`js/auth.js`: guest only, stored in localStorage key `vt-user` `{name, color, guest, since, lastP2}`. Pages call `Auth.require()` in <head> (redirects to login). `mountUserChip()` fills `[data-userchip]`. To add real accounts later, replace Auth.get/set/clear with server calls; pages don't need to change.
+## Sign-in & accounts (Supabase)
+`js/auth.js`: two kinds of user, both cached in localStorage `vt-user` so pages read it at once. Guest `{name, color, guest: true}` (this computer only, no coins/Store). Account `{id, name, color, role: "player"|"admin", coins, guest: false}` from Supabase. Pages call `Auth.require()` in <head> (redirects to login; for accounts it also runs `Cloud.check()` after load: re-reads the profile, kicks to login if signed out/banned, fires a `vt-user` event). `Auth.isAdmin()`. `mountUserChip()` shows role + coins.
+- `Cloud` (same file): lazy-loads supabase-js 2.45.4 from jsdelivr (so guest/hot-seat works offline); `signUp`, `signIn`, `signOut`, `refresh`, `saveProfile`, `rpc(fn, args)`. Project URL + publishable key in `SUPA` (public by design; never put the secret/service_role key in the repo).
+- Database: SQL files in `supabase/`, run in order in the dashboard SQL Editor (or via the Supabase MCP in `.mcp.json`). `001_accounts.sql`: `profiles` (role, coins, banned; players can only update their own name/color), `admin_log`, `is_admin()`, trigger that makes a profile on sign-up (the first account ever becomes admin), admin RPCs `admin_set_role`, `admin_add_coins`, `admin_set_banned`. Rule: anything about roles, coins, packs or rewards is decided in SQL (security definer functions + RLS), never trusted from the browser.
+- Plan: 1 accounts (done) → 2 shared card library (admin edits) + cloud decks → 3 collection → 4 Store/gacha (`open_pack` RPC rolls on the server) → 5 coins from matches (both players report, daily cap) → 6 `admin.html`. Gacha uses play-earned coins only, never real money.
 
 ## Design
 The UI follows the 'Vanguard Table UI' design canvas (login, lobby, fight table, trigger choice, card editor). Colors/fonts are the tokens at the top of style.css; login/lobby styles in pages.css. Keep the look original: no official logos, art or anime catchphrases.
