@@ -157,7 +157,7 @@ async function joinOnline() {
   try {
     const deck = await DB.loadDeck($("#d1").value);
     const name = $("#n1").value.trim() || "Guest";
-    await Net.join($("#joinCode").value, { name, deck, mat: Mats.resolve(1, Mats.choice(1)) }, onNet);
+    await Net.join($("#joinCode").value, { name, deck, mat: Mats.resolve(1, Mats.choice(1)), uid: (() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })() }, onNet);
     btn.textContent = "Connected";
     netStatus("Connected! Waiting for the host to start…");
   } catch (e) {
@@ -172,7 +172,7 @@ async function startHosted() {
   const mats = [Mats.resolve(1, Mats.choice(1)), ui.guest.mat || { key: "classic", img: "" }];
   Object.assign(ui, { online: { seat: 0 }, mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   $("#setup").hidden = true;
-  Net.startHosted(names, [deck, ui.guest.deck], mats);
+  Net.startHosted(names, [deck, ui.guest.deck], mats, [(() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })(), ui.guest.uid || null]);
   const loading = loadingTable("Shuffling decks…");
   render();
   await loading;
@@ -468,7 +468,37 @@ function render() {
   renderJudge(S, v);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
+  if (S.winner !== null) reportMatch(S); else if (!$("#winCoins").hidden) $("#winCoins").hidden = true;
   if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
+}
+
+// ---------- coins from online matches (supabase/004_matches.sql) ----------
+// Both players report; the server pays when both agree. Hot-seat games never pay (one person could play both sides).
+const reported = new Set();
+function reportMatch(S) {
+  const box = $("#winCoins"), m = ui.online && typeof Net !== "undefined" ? Net.match : null;
+  const me = Auth.get();
+  if (!m || !me || me.guest) { box.hidden = !ui.hotseat || !me || me.guest; box.textContent = "Local games don't give coins. Play online to earn coins."; return; }
+  if (reported.has(m.id)) return;
+  reported.add(m.id);
+  const seat = ui.online.seat, opp = m.uids[1 - seat];
+  box.hidden = false;
+  if (!opp) { box.textContent = "No coins: your opponent is playing as a guest."; return; }
+  const winner = S.winner < 0 ? null : m.uids[S.winner];
+  box.textContent = "◈ Checking the result with the server…";
+  let tries = 0;
+  const ask = async () => {
+    try {
+      const r = await Cloud.rpc("report_match", { match: m.id, opponent: opp, winner, turns: S.turn });
+      if (r.status === "waiting" && ++tries < 6) { box.textContent = "◈ Waiting for your opponent to confirm the result…"; return setTimeout(ask, 2500 * tries); }
+      Auth.set({ ...Auth.get(), coins: r.balance });
+      box.textContent = r.status === "paid" ? (r.coins ? `◈ +${r.coins} coins (you have ${r.balance.toLocaleString()})` : r.capped ? "No coins: you reached today's limit of rewarded matches." : "◈ +0 coins")
+        : r.status === "short" ? "No coins: the game was too short (under 3 turns)."
+        : r.status === "mismatch" ? "No coins: the two players reported different results."
+        : "Your opponent didn't confirm the result, so no coins this time.";
+    } catch (e) { box.textContent = "Couldn't reach the server for coins: " + (e.message || e); }
+  };
+  ask();
 }
 
 function actionsHTML(S, v) {

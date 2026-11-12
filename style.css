@@ -470,3 +470,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 
 /* cloud sync status (db.js) */
 .sync-badge { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 90; background: var(--mat2, #13243d); border: 1px solid var(--gold, #f2b94b); color: #e8eef8; padding: 6px 14px; border-radius: 999px; font-size: .82rem; box-shadow: 0 8px 24px #0006; pointer-events: none; }
+
+/* coins from online matches */
+.win-coins { margin: 0 0 14px; color: var(--gold); font: 600 1rem var(--display); }
