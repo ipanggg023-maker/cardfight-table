@@ -12,3 +12,7 @@ __pycache__/
 .vscode/
 Thumbs.db
 desktop.ini
+
+# card-census: downloaded card data and its results
+tools/card-census/data/
+tools/card-census/tags.json

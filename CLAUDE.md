@@ -8,6 +8,7 @@ The user enters real card data and images themselves through the editor. Do not 
 - `docs/ARCHITECTURE.md` modules, engine contract, ability DSL, storage keys
 - `docs/ROADMAP.md` done list + next tasks (copy-paste ready)
 - `docs/START-IN-CLAUDE-CODE.md` first prompt and testing tips
+- `docs/abilities/`: `catalogue.md` = every ability pattern in all 14,904 unique English cards (counts per era, engine support), `PLAN.md` = the plan to make every card playable (admin tools → Ability Language v2 → keywords → parser v2 → starter deck, friends/matchmaking, animations). Made by `tools/card-census` (fetch.mjs downloads the public CGS data into a gitignored folder; analyze.js; report.js)
 - `docs/rules/` official rules reference (CR ver. 4.59, Aug 2026): history, core game flow, one file per format (Standard / V Premium / Premium), mechanics (Stride, gifts, Legion…), card/ability types, and `08-engine-gaps-and-plan.md` (what the engine gets wrong + the plan to support every card). Read the relevant file before changing rules code. Raw notes: `research_notes/`, long report: `reports/`
 
 ## Run
