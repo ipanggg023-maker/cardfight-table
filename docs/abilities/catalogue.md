@@ -7,7 +7,7 @@ Each row is one pattern that appears in card text: a kind of ability, where it w
 a cost, a condition, an effect or a keyword. "Cards" = how many unique cards use it at least once.
 "Engine" = whether the ability blocks in `js/schema.js` + `js/engine.js` can build it today.
 
-**Cards that only use ✅ patterns today: 10,208 (68.5%).**
+**Cards that only use ✅ patterns today: 10,986 (73.7%).**
 Everything else needs at least one 🟡/❌ pattern (or the ✋ Manual block). The plan to close the gap is in
 `docs/abilities/PLAN.md`.
 
@@ -63,7 +63,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | When it attacks a vanguard / rear-guard | 955 | 252 | 345 | 120 | 163 | 75 | ✅ yes | target filter on the attack event | Dragontree of Ecliptic Decimation, Griphogila; Perfect Performance, Ange; Dragonic Overlord "The Яe-birth" |
 | When the attack hits | 839 | 335 | 281 | 87 | 120 | 16 | ✅ yes |  | Progenitor Dragon of Lightning Flame, Gilgal; Knight of War Damage, Fosado; Slow Kiss ―♡→, Nonna |
 | When ridden / rode upon | 628 | 3 | 1 | 191 | 331 | 102 | ✅ yes |  | Sunrise Egg; Barcgal; BCS24/25 World Finals, Akina Myodo |
-| When your unit rides this / persona ride | 601 | 241 | 229 | 22 | 78 | 31 | 🟡 partly |  | Dragheart, Luard; Energy Generator; Supremacy Dragon, Claret Sword Dragon |
+| When your unit rides this / persona ride | 601 | 241 | 229 | 22 | 78 | 31 | ✅ yes |  | Dragheart, Luard; Energy Generator; Supremacy Dragon, Claret Sword Dragon |
 | At the beginning of the guard step / when you guard | 591 | 111 | 288 | 61 | 100 | 31 | ✅ yes |  | Maiden of Blossom Rain; Steam Guard, Kastilia; Lizard Soldier, Bellog |
 | When placed from hand / from deck / from drop | 534 | 40 | 79 | 124 | 172 | 119 | ✅ yes | the source zone of the call | Nightmare Doll, Tosca; Knight of Thriving, Palsolo; Giant Deity of Distant World, Valkerion |
 | When this unit boosts / is boosted | 466 | 159 | 73 |  | 163 | 71 | ✅ yes | 'is boosted' missing | Trickmoon; Rapid Charger; Swell Assault |
@@ -80,7 +80,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | When this card is unlocked | 106 | 49 | 38 | 6 | 8 | 5 | ✅ yes |  | Star-vader, Chaos Breaker Dragon; Star-vader, Dust Tail Unicorn; Knight of Entropy |
 | When your opponent calls / their unit is placed | 105 | 2 |  | 40 | 39 | 24 | ✅ yes |  | Dead Armor Dragon; Dragon Knight, Barkil; Fleet Swallower |
 | When this unit is attacked | 91 | 3 | 20 | 11 | 38 | 19 | ✅ yes |  | Prescription Angel; Invasion Monster, Azuzuradon; Stealth Dragon, Raidon Kunai |
-| When put into the drop from the GC | 84 | 10 | 19 | 20 | 16 | 19 | ❌ no |  | Defensing Roar; Giro; Lizard Soldier, Barja |
+| When put into the drop from the GC | 84 | 10 | 19 | 20 | 16 | 19 | ✅ yes |  | Defensing Roar; Giro; Lizard Soldier, Barja |
 | When placed with overDress | 61 | 1 |  |  | 55 | 5 | ✅ yes |  | Vairina Exspecta; Prayers That Will Reach Someday; Blaze Maiden, Cindi |
 | When a damage check reveals … | 53 |  | 24 | 2 | 25 | 2 | ✅ yes |  | Heart Thump Worker; Stealth Dragon, Noroi; Blink Messiah |
 | When you play an order / set order | 25 |  |  |  | 14 | 11 | ✅ yes |  | Roughkur Hammer Dragon; Cardinal Deus, Orfist; Proof of Hard Work, Wilista |
@@ -166,7 +166,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Cannot attack / boost / intercept / be chosen / be retired | 510 | 165 | 84 | 76 | 117 | 68 | ✅ yes | restriction effects | Knight of Tenacity, Aidan; Knight of War Damage, Fosado; Trickstar |
 | Cannot be hit | 486 | 65 | 124 | 117 | 150 | 30 | ✅ yes |  | Elementaria Sanctitude; Maiden of Blossom Rain; Steam Guard, Kastilia |
 | Call from hand | 438 | 36 | 133 | 90 | 125 | 54 | ✅ yes |  | Dead Armor Dragon; Ancestral Dragon King of Zenith Colors, Founaherdio; Great Dragon Emperor of Distant Blaze, Gidoradevalt |
-| Replacement: instead / would … | 406 | 13 | 8 | 85 | 167 | 133 | ❌ no |  | Pile Deletor, Jaluel; Demon World Marquis, Amon; Steam Maiden, Elul |
+| Replacement: instead / would … | 406 | 13 | 8 | 85 | 167 | 133 | ✅ yes |  | Pile Deletor, Jaluel; Demon World Marquis, Amon; Steam Maiden, Elul |
 | Call from the deck | 400 | 78 | 135 | 72 | 83 | 32 | ✅ yes |  | Chrono Dran G; Perfect Performance, Ange; Seeker, Thing Saver Dragon |
 | Restand the vanguard / units after battle | 392 | 47 | 65 | 74 | 131 | 75 | ✅ yes |  | Dragonic Overlord the End; Blue Artillery Dragon, Inlet Pulse Dragon; Flower of Ruined Castle, Empousa |
 | Grade +N / is regarded as | 348 | 45 | 102 | 19 | 123 | 59 | ❌ no |  | Protector of Memories, Gear Puppy; Pile Deletor, Jaluel; Steam Maiden, Elul |
@@ -176,7 +176,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Opponent cannot call (grade N / sentinels) to GC / RC | 271 | 12 | 63 | 84 | 76 | 36 | ✅ yes |  | Dead Armor Dragon; Chronojet Dragon; Fleet Swallower |
 | Markers (Protect, Force, Accel, crests, counters) | 265 | 12 | 1 | 88 | 118 | 46 | 🟡 partly |  | Quaking Heavenly Dragon, Astraios Dragon; Dragontree of Ecliptic Decimation, Griphogila; Energy Generator |
 | Put a card into the drop (mill / from soul) | 263 | 39 | 82 | 69 | 55 | 18 | ✅ yes |  | Holy Great Sage of Black Shadows, Isabelle; Mage of Entwined Roots, Amergin; Giant Deity of Distant World, Valkerion |
-| Ride by an effect (from deck / drop / soul / hand) | 263 | 41 | 36 | 45 | 95 | 46 | ❌ no | Superior Ride | Chronojet Dragon; Seeker, Thing Saver Dragon; Dragheart, Luard |
+| Ride by an effect (from deck / drop / soul / hand) | 263 | 41 | 36 | 45 | 95 | 46 | ✅ yes | Superior Ride | Chronojet Dragon; Seeker, Thing Saver Dragon; Dragheart, Luard |
 | Call tokens (Plant / Shadow Army / Hollow…) | 261 | 9 | 25 | 72 | 109 | 46 | ❌ no | tokens | Untainted Holy Damsel, Green Katrina; Sunlight Garden's Guide; Stealth Dragon, Gengan |
 | Call from the drop zone | 234 | 13 | 25 | 39 | 104 | 53 | ✅ yes |  | Knight of Occult, Golmark; Pirate Swordsman, Colombard; Spiritual Body Condensation |
 | Call from the soul | 226 | 33 | 47 | 45 | 67 | 34 | ✅ yes |  | King of Masks, Dantarian; Master of Gravity, Baromagnes; One Who Governs Chaos |
@@ -230,7 +230,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Alchemagic | 25 |  |  |  | 22 | 3 | ✅ yes |  | Fleet Swallower; Cursed Souls Squirming in Agony; Mysterious Rain Spiritualist, Zorga |
 | Front trigger | 25 |  |  | 15 | 10 |  | ✅ yes |  | Wandering Starhulk Deity, Brandt Ringer; Fighting Fist Dragon, God Hand Dragon; Fusing Striker |
 | Ace Unit | 6 |  |  |  |  | 6 | ✅ yes |  | Dragritter, Miqdard; Depravity Funeral Judgment, Valack; Veirmeil Exordia |
-| Break Ride | 5 |  | 5 |  |  |  | ❌ no |  | Neumond Blaukluger; Brand-New-PR♥ISM, Glister Emeral; Spade Jack of Nightmareland |
+| Break Ride | 5 |  | 5 |  |  |  | ✅ yes |  | Neumond Blaukluger; Brand-New-PR♥ISM, Glister Emeral; Spade Jack of Nightmareland |
 | Cross Ride / Cross Break Ride | 0 |  |  |  |  |  | ❌ no |  |  |
 | Trigger order | 0 |  |  |  |  |  | ❌ no |  |  |
 | Stand trigger | 0 |  |  |  |  |  | ✅ yes |  |  |

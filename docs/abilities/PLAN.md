@@ -50,7 +50,7 @@ Done 2026-11-13: all of Phase 1 (1 status + per-set board, 2 text check, 3 test 
 
 ## Phase 2: Ability Language v2 (the engine)
 
-Done 2026-11-13: steps 1–3 (filters + counts, Move cards, results + choose-one) step 4 (durations, restrictions, player rules, Resist, Lord, granted abilities) and step 5 (timings, abilities in hand/drop/soul/damage/bind/G zone, same-name 1/Turn, Ritual). Census: 68.5% of cards fully covered (was 25.5%).
+Done 2026-11-13: steps 1–3 (filters + counts, Move cards, results + choose-one) step 4 (durations, restrictions, player rules, Resist, Lord, granted abilities) step 5 (timings, abilities in hand/drop/soul/damage/bind/G zone, same-name 1/Turn, Ritual) and steps 6–7 (replacement abilities, ride by an effect, "when X rides this unit"). Phase 2 complete. Census: 73.7% of cards fully covered (was 25.5%).
 
 Built in steps, each one tested on real cards in the test table and with a full game. Ordered by how many cards each step unlocks.
 

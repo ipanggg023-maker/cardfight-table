@@ -591,6 +591,33 @@ const Game = (() => {
     collectAll(pi, "allyRetired", { subject: card, by: byPi });
     collectAll(1 - pi, "oppRetired", { subject: card, by: byPi });
   }
+  // Replacement abilities (kind "REPL", CR 11.4): "If this unit would be retired, … instead". Before the event happens,
+  // a matching REPL ability may run (optional ones ask; costs must be paid); then the card goes to ab.insteadTo
+  // ("stay" = it stays where it is) and the event doesn't happen. Returns the destination, or null when nothing replaced it.
+  async function replaceFor(pi, card, events, ctx) {
+    const list = ctx.key ? abilitiesAt(pi, ctx.key) : ownAbilities(card);
+    for (const { card: c, ab, i } of list) {
+      if (ab.kind !== "REPL" || !events.includes(ab.when)) continue;
+      if (ab.zone && ab.zone !== "any" && !zoneOK(ab.zone, ctx.zone)) continue;
+      if (!ready(pi, c, ab, i, ctx)) continue;
+      if (!ab.mandatory && !(await yesNo(pi, `${c.name}: replace it?\n${describeAbility(ab)}`))) continue;
+      if (await resolve(pi, c, ab, i, ctx, false)) return ab.insteadTo || "stay";
+    }
+    return null;
+  }
+  const PLACE_NAME = { stay: "stays", soul: "goes to the soul", hand: "goes to the hand", deckTop: "goes on top of the deck", deckBottom: "goes to the bottom of the deck", bind: "is bound", removed: "is removed" };
+  // retire a rear-guard, unless a replacement ability says otherwise. Returns true when it was retired.
+  async function retireUnit(pi, key, byPi) {
+    const sl = P(pi).slots[key];
+    if (!sl || key === "vc") return false;
+    const events = ["wouldBeRetired", ...(byPi !== null && byPi !== undefined && byPi !== pi ? ["wouldBeRetiredByOpp"] : [])];
+    const to = sl.locked ? null : await replaceFor(pi, sl.card, events, { key, zone: zoneOf(key), card: sl.card, by: byPi });
+    if (!to) { retireBy(pi, key, byPi); return true; }
+    const c = sl.card;
+    if (to !== "stay" && P(pi).slots[key] && P(pi).slots[key].card === c && takeAnywhere(pi, c)) await putCard(pi, c, to, pi);
+    log(`↺ ${c.name} ${PLACE_NAME[to] || "goes to " + to} instead of being retired`);
+    return false;
+  }
   // a card goes from the hand to the drop by a cost or an effect (discarding)
   function discarded(pi, card) { collect(pi, null, "discarded", { card, zone: "hand", subject: card }); }
   async function sendTo(pi, card, dest, from = "deck") {
@@ -695,7 +722,7 @@ const Game = (() => {
       for (const u of us) {
         if (u.pi !== pi && e.to === "drop" && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; }
         const c = P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card;
-        if (c && e.to === "drop") { retireBy(u.pi, u.key, pi); const q2 = P(u.pi), di = q2.drop.indexOf(c); if (di >= 0) { q2.drop.splice(di, 1); picked.push(c); } continue; }
+        if (c && e.to === "drop") { if (await retireUnit(u.pi, u.key, pi)) { const q2 = P(u.pi), di = q2.drop.indexOf(c); if (di >= 0) { q2.drop.splice(di, 1); picked.push(c); } } continue; }
         if (c && takeAnywhere(u.pi, c)) picked.push(c);
       }
     } else if (e.from === "self") {
@@ -764,6 +791,18 @@ const Game = (() => {
     switch (e.type) {
       case "move": return moveCards(pi, e, ctx);
       case "chooseOpts": return { count: 1 }; // handled in runEffects
+      case "rideBy": { // Superior Ride: ride a card from hand / deck / drop / soul / ride deck / this card, by an effect
+        const src = e.from || "deck";
+        const zone = src === "rideDeck" ? p.ride : src === "self" ? null : p[src];
+        const pool = src === "self" ? (ctx.card ? [ctx.card] : []) : (zone || []).filter((c) => c.type !== "order" && c.type !== "g" && match(c, e.filter, { pi, ctx }));
+        const [c] = src === "self" ? pool : await chooseCards(pi, `Ride by effect: choose a card from your ${src === "rideDeck" ? "ride deck" : src}`, pool, e.upTo ? 0 : Math.min(1, pool.length), 1);
+        if (src === "deck") shuffle(p.deck);
+        if (!c) return { count: 0 };
+        if (src === "self") { if (!takeAnywhere(pi, c)) return { count: 0 }; } else zone.splice(zone.indexOf(c), 1);
+        if (src === "deck") shuffle(p.deck);
+        await doRide(pi, c, false, { effect: true, from: src, stand: !!e.stand });
+        return { count: 1, cards: [c] };
+      }
       case "restrict": { // "cannot attack / boost / intercept / be chosen / be retired / stand / be attacked", Resist
         const us = await pickUnits(pi, e, ctx);
         for (const u of us) addMod(u.pi, u.key, { stat: "no", what: e.what, until: untilOf(pi, e.dur || "turn"), battle: e.dur === "battle" && !!S.battle });
@@ -797,7 +836,7 @@ const Game = (() => {
       }
       case "stand": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key] && !restricted(u.pi, u.key, "cantStand")) P(u.pi).slots[u.key].rest = false; break;
       case "rest": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key]) P(u.pi).slots[u.key].rest = true; break;
-      case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.pi !== pi && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; } if (u.key !== "vc" && P(u.pi).slots[u.key]) { out.push(P(u.pi).slots[u.key].card); log(`${P(u.pi).slots[u.key].card.name} is retired`); retireBy(u.pi, u.key, pi); } } return { count: out.length, cards: out }; }
+      case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.pi !== pi && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; } if (u.key !== "vc" && P(u.pi).slots[u.key]) { const c = P(u.pi).slots[u.key].card; if (await retireUnit(u.pi, u.key, pi)) { log(`${c.name} is retired`); out.push(c); } } } return { count: out.length, cards: out }; }
       case "bind": for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc") { log(`${P(u.pi).slots[u.key].card.name} is bound`); bindUnit(u.pi, u.key); } } break;
       case "drive": p.driveBonus += amt; break;
       case "draw": draw(pi, n); return { count: n };
@@ -1085,7 +1124,8 @@ const Game = (() => {
     await startTurn();
   });
 
-  async function doRide(pi, card, fromHand) {
+  // opts: {effect: true (ride by a card's effect: no persona, no "rode this turn", stays in this phase), from, stand}
+  async function doRide(pi, card, fromHand, opts = {}) {
     const p = P(pi), vs = p.slots.vc;
     let old = vs.card;
     if (vs.heart) { toGZone(p, old); old = vs.heart; vs.heart = null; if (vs.heartMate) { p.soul.push(vs.heartMate); vs.heartMate = null; } }
@@ -1093,20 +1133,22 @@ const Game = (() => {
     if (vs.arms && vs.arms.length && card.name !== old.name) { p.drop.push(...vs.arms); vs.arms = []; } // arms follow only a same-name ride (CR 17.7)
     p.soul.push(old);
     p.slots.vc.card = card;
-    S.rode = true;
-    log(`${p.name} rides ${card.name} (G${card.grade})`);
+    if (!opts.effect) S.rode = true;
+    if (opts.effect) vs.rest = opts.stand ? false : vs.rest; // "ride it as [Stand]"
+    log(`${p.name} rides ${card.name} (G${card.grade})${opts.effect ? " by an effect" : ""}`);
     // Persona Ride (CR 6.3.8): a normal ride from hand onto a vanguard with the same name, both with the icon
-    if (fromHand && card.persona && old.persona && old.name === card.name) {
+    if (!opts.effect && fromHand && card.persona && old.persona && old.name === card.name) {
       p.personaFront = true;
       p.personaThisTurn = true;
       draw(pi, 1);
       log("✨ Persona Ride! Draw 1, your front row gets +10000 this turn");
     }
     if (card.gift) await giveGift(pi, card.gift, true); // gifts resolve before AUTOs (CR 11.6.1)
-    collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
-    collect(pi, "vc", "placedVC");
+    const from = opts.from || (fromHand ? "hand" : "rideDeck");
+    collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc", subject: card, from });
+    collect(pi, "vc", "placedVC", { from, subject: card });
     await settle();
-    await enterMain();
+    if (!opts.effect) await enterMain();
   }
   const nextRide = (pi) => P(pi).ride.find((c) => c.grade === P(pi).slots.vc.card.grade + 1) || null;
   const rideFromDeck = (discardUid) => run(async () => {
@@ -1600,9 +1642,13 @@ const Game = (() => {
     const ai = S.active;
     const d = P(1 - ai);
     b.guards.filter((c) => c.type === "g").forEach((g) => toGZone(d, g));
-    d.drop.push(...b.guards.filter((c) => c.type !== "g"));
+    for (const c of b.guards.filter((x) => x.type !== "g")) { // "if this card would be put into the drop from (GC), … instead"
+      const to = c.protect ? null : await replaceFor(1 - ai, c, ["wouldLeaveGC"], { key: null, zone: "GC", card: c });
+      if (to && to !== "stay") { await putCard(1 - ai, c, to, 1 - ai); log(`↺ ${c.name} ${PLACE_NAME[to] || "goes to " + to} instead of the drop`); }
+      else d.drop.push(c);
+    }
     b.guards = [];
-    if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { log(`${d.slots[b.tgt].card.name} is retired`); retireBy(1 - ai, b.tgt, ai); }
+    if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { const hc = d.slots[b.tgt].card; if (await retireUnit(1 - ai, b.tgt, ai)) log(`${hc.name} is retired`); }
     if (!over()) await fire(ai, b.att, "battleEnd");
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && (s.powB = 0, s.critB = 0)));
     expire(true);

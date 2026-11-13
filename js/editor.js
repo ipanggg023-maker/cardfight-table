@@ -249,14 +249,15 @@ function abilityHTML(ab, ai) {
       <label>Kind ${sel(`${base}.kind`, SCHEMA.kinds, ab.kind)}</label>
       ${order ? "" : `<label>Zone ${sel(`${base}.zone`, SCHEMA.zones, ab.zone || "VC")}</label>`}
       ${ab.kind === "AUTO" ? `<label>When ${sel(`${base}.when`, SCHEMA.events, ab.when)}</label>` : ""}
+      ${ab.kind === "REPL" ? `<label>If ${sel(`${base}.when`, SCHEMA.replEvents, SCHEMA.replEvents[ab.when] ? ab.when : "wouldBeRetired")}</label><label>Instead ${sel(`${base}.insteadTo`, SCHEMA.insteadTo, ab.insteadTo || "stay")}</label>` : ""}
       <label>Limit ${sel(`${base}.once`, { "": "No limit", turn: "1/Turn", game: "1/Game (1/Fight, per card)", divine: "Divine Skill (1 per game, all cards)", unique: "Unique Skill (1 per game, all cards)", nameTurn: "Same-name cards 1/Turn" }, ab.once || "")}</label>
-      ${ab.kind === "AUTO" ? `<label class="chk" title="Tick when the card text has no &quot;you may&quot;: it resolves without asking"><input type="checkbox" data-path="${base}.mandatory" ${ab.mandatory ? "checked" : ""}> Mandatory</label>` : ""}
+      ${ab.kind === "AUTO" || ab.kind === "REPL" ? `<label class="chk" title="Tick when the card text has no &quot;you may&quot;: it resolves without asking"><input type="checkbox" data-path="${base}.mandatory" ${ab.mandatory ? "checked" : ""}> Mandatory</label>` : ""}
       <label class="chk" title="This ability is the quoted one another ability gives (&quot;gets [AUTO]…&quot;). It does nothing on its own; a ★ Give an ability step gives it to units."><input type="checkbox" data-path="${base}.granted" ${ab.granted ? "checked" : ""}> Given by another ability only</label>
       ${typeof abilityExtrasHTML === "function" ? abilityExtrasHTML(ai) : ""}
       <button class="del" data-do="delAb" data-i="${ai}">Remove ability</button>
     </div>
     ${ab.kind === "AUTO" && (SCHEMA.eventSubject[ab.when] || SCHEMA.fromEvents[ab.when]) ? `<div class="evdetail">
-      ${SCHEMA.fromEvents[ab.when] ? `<label>Placed from ${sel(`${base}.whenFrom`, { "": "anywhere", hand: "hand", notHand: "not from hand", deck: "deck", drop: "drop", soul: "soul", bind: "bind zone", damage: "damage zone" }, ab.whenFrom || "")}</label>` : ""}
+      ${SCHEMA.fromEvents[ab.when] ? `<label>${ab.when === "placedVC" || ab.when === "riddenUpon" ? "Rode from" : "Placed from"} ${sel(`${base}.whenFrom`, { "": "anywhere", hand: "hand", notHand: "not from hand", rideDeck: "ride deck", deck: "deck", drop: "drop", soul: "soul", bind: "bind zone", damage: "damage zone" }, ab.whenFrom || "")}</label>` : ""}
       ${SCHEMA.eventSubject[ab.when] ? filterHTML(`${base}.whenFilter`, ab.whenFilter || {}, "only if " + SCHEMA.eventSubject[ab.when] + " is") : ""}</div>` : ""}
     <div class="preview">${esc(describeAbility(ab))}</div>
     ${part("conds", "Conditions", SCHEMA.conds)}
@@ -289,6 +290,7 @@ function rowHTML(path, row, lib, contOnly) {
       case "restrict": return lab(sel(p, SCHEMA.paramOptions.restrict, v || "cantAttack"));
       case "prule": return lab(sel(p, SCHEMA.paramOptions.prule, v || "cantGuard"));
       case "side": return lab(sel(p, SCHEMA.paramOptions.side, v || "opp"));
+      case "rideFrom": return lab(sel(p, SCHEMA.paramOptions.rideFrom, v || "deck"));
       case "mfrom": return lab(sel(p, SCHEMA.paramOptions.mfrom, v || "drop"));
       case "mto": return lab(sel(p, SCHEMA.paramOptions.mto, v || "hand"));
       case "chooser": return lab(sel(p, SCHEMA.paramOptions.chooser, v || "me"));
@@ -346,6 +348,13 @@ $("#cardForm").addEventListener("input", (e) => {
   if (el.dataset.path === "trigger") v = v || null;
   setPath(el.dataset.path, v);
   if (el.dataset.path === "type" && v === "g" && !(cur.grade >= 4)) { cur.grade = 4; cur.gKind = cur.gKind || "stride"; } // G units are grade 4
+  // switching an ability between AUTO and Replacement: give it a timing of the right kind
+  const km = el.dataset.path.match(/^abilities\.(\d+)\.kind$/);
+  if (km) {
+    const ab = cur.abilities[+km[1]];
+    if (v === "REPL" && !SCHEMA.replEvents[ab.when]) { ab.when = "wouldBeRetired"; ab.insteadTo = ab.insteadTo || "stay"; ab.zone = ab.zone || "RC"; }
+    if (v === "AUTO" && !SCHEMA.events[ab.when]) ab.when = "attack";
+  }
   if (el.tagName === "SELECT" || el.type === "checkbox") renderCard();
   else updatePreviews();
 });
@@ -372,6 +381,7 @@ function defaultRow(type) {
   if (type === "restrict") r.what = "cantAttack";
   if (type === "playerRule") Object.assign(r, { who: "opp", what: "cantGuard" });
   if (type === "grant") r.ability = 2;
+  if (type === "rideBy") Object.assign(r, { from: "deck" });
   if (["draw", "CC", "SC", "EC", "power", "crit"].includes(type)) delete r.per;
   return r;
 }

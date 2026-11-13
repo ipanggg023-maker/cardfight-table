@@ -32,7 +32,11 @@ const SCHEMA = {
     CONT: "CONT (always on)",
     ORDER: "Normal Order (play from hand, main phase)",
     BLITZ: "Blitz Order (play from hand while guarding)",
+    REPL: "Replacement (“if … would …, … instead”)",
   },
+  // replacement events (kind REPL) and where the card goes instead
+  replEvents: { wouldBeRetired: "If this unit would be retired", wouldBeRetiredByOpp: "If this unit would be retired by your opponent (effect or attack)", wouldLeaveGC: "If this card would be put into the drop from (GC)" },
+  insteadTo: { stay: "it stays (nothing happens)", soul: "put it into your soul", hand: "return it to your hand", deckTop: "put it on top of your deck", deckBottom: "put it on the bottom of your deck", bind: "bind it", removed: "remove it from the game" },
   zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", hand: "Hand", drop: "Drop", soul: "Soul", damage: "Damage zone (face up)", bind: "Bind zone", G: "G zone (face up)", any: "Anywhere" },
   events: {
     placedVC: "When placed on VC (ridden)",
@@ -75,8 +79,8 @@ const SCHEMA = {
   // events that are about another card: the AUTO ability may filter it ("when your grade 3 rear-guard is placed…")
   eventSubject: { placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
     oppAttacks: "the attacking unit", guardStart: "the attacking unit", allyRetired: "the retired card", oppRetired: "the retired card", driveReveal: "the revealed card",
-    damageReveal: "the revealed card", orderPlayed: "the order" },
-  fromEvents: { placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1 },
+    damageReveal: "the revealed card", orderPlayed: "the order", riddenUpon: "the unit that rides this one", placedVC: "this new vanguard" },
+  fromEvents: { placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1, placedVC: 1, riddenUpon: 1 },
 
   conds: {
     myTurn: { label: "It is your turn", params: [], text: () => "it is your turn" },
@@ -150,6 +154,9 @@ const SCHEMA = {
     grant: { label: "★ Give an ability (gets [AUTO]…): gives ability number N of this card",
       params: [["ability", "num", "ability number on this card"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"]],
       text: (p) => `${tgt(p)} get(s) ability ${p.ability || "?"} ${dur(p)}` },
+    rideBy: { label: "★ Ride by an effect (Superior Ride: from deck / drop / soul / hand / ride deck / this card)",
+      params: [["from", "rideFrom", "ride a card from"], ["filter", "filter"], ["upTo", "bool", "may choose none"], ["stand", "bool", "ride it as [Stand]"]],
+      text: (p) => `ride ${p.from === "self" ? "this card" : `${flt(p.filter)} from your ${SCHEMA.paramOptions.rideFrom[p.from || "deck"]}`}${p.stand ? " as [Stand]" : ""}` },
     chooseOpts: { label: "★ Choose N of the options (mark the option steps A, B, C…)", params: [["n", "num", "how many options"]], text: (p) => `choose ${p.n || 1} of the following` },
     shield: { label: "Shield + (while guarding)", params: [["amount", "num"]], text: (p) => `this guardian gets [Shield] +${p.amount}` },
     cantBeHit: { label: "Attacked unit cannot be hit", params: [], text: () => "the attacked unit cannot be hit this battle" },
@@ -175,6 +182,7 @@ const SCHEMA = {
       cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantStand: "does not stand" },
     prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard" },
     side: { opp: "your opponent", me: "you" },
+    rideFrom: { deck: "deck", drop: "drop", soul: "soul", hand: "hand", rideDeck: "ride deck", bind: "bind zone", self: "this card itself" },
     from: { deck: "deck", drop: "drop", soul: "soul" },
     dest: { hand: "hand", RC: "RC (call)", soul: "soul" },
     restDest: { shuffle: "shuffle deck", bottom: "bottom of deck" },
@@ -244,15 +252,16 @@ function flt(f, short) {
 
 function describeAbility(ab) {
   let s = `[${ab.kind}]`;
-  if (["AUTO", "ACT", "CONT"].includes(ab.kind)) s += `(${ab.zone || "VC"})`;
+  if (["AUTO", "ACT", "CONT", "REPL"].includes(ab.kind)) s += `(${ab.zone || "VC"})`;
   if (ab.once === "turn") s += "[1/Turn]";
   if (ab.once === "game") s += "[1/Game]";
   if (ab.once === "divine") s += "[Divine Skill]";
   if (ab.once === "unique") s += "[Unique Skill]";
   if (ab.once === "nameTurn") s += "[same name 1/Turn]";
   if (ab.granted) s += "[given]";
-  if (ab.kind === "AUTO" && ab.mandatory) s += "[Mandatory]";
+  if ((ab.kind === "AUTO" || ab.kind === "REPL") && ab.mandatory) s += "[Mandatory]";
   s += ": ";
+  if (ab.kind === "REPL") s += (SCHEMA.replEvents[ab.when] || "If …") + ", ";
   if (ab.kind === "AUTO") {
     s += SCHEMA.events[ab.when] || "?";
     if (ab.whenFrom) s += ` (${ab.whenFrom === "notHand" ? "not from hand" : "from " + ab.whenFrom})`;
@@ -263,12 +272,14 @@ function describeAbility(ab) {
   if (conds.length) s += "if " + conds.join(" and ") + ", ";
   const costs = (ab.costs || []).map((c) => SCHEMA.costs[c.type]?.text(c)).filter(Boolean);
   if (costs.length) s += `COST[${costs.join(" & ")}], `;
-  s += (ab.effects || []).map((e) => {
+  let effs = (ab.effects || []).map((e) => {
     let t = SCHEMA.effects[e.type]?.text(e);
     if (!t) return "";
     if (ab.kind === "CONT") t = t.replace(/ until end of (turn|battle)$/, ""); // always-on: no duration
     const pre = e.onlyIf === "did" ? "if you did, " : e.onlyIf === "didNot" ? "if you did not, " : e.onlyIf === "match" ? `if it was ${flt(e.onlyFilter)}, ` : e.onlyIf === "noMatch" ? `if none was ${flt(e.onlyFilter)}, ` : "";
     return (e.opt ? `[${e.opt}] ` : "") + pre + t;
-  }).filter(Boolean).join(", then ") || "(no effect)";
+  }).filter(Boolean).join(", then ");
+  if (ab.kind === "REPL") effs = `instead ${SCHEMA.insteadTo[ab.insteadTo || "stay"]}${effs ? ", then " + effs : ""}`;
+  s += effs || "(no effect)";
   return s + ".";
 }

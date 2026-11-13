@@ -17,8 +17,6 @@ const CardCheck = (() => {
   // Covered since Ability Language v2 step 1–3: for each, if you did, choose one of the following, top/bottom of deck,
   // moves from drop/soul/bind, opponent chooses, went first/second, battle number (Move cards, counts, onlyIf, chooseOpts).
   const GAPS = [
-    [/instead|would be (retired|put|bound)/, "replacement (“instead / would be”)"],
-    [/(?<!st)ride (it|this card|that card) (as \[stand\]|from)|superior ride|(?<!st)ride .{0,40} from (your )?(deck|drop|soul)/, "ride by an effect"],
     [/same column|this unit's column/, "columns"],
     [/\btoken\b|\bplant\b|shadow army|\bhollow\b/, "tokens"],
     [/ticket|quick shield/, "tickets"],
@@ -61,6 +59,7 @@ const CardCheck = (() => {
   }
   const kindOf = (l, c) => {
     const m = l.match(/^\[(auto|act|cont)\]/);
+    if (m && m[1] === "cont" && /would be|instead/.test(l) && (c.abilities || []).some((ab) => ab.kind === "REPL")) return "REPL";
     if (m) return m[1].toUpperCase();
     if (c.type === "order") return /blitz/.test(lower(c.text)) ? "BLITZ" : "ORDER";
     return null;
