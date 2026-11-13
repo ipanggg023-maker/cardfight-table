@@ -18,6 +18,7 @@ const TARGETS = {
   chooseOppRC: "choose opponent's rear-guard(s)",
   chooseOppFrontRC: "choose opponent's front row rear-guard(s)",
   chooseOppUnit: "choose opponent's unit(s)",
+  thatUnit: "that unit (the one the step before chose)",
   myColumn: "your other units in this unit's column",
   oppColumn: "opponent's units in this unit's column",
   chooseOppColumn: "choose opponent's unit(s) in this unit's column",
@@ -42,6 +43,7 @@ const SCHEMA = {
   insteadTo: { stay: "it stays (nothing happens)", soul: "put it into your soul", hand: "return it to your hand", deckTop: "put it on top of your deck", deckBottom: "put it on the bottom of your deck", bind: "bind it", removed: "remove it from the game" },
   zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", hand: "Hand", drop: "Drop", soul: "Soul", damage: "Damage zone (face up)", bind: "Bind zone", G: "G zone (face up)", crest: "Crest zone", any: "Anywhere" },
   events: {
+    placed: "When placed (on VC or RC)",
     placedVC: "When placed on VC (ridden)",
     riddenUpon: "When this unit is ridden upon",
     placedRC: "When placed on RC",
@@ -63,6 +65,9 @@ const SCHEMA = {
     dressed: "When this unit is put on RC with overDress / XoverDress",
     unlocked: "When this card is unlocked",
     boosted: "When this unit is boosted",
+    intercepts: "When this unit intercepts",
+    boostHit: "When the attack this unit boosted hits",
+    allyHit: "When your unit's attack hits (any of yours)",
     allyAttacks: "When your unit attacks (any of yours)",
     oppAttacks: "When your opponent's unit attacks (e.g. from hand)",
     guardStart: "At the beginning of the guard step (you are attacked)",
@@ -80,10 +85,10 @@ const SCHEMA = {
     orderPlayed: "When you play an order",
   },
   // events that are about another card: the AUTO ability may filter it ("when your grade 3 rear-guard is placed…")
-  eventSubject: { placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
+  eventSubject: { allyHit: "the attacking unit", placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
     oppAttacks: "the attacking unit", guardStart: "the attacking unit", allyRetired: "the retired card", oppRetired: "the retired card", driveReveal: "the revealed card",
     damageReveal: "the revealed card", orderPlayed: "the order", riddenUpon: "the unit that rides this one", placedVC: "this new vanguard" },
-  fromEvents: { placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1, placedVC: 1, riddenUpon: 1 },
+  fromEvents: { placed: 1, placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1, placedVC: 1, riddenUpon: 1 },
 
   conds: {
     myTurn: { label: "It is your turn", params: [], text: () => "it is your turn" },
@@ -116,6 +121,7 @@ const SCHEMA = {
     wentSecond: { label: "You went second", params: [], text: () => "you went second" },
     power: { label: "Power: a unit's [Power] is N or more (Success, \"if this unit's power is…\")", params: [["who", "powWho", "unit"], ["op", "op", "is"], ["n", "num"]],
       text: (p) => `${SCHEMA.paramOptions.powWho[p.who || "self"]}'s [Power] is ${OPS[p.op || "ge"]} ${p.n}` },
+    heart: { label: "Your heart card is … (Stride)", params: [["filter", "filter"]], text: (p) => `you have a heart card that is ${flt(p.filter)}` },
     ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
   },
@@ -130,6 +136,7 @@ const SCHEMA = {
     retireSelf: { label: "Retire this unit", params: [], text: () => "retire this unit" },
     selfToSoul: { label: "Put this unit into soul", params: [], text: () => "put this unit into soul" },
     retireRC: { label: "Retire your rear-guards", params: [["n", "num"]], text: (p) => `retire ${p.n} of your rear-guards` },
+    gFaceUp: { label: "Turn face-down G zone card(s) face up", params: [["n", "num"], ["filter", "filter"]], text: (p) => `turn ${p.n || 1} ${flt(p.filter)} in your G zone face up` },
     dropToTop: { label: "Return drop cards to the top of the deck (Seek Mate)", params: [["n", "num"], ["maxTrig", "num", "max trigger units (D-Seek Mate: 2)"]],
       text: (p) => `return ${p.n || 4} cards from your drop to the top of your deck${p.maxTrig !== undefined && p.maxTrig !== "" ? ` (max ${p.maxTrig} trigger units)` : ""}` },
   },
@@ -222,6 +229,7 @@ const SCHEMA = {
     gradeVC: { "": "any", lt: "lower than your vanguard", le: "≤ your vanguard", eq: "same as your vanguard", ge: "≥ your vanguard", gt: "higher than your vanguard", plus1: "your vanguard's grade + 1" },
     onlyIf: { "": "always", did: "only if the step before did something (\"if you did\")", didNot: "only if the step before did nothing", match: "only if the step before's cards include…", noMatch: "only if they include none of…" },
     opt: { "": "—", A: "option A", B: "option B", C: "option C", D: "option D" },
+    later: { "": "now", battle: "at the end of that battle", turn: "at the end of that turn" },
   },
 };
 const OPS = { ge: "≥", le: "≤", eq: "=", gt: ">", lt: "<" };
@@ -294,7 +302,9 @@ function describeAbility(ab) {
     if (!t) return "";
     if (ab.kind === "CONT") t = t.replace(/ until end of (turn|battle)$/, ""); // always-on: no duration
     const pre = e.onlyIf === "did" ? "if you did, " : e.onlyIf === "didNot" ? "if you did not, " : e.onlyIf === "match" ? `if it was ${flt(e.onlyFilter)}, ` : e.onlyIf === "noMatch" ? `if none was ${flt(e.onlyFilter)}, ` : "";
-    return (e.opt ? `[${e.opt}] ` : "") + pre + t;
+    const cond = e.ifCond && SCHEMA.conds[e.ifCond.type] ? `if ${SCHEMA.conds[e.ifCond.type].text(e.ifCond)}, ` : "";
+    const when = e.later ? `at the end of that ${e.later}, ` : "";
+    return (e.opt ? `[${e.opt}] ` : "") + when + pre + cond + t;
   }).filter(Boolean).join(", then ");
   if (ab.kind === "REPL") effs = `instead ${SCHEMA.insteadTo[ab.insteadTo || "stay"]}${effs ? ", then " + effs : ""}`;
   s += effs || "(no effect)";

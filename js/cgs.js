@@ -64,7 +64,7 @@ function cgsToCard(d, trigger) {
   const isG = d.type === "G Unit";
   // G units (grade 4): stride units or G guardians (text mentions the guard step / Generation Guard)
   const gKind = isG ? (/Generation Guard|-Guard Step-|G guardian/i.test(text) ? "guardian" : "stride") : undefined;
-  const guessed = text ? TextParse.parse(text) : {};
+  const guessed = text ? TextParse.parse(text, { type: d.type }) : {};
   const trig = isTrig ? (trigger !== undefined ? trigger : cgsTriggerGuess(d)) : null;
   const card = {
     name: String(d.name || "").trim(),
@@ -86,6 +86,8 @@ function cgsToCard(d, trigger) {
     source: { from: "cgs", number: d.number || "", set: d.productName || "", setCode: d._set || "", url: d.url || "", cardType: d.type },
   };
   if (isTrig && !card.trigger) card.needsTrigger = true;
+  for (const k of ["forerunner", "lord", "resist", "harmony", "cantBeCalled", "ace", "ultimate"]) if (guessed[k]) card[k] = true;
+  card.abilities.forEach((a) => delete a.unread);
   if (d.type === "Set Order") card.setOrder = true;
   if (/Regalis Piece/i.test(text)) card.regalis = true;
   if (/Alchemagic/i.test(text)) card.alchemagic = true;

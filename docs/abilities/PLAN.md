@@ -84,6 +84,8 @@ trigger orders. Each keyword also gets a ready-made template (Phase 1.5).
 
 ## Phase 4: Text → blocks parser v2
 
+Done 2026-11-13: reader v2 in js/textparse.js. 38.2% of cards read completely; the rest are read in part with clearly marked ✋ steps (nothing dropped; unread timings become buttons). Measured with tools/card-census/reader-check.js; improve it by adding patterns for its top misses.
+
 Rewrite `js/textparse.js` on top of Ability Language v2, using the census patterns: paste or import official text and the
 blocks fill themselves; the side-by-side view (Phase 1.2) shows what still needs a hand. Target: most cards need only a check.
 

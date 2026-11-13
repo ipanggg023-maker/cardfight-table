@@ -199,6 +199,7 @@ function renderCard() {
       </div>
     </div>
     <div class="full"><label>Official card text (checked against the blocks below) <textarea data-path="text" id="cardText">${esc(c.text)}</textarea></label></div>
+    ${c.text ? `<div class="btnrow"><button data-do="reread" title="Replace the abilities with what the reader finds in the card text">↻ Read the card text again</button></div>` : ""}
     <div id="textCheck" class="tcheck"></div>
     <div class="full"><label>Rulings notes (official Q&amp;A, how it works; shown in the game's card detail) <textarea data-path="notes" class="notes" placeholder="e.g. Q: Can this target a locked card? A: No.">${esc(c.notes || "")}</textarea></label></div>
     <h2>Abilities</h2>
@@ -313,7 +314,8 @@ function rowHTML(path, row, lib, contOnly) {
   };
   // every effect step can depend on the step before ("if you did…") and be an option of "choose N of the following"
   const isEffect = lib === SCHEMA.effects && !contOnly;
-  const flow = isEffect && row.type !== "chooseOpts" ? `<div class="flow">${sel(path + ".onlyIf", SCHEMA.paramOptions.onlyIf, row.onlyIf || "")}${sel(path + ".opt", SCHEMA.paramOptions.opt, row.opt || "")}
+  const flow = isEffect && row.type !== "chooseOpts" ? `<div class="flow">${sel(path + ".onlyIf", SCHEMA.paramOptions.onlyIf, row.onlyIf || "")}${sel(path + ".opt", SCHEMA.paramOptions.opt, row.opt || "")}${sel(path + ".later", SCHEMA.paramOptions.later, row.later || "")}
+    ${row.ifCond && SCHEMA.conds[row.ifCond.type] ? `<span class="ifcond">only if ${esc(SCHEMA.conds[row.ifCond.type].text(row.ifCond))} <button class="del" data-do="delRow" data-path="${path}.ifCond" title="Remove this condition">✕</button></span>` : ""}
     ${row.onlyIf === "match" || row.onlyIf === "noMatch" ? filterHTML(path + ".onlyFilter", row.onlyFilter || {}, "the step before's cards") : ""}</div>` : "";
   const params = def.params.filter(([k, kind]) => !(kind === "num" && k === "look" && row.from !== "deckTop" && row.from !== "oppDeckTop"));
   return `<div class="prow${row.opt ? " opt" : ""}"><b>${row.opt ? `<span class="optL">${row.opt}</span>` : ""}${esc(def.label)}</b>${params.map(field).join("")}${flow}<button class="del" data-do="delRow" data-path="${path}">✕</button></div>`;
@@ -412,14 +414,17 @@ $("#cardForm").addEventListener("click", async (e) => {
   switch (b.dataset.do) {
     case "addAb": cur.abilities.push({ kind: "AUTO", zone: "VC", when: "attack", once: "", conds: [], costs: [], effects: [] }); dirty = true; return renderCard();
     case "delAb": cur.abilities.splice(+b.dataset.i, 1); dirty = true; return renderCard();
-    case "delRow": { const [o, k] = getParent(cur, b.dataset.path); o.splice(+k, 1); dirty = true; return renderCard(); }
-    case "fill": {
-      const t = $("#pasteText").value.trim();
+    case "delRow": { const [o, k] = getParent(cur, b.dataset.path); if (Array.isArray(o)) o.splice(+k, 1); else delete o[k]; dirty = true; return renderCard(); }
+    case "reread": case "fill": {
+      const t = b.dataset.do === "reread" ? String(cur.text || "").trim() : $("#pasteText").value.trim();
       if (!t) return toast("Paste the card text first", true);
       if (cur.abilities.length && !window.confirm("Replace the current abilities with the ones read from the text?")) return;
-      const r = TextParse.parse(t);
+      const r = TextParse.parse(t, { type: cur.type });
       const { abilities, ...statsFound } = r;
-      Object.assign(cur, statsFound, { text: t, abilities });
+      abilities.forEach((a) => delete a.unread);
+      // re-reading text of an imported card keeps its printed stats; only flags and abilities are taken
+      const keep = b.dataset.do === "reread" ? Object.fromEntries(Object.entries(statsFound).filter(([k]) => !["grade", "power", "shield", "crit", "type", "trigger", "nation", "race"].includes(k))) : statsFound;
+      Object.assign(cur, keep, { text: t, abilities });
       if (cur.type !== "trigger") cur.trigger = cur.trigger || null;
       dirty = true;
       renderCard();
