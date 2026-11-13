@@ -254,7 +254,7 @@ const SCHEMA = {
     dest: { hand: "hand", RC: "RC (call)", soul: "soul" },
     restDest: { shuffle: "shuffle deck", bottom: "bottom of deck" },
     ctype: { any: "any card", unit: "normal unit", trigger: "trigger unit", anyunit: "any unit", order: "order", g: "G unit" },
-    count: { myHand: "your hand", mySoul: "your soul", myDrop: "your drop", myDamage: "your damage zone", myDamageUp: "your face-up damage", myDamageDown: "your face-down damage",
+    count: { myLocked: "your locked cards", oppLocked: "opponent's locked cards", oppFrontRC: "opponent's front row rear-guards", myHand: "your hand", mySoul: "your soul", myDrop: "your drop", myDamage: "your damage zone", myDamageUp: "your face-up damage", myDamageDown: "your face-down damage",
       myBind: "your bind zone", myDeck: "your deck", myGUp: "your face-up G cards", myOrderZone: "your order zone", myRC: "your rear-guards", myFrontRC: "your front row rear-guards",
       myBackRC: "your back row rear-guards", myUnits: "your units", myRested: "your rested rear-guards", myEnergy: "your energy",
       oppHand: "opponent's hand", oppSoul: "opponent's soul", oppDrop: "opponent's drop", oppDamage: "opponent's damage zone", oppBind: "opponent's bind zone",

@@ -329,7 +329,7 @@ const TextParse = (() => {
     .replace(/\[(soul-charge|counter-charge|energy-charge) (\d+)\]/gi, "$1 $2")
     .replace(/\[(Counter|Soul|Energy)-Blast\]\s*(\d+)\]/gi, "[$1-Blast $2]") // typo on the site: "[Counter-Blast]1]"
     .replace(/(^|:)\s*\[Rest\] this (unit|card)\]/gi, "$1[[Rest] this $2]") // "[ACT](RC):[Rest] this unit] …" (old cost with a lost bracket)
-    .replace(/ +/g, " ");
+    .replace(/＋/g, "+").replace(/ +/g, " ");
 
   // ---------- filters ("grade 3 or greater normal unit with "X" in its card name") ----------
   function filt(t) {
@@ -642,7 +642,26 @@ const TextParse = (() => {
     if (/if your opponent has no rear-guards/i.test(t)) add({ type: "count", what: "oppRC", op: "eq", n: 0 });
     if ((m = t.match(/if your vanguard'?s grade is (less|lower|greater|higher) than (?:or equal to )?your opponent'?s vanguard'?s grade/i)))
       add({ type: "gradeVs", op: /less|lower/i.test(m[1]) ? (/or equal/i.test(m[0]) ? "le" : "lt") : (/or equal/i.test(m[0]) ? "ge" : "gt") });
-    if ((m = t.match(/if your world is ([A-Z][A-Za-z ]+?)(?: or ([A-Z][A-Za-z ]+?))?(?=,|\.|$)/))) add({ type: "world", text: [m[1], m[2]].filter(Boolean).join("|") });
+    if ((m = t.match(/if your [Ww]orld is ([A-Z][A-Za-z ]+?)(?: or ([A-Z][A-Za-z ]+?))?(?=,|\.|$)/))) add({ type: "world", text: [m[1], m[2]].filter(Boolean).join("|") });
+    // round 3 conditions
+    if ((m = t.match(/if you have an? "([^"]+)" crest/i))) add({ type: "count", what: "myCrest", op: "ge", n: 1, filter: { nameExact: m[1] } });
+    if ((m = t.match(/if you have an? face up card (?:named "([^"]+)"|with "([^"]+)" in its card name) in your damage zone/i))) add({ type: "count", what: "myDamageUp", op: "ge", n: 1, filter: m[1] ? { nameExact: m[1] } : { name: m[2] } });
+    if (/if your opponent'?s front row has no rear-guards/i.test(t)) add({ type: "count", what: "oppFrontRC", op: "eq", n: 0 });
+    if ((m = t.match(/if it is the first battle of (?:that|this|the) turn/i))) add({ type: "count", what: "battleNo", op: "eq", n: 1 });
+    if (!out.some((c) => c.what === "battleNo") && (m = t.match(/if it is the (second|third|fourth|fifth|\d+)(?:st|nd|rd|th)? battle of this turn( or (more|later))?/i)))
+      add({ type: "count", what: "battleNo", op: m[2] ? "ge" : "eq", n: { second: 2, third: 3, fourth: 4, fifth: 5 }[m[1].toLowerCase()] || +m[1] });
+    if ((m = t.match(/if the number of (?:cards in )?your (damage zone|hand|soul|drop|rear-guards) is equal to or (more|greater|less|fewer) than (?:the number of )?(?:cards in )?your opponent'?s/i)))
+      add({ type: "countVs", what: "my" + { "damage zone": "Damage", hand: "Hand", soul: "Soul", drop: "Drop", "rear-guards": "RC" }[m[1].toLowerCase()], vs: "opp" + { "damage zone": "Damage", hand: "Hand", soul: "Soul", drop: "Drop", "rear-guards": "RC" }[m[1].toLowerCase()], op: /more|greater/i.test(m[2]) ? "ge" : "le" });
+    if (/if you have another unit with the same card name as this unit/i.test(t)) add({ type: "count", what: "myUnits", op: "ge", n: 1, filter: { sameNameSelf: true, other: true } });
+    if (/if your opponent has an? locked card/i.test(t)) add({ type: "count", what: "oppLocked", op: "ge", n: 1 });
+    if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) locked cards`)))) add({ type: "count", what: "myLocked", op: CMP(m[0]), n: toNum(m[1]) });
+    if ((m = t.match(rx(`if you have ${N} rear-guards$`)))) add({ type: "count", what: "myRC", op: "ge", n: toNum(m[1]) });
+    if ((m = t.match(/if "([^"]+)" is in your (soul|drop|hand|damage zone|bind zone|order zone)/i))) add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { nameExact: m[1] } });
+    if (/if it is your battle phase/i.test(t)) add({ type: "battlePhase" });
+    if (/if it is your main phase/i.test(t)) add({ type: "mainPhase" });
+    if (!out.some((c) => c.type === "count") && (m = t.match(/if you have an? (?:card|unit) with "([^"]+)" in its card name in your (soul|drop zone|drop|hand|damage zone|bind zone|order zone)/i)))
+      add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { name: m[1] } });
+    if ((m = t.match(rx(`if the number of other (.*?)rear-guards you have is ${N} or (more|less|fewer)`)))) add({ type: "count", what: "myRC", op: CMP(m[0]), n: toNum(m[2]), filter: { ...(filt(m[1]) || {}), other: true } });
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) cards in (?:your )?hand`)))) add({ type: "count", what: "myHand", op: CMP(m[0]), n: toNum(m[1]) });
     // round 3: "if you have four or more cards in your damage zone", "if the number of cards in your soul with "X" in its card name is three or more"
     if (!out.some((c) => c.type === "count") && (m = t.match(rx(`if you have ${N} or (more|less|fewer) (.*?)cards? in your (soul|drop zone|drop|damage zone|bind zone|order zone)`))))
@@ -728,6 +747,8 @@ const TextParse = (() => {
     // choose … (sets the target for "and it/they …")
     if ((m = t.match(rx(`^choose (up to )?${N} of (your|your opponent'?s) .*?(rear-guards?|units?|vanguards?)`))) && !/,/.test(t)) { ctx.last = targetOf(t); ctx.lastUsed = false; return []; }
     if (/^choose (one of )?your vanguards?$/i.test(t)) { ctx.last = { target: "vc" }; return []; }
+    if ((m = t.match(/^choose (?:an?|one|up to one) (?:of your )?opponent'?s (.*?)rear-guards?$/i))) { ctx.last = { target: "chooseOppRC", n: 1, ...(/up to/i.test(t) ? { upTo: true } : {}), filter: filt(m[1]) || {} }; ctx.lastUsed = false; return []; }
+    if ((m = t.match(/^choose (?:a|one|up to one) rear-guards? in your opponent'?s front row$/i))) { ctx.last = { target: "chooseOppFrontRC", n: 1 }; ctx.lastUsed = false; return []; }
     // stats
     const outs = [];
     if ((m = t.match(/\[Power\] ([+-])\s*([\d,]+)/i))) outs.push({ type: "power", amount: (m[1] === "-" ? -1 : 1) * +m[2].replace(/,/g, ""), dur, ...who(), ...per });
@@ -832,16 +853,19 @@ const TextParse = (() => {
       return [{ type: "move", from: "deck", to: /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : "soul", n: s.n, upTo: true, filter: s.filter, reveal: /reveal/i.test(t) }];
     }
     // choose … from your drop / soul / damage zone / hand → hand / RC / soul / deck
-    if ((m = t.match(rx(`^choose (up to )?${N} (.*?)(?:cards?|units?)? from (your |your opponent'?s |)(drop( zone)?|soul|damage zone|hand|bind zone)`)))) {
-      const zone = m[5].toLowerCase().replace(" zone", "").replace("damage", "damage").replace("bind", "bind");
-      ctx.pick = { from: (/opponent/i.test(m[4]) ? "opp" + zone[0].toUpperCase() + zone.slice(1) : zone).replace(/^oppDrop$/, "oppDrop"), n: toNum(m[2]), upTo: !!m[1], filter: filt(m[3]) };
-      const tail = t.slice(m[0].length);
+    if ((m = t.match(rx(`^choose (up to )?${N} (.*?)(?:cards?|units?)? from (your |your opponent'?s |)(drop( zone)?|soul|damage zone|hand|bind zone|ride deck)`)))) {
+      const zone = m[5].toLowerCase() === "ride deck" ? "rideDeck" : m[5].toLowerCase().replace(" zone", "");
+      let tail = t.slice(m[0].length);
+      // the filter may come after the zone: "from your soul with "Silver Thorn" in its card name"
+      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+")/i);
+      if (after) tail = tail.slice(after[0].length);
+      ctx.pick = { from: (/opponent/i.test(m[4]) ? "opp" + zone[0].toUpperCase() + zone.slice(1) : zone).replace(/^oppDrop$/, "oppDrop"), n: toNum(m[2]), upTo: !!m[1], filter: { ...(filt(m[3]) || {}), ...(after ? filt(after[1]) || {} : {}) } };
       if (!tail.trim()) return [];
       return effectOf(tail.replace(/^,?\s*(and )?/, ""), ctx);
     }
-    if (ctx.pick && /^(reveal it,? and )?(put (it|them) into (your )?(hand|soul|drop)|call (it|them) to( an open| separate)? \(rc\)|put (it|them) on the (top|bottom) of (your|the) deck|bind (it|them)|put (it|them) into (your )?damage zone)/i.test(t)) {
+    if (ctx.pick && /^(reveal it,? and )?(put (it|them) into (your )?(hand|soul|drop)|call (it|them) to( an open| separate open| separate| open| an?)? \(rc\)|put (it|them) on the (top|bottom) of (your|the) deck|bind (it|them)|put (it|them) into (your |the )?damage zone|put (it|them) into (your |the )?order zone)/i.test(t)) {
       const P = ctx.pick; ctx.pick = null;
-      const to = /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : /soul/i.test(t) ? "soul" : /bottom/i.test(t) ? "deckBottom" : /top/i.test(t) ? "deckTop" : /bind/i.test(t) ? "bind" : /damage/i.test(t) ? "damageUp" : "drop";
+      const to = /order zone/i.test(t) ? "orderZone" : /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : /soul/i.test(t) ? "soul" : /bottom/i.test(t) ? "deckBottom" : /top/i.test(t) ? "deckTop" : /bind/i.test(t) ? "bind" : /damage/i.test(t) ? "damageUp" : "drop";
       return [{ type: "move", from: P.from, to, n: P.n, upTo: P.upTo, filter: P.filter }];
     }
     if (ctx.pick && /^(heal (it|them))$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: "damage", to: "drop", n: P.n }]; }
@@ -874,7 +898,8 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^call (up to )?${N} "?([^"]+?)"? tokens? to (an open |your )?\\(rc\\)`)))) return [{ type: "token", name: m[3].trim(), n: toNum(m[2]), where: m[4] && /open/i.test(m[4]) ? "empty" : "any" }];
     if ((m = t.match(/^put an? "?([^"]+?)"? ticket into (your )?hand/i))) return [{ type: "ticket", name: m[1].trim(), n: 1, who: "me" }];
     if ((m = t.match(/(?:it|they|this unit) becomes? (?:in )?(?:the )?\[([^\]]+)\] state/i))) return [{ type: "setState", name: m[1], dur, ...it({ target: "self" }) }];
-    if ((m = t.match(/^ride (it|this card) as \[(stand|rest)\]/i))) return [{ type: "rideBy", from: ctx.pick ? ctx.pick.from : "self", stand: /stand/i.test(m[2]) }];
+    if ((m = t.match(/^ride (it|this card) as \[(stand|rest)\]/i))) { const P = ctx.pick; ctx.pick = null; return [{ type: "rideBy", from: P ? P.from : "self", stand: /stand/i.test(m[2]), ...(P && P.filter && Object.keys(P.filter).length ? { filter: P.filter } : {}) }]; }
+    if (ctx.pick && /^ride (it|that card)$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "rideBy", from: P.from, ...(P.filter && Object.keys(P.filter).length ? { filter: P.filter } : {}) }]; }
     if (/^heal$/i.test(t)) return [{ type: "heal", n: 1 }];
     return null; // not read
   }

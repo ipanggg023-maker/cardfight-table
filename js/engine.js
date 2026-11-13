@@ -198,6 +198,7 @@ const Game = (() => {
         if (!({ lt: x < g, le: x <= g, eq: x === g, ge: x >= g, gt: x > g, plus1: x === g + 1 })[f.gradeVC]) return false;
       }
       if (f.other && env.ctx && env.ctx.card && c.uid === env.ctx.card.uid) return false;
+      if (f.sameNameSelf && !(env.ctx && env.ctx.card && c.name === env.ctx.card.name)) return false; // "with the same card name as this unit"
     }
     return true;
   }
@@ -236,6 +237,9 @@ const Game = (() => {
       case "oppColumn": return col ? units(o, unitsOf(1 - pi).filter((k) => COL[k] === MIRROR[col])) : 0;
       case "imprisoned": return m((p.orderZone || []).filter((c) => c.imprisoned !== undefined));
       case "myCrest": return m(p.crest);
+      case "myLocked": return rcOf(pi).filter((k) => p.slots[k] && p.slots[k].locked).length;
+      case "oppLocked": return rcOf(1 - pi).filter((k) => o.slots[k] && o.slots[k].locked).length;
+      case "oppFrontRC": return units(o, frontOf(1 - pi).filter((k) => k !== "vc"));
       case "lastCount": return ctx.last ? ctx.last.count : 0;
       case "lastMatch": return (ctx.last && ctx.last.cards ? ctx.last.cards : []).filter((c) => match(c, f, env)).length;
       default: return 0;
@@ -764,7 +768,7 @@ const Game = (() => {
   }
   // ---------- Move cards (Ability Language v2): any zone → any zone ----------
   // e = {from, to, n, upTo, all, random, look (deck top: how many to look at), rest (where the rest go), filter, chooser: "me"|"opp", reveal}
-  const ZONE_OF = { hand: "hand", deck: "deck", deckTop: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gzone: "gUp", orderZone: "orderZone",
+  const ZONE_OF = { rideDeck: "ride", hand: "hand", deck: "deck", deckTop: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gzone: "gUp", orderZone: "orderZone",
     oppHand: "hand", oppDeckTop: "deck", oppDrop: "drop", oppSoul: "soul", oppDamage: "damage", oppBind: "bind" };
   const FIELD_FROM = { myRC: "rc", myUnits: "units", myFrontRC: "front", myBackRC: "back", oppRC: "rc", oppUnits: "units", oppFrontRC: "front" };
   const sideOf = (pi, from) => (String(from).startsWith("opp") ? 1 - pi : pi);
