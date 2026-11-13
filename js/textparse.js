@@ -9,8 +9,71 @@ const TextParse = (() => {
   const N = "(\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)";
   const rx = (s, f = "i") => new RegExp(s, f);
 
-  // ---------- stats (unchanged from v1) ----------
+  // ---------- the official card list's stat line ----------
+  // "Normal Unit | Dragon Empire | Flame Dragon | Kagero | Grade 3 | Power 13000 | Critical 1 | Shield | Twin Drive!!, Persona Ride |"
+  // (copied from en.cf-vanguard.com; it may wrap over several lines). Words between the card type and Grade are the
+  // nation (known names), the clan (known names) and the race (anything else).
+  const NATION_NAMES = ["dragon empire", "dark states", "brandt gate", "keter sanctuary", "stoicheia", "lyrical monasterio", "cray elemental",
+    "touken ranbu", "shaman king", "bang dream!", "record of ragnarok", "corocoro", "united sanctuary", "star gate", "dark zone", "magallanica", "zoo"];
+  const CLAN_NAMES = ["royal paladin", "oracle think tank", "angel feather", "shadow paladin", "gold paladin", "genesis", "kagero", "tachikaze",
+    "murakumo", "narukami", "nubatama", "gear chronicle", "nova grappler", "dimension police", "link joker", "dark irregulars", "spike brothers",
+    "pale moon", "megacolony", "great nature", "neo nectar", "granblue", "aqua force", "bermuda triangle", "etranger"];
+  const RARITY = /^(?:rarity\s*[:\-]?\s*)?(C|R|RR|RRR|VR|SVR|SP|SEC|SSR|TD|PR|H|FR|ORR|DSR|LSR|MSR|SR|ZR|GR|XR|EXRRR|EXRR|EXR|EXC|FFR|LR|SNR|RE|FIR|DR|SCR|ZXR)$/i;
+  const isStatLine = (l) => (/^\s*(card\s*no\.?|rarity)\s*[:\-]/i.test(l) || /^\s*[A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Z0-9-]+\s*(\||$)/i.test(l)) ||
+    (/\|/.test(l) && !/\[(auto|act|cont)\]/i.test(l) &&
+    /(^|\|)\s*((normal|trigger|g|token)\s+unit|(normal|blitz|set|trigger)\s+order|grade\s*\d|power\s*\+?\d|critical\s*\d|shield\b|twin drive|triple drive|persona ride)/i.test(l));
+  // → {stats, rest}: the fields read from the stat line(s) and the text without them
+  function splitStats(text) {
+    const lines = String(text || "").replace(/\r/g, "").split("\n");
+    const statLines = [], rest = [];
+    for (const l of lines) (isStatLine(l) ? statLines : rest).push(l);
+    const out = {};
+    if (!statLines.length) return { stats: out, rest: String(text || "").trim() };
+    const tokens = statLines.join("|").split("|").flatMap((t) => (/drive|persona|boost|intercept|gift/i.test(t) ? t.split(",") : [t])).map((t) => t.trim()).filter(Boolean);
+    let seenGrade = false;
+    const races = [];
+    for (const t of tokens) {
+      const low = t.toLowerCase().replace(/\s+/g, " ");
+      let m;
+      if ((m = low.match(/^(normal|trigger|g|token) unit$/))) { out.type = m[1] === "trigger" ? "trigger" : m[1] === "g" ? "g" : "unit"; if (m[1] === "token") out.token = true; }
+      else if ((m = low.match(/^(normal|blitz|set|trigger) order$/))) { out.type = "order"; if (m[1] === "set") out.setOrder = true; }
+      else if (/^(ride deck )?crest$/.test(low)) out.type = "crest";
+      else if ((m = low.match(/^(critical|front|draw|heal|over|stand) trigger$/))) { out.trigger = m[1] === "critical" ? "crit" : m[1]; out.type = "trigger"; }
+      else if ((m = low.match(/^grade\s*[:\-]?\s*(\d+)$/))) { out.grade = +m[1]; seenGrade = true; }
+      else if ((m = low.match(/^power\s*[:\-]?\s*(\+)?\s*([\d,]+)$/))) { out.power = +m[2].replace(/,/g, ""); if (m[1]) out.powerPlus = true; }
+      else if ((m = low.match(/^critical\s*[:\-]?\s*(\d+)$/))) out.crit = +m[1];
+      else if ((m = low.match(/^shield\s*[:\-]?\s*([\d,]*)$/))) out.shield = m[1] ? +m[1].replace(/,/g, "") : 0;
+      else if ((m = low.match(/^\+\s*([\d,]+)$/))) out.trigPower = +m[1].replace(/,/g, "");
+      else if (/^twin drive/.test(low)) out.drive = 2;
+      else if (/^triple drive/.test(low)) out.drive = 3;
+      else if (low === "boost") out.boost = true;
+      else if (low === "intercept") out.intercept = true;
+      else if (low === "persona ride") out.persona = true;
+      else if (low === "sentinel") out.sentinel = true;
+      else if ((m = low.match(/^imaginary gift\s*[:\-]?\s*(force|accel|protect)/))) out.gift = m[1];
+      else if ((m = t.match(/^(?:card\s*no\.?|number)?\s*[:\-]?\s*([A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Z0-9-]+)$/i))) out.number = m[1];
+      else if ((m = t.match(RARITY))) out.rarity = m[1].toUpperCase();
+      else if (NATION_NAMES.includes(low)) out.nation = t;
+      else if (CLAN_NAMES.includes(low)) out.clan = t;
+      else if (low === "-") continue;
+      else if (!seenGrade) races.push(t);
+    }
+    if (races.length) out.race = races.join(" / ");
+    // the printed skills list everything a unit has: no Boost / Intercept / drive / Persona Ride on the line means it has none
+    if (out.grade != null && (out.type === "unit" || out.type === "trigger")) {
+      if (out.boost === undefined) out.boost = false;
+      if (out.intercept === undefined) out.intercept = false;
+      if (out.drive === undefined) out.drive = 1;
+      if (out.persona === undefined) out.persona = false;
+    }
+    if (out.trigger === "over" && !out.trigPower) out.trigPower = 100000000;
+    return { stats: out, rest: rest.join("\n").trim() };
+  }
+
+  // ---------- stats ----------
   function stats(text) {
+    const split = splitStats(text);
+    text = split.rest;
     const out = {};
     const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
     const g = grab(/grade\s*[:\-]\s*(\d)/i); if (g !== null) out.grade = +g;
@@ -20,9 +83,9 @@ const TextParse = (() => {
     const n = grab(/nation\s*[:\-]\s*([^\n/|]+)/i); if (n) out.nation = n;
     const r = grab(/race\s*[:\-]\s*([^\n/|]+)/i); if (r) out.race = r;
     const t = text.match(/\b(critical|front|draw|heal|over|stand)\s+trigger\b/i);
-    if (t && !/\[(auto|act|cont)\]/i.test(text.slice(0, t.index))) { out.trigger = t[1].toLowerCase(); out.type = "trigger"; }
+    if (t && !/\[(auto|act|cont)\]/i.test(text.slice(0, t.index))) { out.trigger = t[1].toLowerCase() === "critical" ? "crit" : t[1].toLowerCase(); out.type = "trigger"; }
     if (/(^|\n|\]:?)\s*sentinel\b/i.test(text)) out.sentinel = true;
-    if (/persona ride/i.test(text)) out.persona = true;
+    // Persona Ride is a printed skill icon, never ability text ("activate persona ride" is an effect): only the stat line sets it
     if (/(normal|blitz|set)\s+order/i.test(text)) out.type = "order";
     // keyword flags on their own lines
     const kw = (re) => rx(`(^|\\n|\\]:)\\s*\\[?${re}\\]?\\b`).test(text);
@@ -40,7 +103,7 @@ const TextParse = (() => {
     if (/this card is (regarded as being )?from all clans/i.test(text)) out.allClans = true;
     const sg = text.match(/while (?:you are )?paying the cost (?:for|of) \[?stride\]?,? this card gets grade \+(\d)/i);
     if (sg) out.strideGrade = +sg[1];
-    return out;
+    return Object.assign(out, split.stats);
   }
 
   // ---------- normalising ----------
@@ -720,9 +783,10 @@ const TextParse = (() => {
     const s = stats(norm(text));
     const isOrder = s.type === "order" || /order/i.test(hint.type || "");
     if (isOrder) s.type = "order";
-    return { ...s, abilities: abilities(text, isOrder) };
+    const rest = splitStats(text).rest;
+    return { ...s, abilities: rest ? abilities(rest, isOrder) : [] };
   }
-  return { parse, stats, abilities, filt, condsIn, costsIn };
+  return { parse, stats, splitStats, abilities, filt, condsIn, costsIn };
 })();
 
 // ---------- CSV ----------

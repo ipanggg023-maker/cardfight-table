@@ -155,7 +155,7 @@ function renderCard() {
       ${c.type === "g" ? `<label>G unit kind ${sel("gKind", { stride: "Stride (vanguard)", guardian: "G guardian (guard step)" }, c.gKind || "stride")}</label>` : ""}
       <label>Grade ${num("grade", c.grade)}</label>
       <label title="“While you are paying the cost for [Stride], this card gets grade +N”">Stride cost grade + ${num("strideGrade", c.strideGrade, "0")}</label>
-      <label>Power ${num("power", c.power)}</label>
+      <label>Power${c.type === "g" ? " (+ added to the heart's)" : ""} ${num("power", c.power)}</label>
       <label>Shield ${num("shield", c.shield)}</label>
       <label>Critical ${num("crit", c.crit)}</label>
       <label>Trigger ${sel("trigger", { "": "None", crit: "Critical", front: "Front", draw: "Draw", heal: "Heal", over: "Over", stand: "Stand (Premium)" }, c.trigger || "")}</label>
@@ -171,6 +171,8 @@ function renderCard() {
       ${c.type === "unit" && c.dress ? `<label>overDress onto a rear-guard named (blank = any) ${txt("overDress", c.overDress, "e.g. Lianorn")}</label>` : ""}
       ${c.type === "unit" ? `<label>XoverDress: needed rear-guards (names, separated by |) ${txt("xoverDress", c.xoverDress, "e.g. Name A | Name B")}</label>` : ""}
       ${c.type === "unit" || c.type === "trigger" ? `<label>Imaginary Gift icon ${sel("gift", { "": "None", force: "Force", accel: "Accel", protect: "Protect" }, c.gift || "")}</label>` : ""}
+      <label>Card No. ${txt("source.number", (c.source && c.source.number) || "", "e.g. DZ-SS03/018EN")}</label>
+      <label title="As printed: C, R, RR, RRR, SP, SEC, TD…">Rarity ${txt("rarity", c.rarity, "e.g. RRR")}</label>
       <label>Format icon ${sel("icon", { "": `Auto (${iconOf(c) || "unknown"})`, D: "D (Standard)", V: "V (V Premium)", "-": "None (Premium only)" }, c.icon || "")}</label>
     </div>
     <div class="btnrow">
@@ -422,13 +424,16 @@ $("#cardForm").addEventListener("click", async (e) => {
     case "reread": case "fill": {
       const t = b.dataset.do === "reread" ? String(cur.text || "").trim() : $("#pasteText").value.trim();
       if (!t) return toast("Paste the card text first", true);
-      if (cur.abilities.length && !window.confirm("Replace the current abilities with the ones read from the text?")) return;
+      // the official stat line ("Normal Unit | Dragon Empire | … | Grade 3 | Power 13000 | …") is read into fields, not kept as text
+      const abText = TextParse.splitStats(t).rest;
+      if (abText && cur.abilities.length && !window.confirm("Replace the current abilities with the ones read from the text?")) return;
       const r = TextParse.parse(t, { type: cur.type });
       const { abilities, ...statsFound } = r;
       abilities.forEach((a) => delete a.unread);
       // re-reading text of an imported card keeps its printed stats; only flags and abilities are taken
       const keep = b.dataset.do === "reread" ? Object.fromEntries(Object.entries(statsFound).filter(([k]) => !["grade", "power", "shield", "crit", "type", "trigger", "nation", "race"].includes(k))) : statsFound;
-      Object.assign(cur, keep, { text: t, abilities });
+      if (keep.number) { cur.source = { ...(cur.source || {}), number: keep.number }; delete keep.number; }
+      Object.assign(cur, keep, abText ? { text: abText, abilities } : {});
       if (cur.type !== "trigger") cur.trigger = cur.trigger || null;
       dirty = true;
       renderCard();
@@ -1361,6 +1366,11 @@ $("#cgsEverything").addEventListener("click", async () => {
         if (old.image && !/^https?:\/\/en\.cf-vanguard\.com/i.test(old.image)) mine.image = old.image; // your own picture
         if (old.trigger && !c.trigger) mine.trigger = old.trigger;
         if (old.notes) mine.notes = old.notes;
+        // fields the data doesn't have (race, rarity, Persona Ride…) are yours; on a card you saved, every printed field you set is kept
+        const yours = old.source && old.source.edited
+          ? ["race", "rarity", "persona", "drive", "boost", "intercept", "crit", "nation", "clan", "trigPower", "gift", "alias", "sentinel", "icon", "strideGrade", "powerPlus"]
+          : ["race", "rarity"];
+        for (const k of yours) if (old[k] !== undefined && old[k] !== "" && old[k] !== null) mine[k] = old[k];
         saved = { ...old, ...c, ...mine };
         updated++;
       } else { saved = { ...c, id: DB.newId() }; made++; }

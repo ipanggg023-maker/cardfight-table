@@ -57,6 +57,9 @@ function cgsTriggerGuess(d) {
   return null;
 }
 
+// a clan name (not a nation): the old clans, which D-era reprints and DZ clan cards still print
+const CGS_CLANS = /^(royal paladin|oracle think tank|angel feather|shadow paladin|gold paladin|genesis|kagero|tachikaze|murakumo|narukami|nubatama|gear chronicle|nova grappler|dimension police|link joker|dark irregulars|spike brothers|pale moon|megacolony|great nature|neo nectar|granblue|aqua force|bermuda triangle|etranger)$/i;
+const cgsIsClan = (s) => CGS_CLANS.test(String(s || "").trim());
 function cgsToCard(d, trigger) {
   const text = String(d.effect || "").trim();
   const isOrder = /Order/.test(d.type);
@@ -75,9 +78,11 @@ function cgsToCard(d, trigger) {
     crit: 1,
     trigger: trig || null,
     sentinel: /\[CONT\]\s*:\s*Sentinel/i.test(text),
-    persona: /persona ride/i.test(text),
-    nation: String(d.clan || ""),
-    clan: /^(D|DZ)-/i.test(String(d.number || "")) ? "" : String(d.clan || ""),
+    // Persona Ride is a printed skill icon the data doesn't have ("activate persona ride" in text is an effect, not the icon)
+    persona: false,
+    // the data has one "clan" field: a D nation, or a clan (old cards, and D-era clan reprints like the V Clan Collections)
+    nation: cgsIsClan(d.clan) ? "" : String(d.clan || "").replace(/^-$/, ""),
+    clan: cgsIsClan(d.clan) ? String(d.clan).trim() : /^(D|DZ)-/i.test(String(d.number || "")) ? "" : String(d.clan || "").replace(/^-$/, ""),
     icon: /^(D|DZ)-/i.test(String(d.number || "")) ? "D" : /^V-/i.test(String(d.number || "")) ? "V" : "-",
     race: "",
     image: d.image_url || "",
