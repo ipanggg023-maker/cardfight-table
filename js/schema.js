@@ -19,6 +19,7 @@ const TARGETS = {
   chooseOppFrontRC: "choose opponent's front row rear-guard(s)",
   chooseOppUnit: "choose opponent's unit(s)",
   thatUnit: "that unit (the one the step before chose)",
+  eventUnit: "the unit the timing is about (that placed / attacking / stood unit)",
   attacked: "your unit being attacked",
   myColumn: "your other units in this unit's column",
   oppColumn: "opponent's units in this unit's column",
@@ -101,12 +102,23 @@ const SCHEMA = {
     attackStep: "At the beginning of your attack step (each battle)",
     hitOrBoost: "When its attack or the attack it boosted hits",
     armed: "When this card is Armed",
+    allyDiscarded: "When your card is discarded from hand (filter = that card)",
+    cardToSoul: "When a card is put into your soul (filter = that card)",
+    soulBlasted: "When you Soul-Blast (N or more at once; by your vanguard's ability)",
+    boundFromRC: "When this unit is bound from (RC)",
+    oppBound: "When your opponent's rear-guard is bound",
+    oppLocked: "When your opponent's rear-guard is locked by your card",
+    oppUnlocked: "When your opponent's locked card is unlocked",
+    allyStood: "When your unit [Stand]s by an effect (filter = that unit)",
+    allyReturnedHand: "When your rear-guard is returned to hand",
+    rcToDeck: "When this unit is put into your deck from (RC)",
+    cardToOrderZone: "When a card is put into your order zone",
   },
   // events that are about another card: the AUTO ability may filter it ("when your grade 3 rear-guard is placed…")
   eventSubject: { allyHit: "the attacking unit", allyAttacked: "the attacked unit", placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
     oppAttacks: "the attacking unit", guardStart: "the attacking unit", allyRetired: "the retired card", oppRetired: "the retired card", driveReveal: "the revealed card",
     damageReveal: "the revealed card", orderPlayed: "the order", riddenUpon: "the unit that rides this one", placedVC: "this new vanguard",
-    allyPlacedVC: "the new vanguard", toDamage: "the card", soulCharged: "the card", legion: "the vanguard" },
+    allyPlacedVC: "the new vanguard", toDamage: "the card", soulCharged: "the card", legion: "the vanguard", allyDiscarded: "the discarded card", cardToSoul: "the card", oppBound: "the bound card", oppLocked: "the locked card", oppUnlocked: "the unlocked card", allyStood: "the unit", allyReturnedHand: "the card", cardToOrderZone: "the card" },
   fromEvents: { placed: 1, placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1, placedVC: 1, riddenUpon: 1 },
 
   conds: {
@@ -295,6 +307,7 @@ function flt(f, short) {
   if (f.gmin !== undefined && f.gmin !== "") bits.push(`grade ${f.gmin}+`);
   if (f.gmax !== undefined && f.gmax !== "") bits.push(`grade ≤${f.gmax}`);
   if (f.name) bits.push(`"${f.name}"`);
+  if (Array.isArray(f.nameAny) && f.nameAny.length) bits.push(f.nameAny.map((n) => `"${n}"`).join(" or "));
   if (f.ctype && f.ctype !== "any") bits.push(SCHEMA.paramOptions.ctype[f.ctype]);
   if (f.nameExact) bits.push(`named "${f.nameExact}"`);
   if (f.clan) bits.push(`<${f.clan}>`);

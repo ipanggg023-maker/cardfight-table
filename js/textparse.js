@@ -338,7 +338,9 @@ const TextParse = (() => {
     if ((m = t.match(/grade (\d) or (less|lower)/i))) f.gmax = +m[1];
     else if ((m = t.match(/grade (\d) or (greater|higher|more)/i))) f.gmin = +m[1];
     else if ((m = t.match(/\bgrade (\d)\b/i))) { f.gmin = +m[1]; f.gmax = +m[1]; }
-    if ((m = t.match(/with "([^"]+)" in (its|their) (different )?card names?/i))) f.name = m[1];
+    const anyNames = t.match(/with ((?:"[^"]+"(?:,? (?:or|and\/or) )?){2,}) in (its|their) (different |original )?card names?/i);
+    if (anyNames) f.nameAny = [...anyNames[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]); // "with "A" or "B" in its card name"
+    else if ((m = t.match(/with "([^"]+)" in (its|their) (different |original )?card names?/i))) f.name = m[1];
     else if ((m = t.match(/(?:card|unit)s? named "([^"]+)"/i)) || (m = t.match(/^"([^"]+)"$/))) f.nameExact = m[1];
     if ((m = t.match(/<+([^>]+)>+/))) f.clan = m[1].trim();
     if (/same card name as (your|the) vanguard/i.test(t)) f.sameNameVC = true;
@@ -363,6 +365,8 @@ const TextParse = (() => {
     let m;
     const opp = /opponent'?s|his or her|their/i.test(t);
     if (/^\s*(this unit|this card|it itself)\b/i.test(t) && !/choose/i.test(t)) return { target: "self" };
+    // the unit the timing is about: "that placed unit", "the unit that [Stand]", "that attacking unit", "the called unit"
+    if (/^\s*(that (placed|attacking|called|boosted|stood|retired|bound) unit|the (placed|called|attacking) unit|the unit that \[stand\]|that unit that \[stand\])\b/i.test(t)) return { target: "eventUnit" };
     if (/all of your opponent'?s (front row )?rear-guards/i.test(t)) return { target: "chooseOppRC", n: 99, all: true };
     if (/all of your front row units/i.test(t)) return { target: "allFront" };
     if (/all of your front row rear-guards/i.test(t)) return { target: "allFrontRC" };
@@ -388,6 +392,31 @@ const TextParse = (() => {
   // ---------- timings ----------
   // [regex, event, zone hint, extra {conds, whenFilter, whenFrom}]
   const EVENTS = [
+    // round 2 (official list): columns, stands, discards, soul, binds, locks, Soul-Blast at once, order zone
+    [/when your other (?:unit|rear-guard)s? (?:is|are) placed (?:on (?:an? )?\(RC\) )?in the same column as this unit/i, "allyPlacedRC", null, { column: true }],
+    [/when your other (rear-guard|unit) in the same column as this unit is placed/i, "allyPlacedRC", null, { column: true }],
+    [/when (?:this unit|it) (?:is )?(?:\[stand\]|stands|becomes \[stand\]) (?:by|due to) the (?:ability|effect) of your vanguard(?: with ((?:"[^"]+"(?:,? or )?)+) in its card name)?|when this unit is \[stand\] by your vanguard'?s (?:ability|effect)/i, "stood", null, { byVC: 1 }],
+    [/when (?:this unit|it) (?:is )?(?:\[stand\]|stands) by the (?:ability|effect) of your ((?:grade \d or (?:greater|less) )?(?:card|unit)s?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?)/i, "stood", null, { byCard: 1 }],
+    [/when your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?) (?:\[stand\]|stands) by your card'?s (?:ability|effect)/i, "allyStood", null, { subjectText: 1, conds: [{ type: "byMe" }] }],
+    [/when the unit armed with this card is attacked/i, "attacked", "VC"],
+    [/when (this unit|it) (?:\[stand\]|stands) (?:by|due to) (?:an? |the )?(?:effect|ability) (?:from|of) (?:one of )?your (?:other )?cards?(?:'s)?(?: (?:ability|effect))?/i, "stood", null, { conds: [{ type: "byMe" }] }],
+    [/when your (other )?(?:rear-guard|unit)s? in the same column as this unit (?:\[stand\]|stands?)/i, "allyStood", null, { column: true }],
+    [/when your other ((?:(?!in the same)[^,])*?)(?:unit|rear-guard)s? (?:with "[^"]+" in (?:its|their) card names? )?(?:\[stand\]|stands?) (?:by|due to|from) (?:an? |the )?(?:card'?s )?(?:effect|ability)/i, "allyStood", null, { subjectOther: true, subjectText: 1 }],
+    [/when your other card is discarded from (?:your )?hand/i, "allyDiscarded", null, { subjectOther: true }],
+    [/when (?:this unit|it) is bound from \(RC\)(?: by the ability of your vanguard(?: with ((?:"[^"]+"(?:,? or )?)+) in its card name)?)?/i, "boundFromRC", "RC", { byVC: 1 }],
+    [/when this unit is bound from \(RC\)/i, "boundFromRC", "RC"],
+    [/when your opponent'?s (.*?)rear-guards? (?:is|are) bound/i, "oppBound", null, { subject: 1 }],
+    [/when your opponent'?s (.*?)rear-guards? (?:is|are) locked/i, "oppLocked", null, { subject: 1 }],
+    [/when your opponent'?s locked cards? (?:is|are) unlocked|when an opponent'?s locked card is unlocked/i, "oppUnlocked", null],
+    [/when you \[?soul-blast (\d+)\]? or more(?: cards)? at the same time for the cost of your vanguard'?s abilit(?:y|ies)/i, "soulBlasted", null, { min: 1, byVC: true }],
+    [/when a card is put into your order zone/i, "cardToOrderZone", null],
+    [/when your other rear-guard is put into your soul/i, "cardToSoul", null, { subjectOther: true, whenFrom: "RC" }],
+    [/when (?:a|your) card is put into your soul(?! by)/i, "cardToSoul", null],
+    [/when your other rear-guard is returned to (?:your )?hand(?: by your vanguard'?s abilit(?:y|ies))?/i, "allyReturnedHand", null, { subjectOther: true }],
+    [/when this unit is put into your deck from \(RC\)/i, "rcToDeck", "RC"],
+    [/when the unit armed with this card attacks/i, "attack", "VC"],
+    [/when this unit in the \[x?overdress\] state attacks( a vanguard)?/i, "attack", null, { conds: [{ type: "dressed" }] }],
+    [/when this card is put in (?:the|your) order zone/i, "toOrderZone", "OZ"],
     // leaving a circle / zone
     [/when (?:this unit is |this card is )?retired from \(rc\) by (?:the ability of )?(?:one of )?your (?:own |other )?cards?'?s? ?(?:abilit(?:y|ies)|effects?)?|when (this unit|this card) is put into (the |your )?drop( zone)? from \(rc\) (?:due to|by) (?:an effect from )?(?:one of )?your (?:own |other )?cards?/i, "retired", "RC", { conds: [{ type: "byMe" }] }],
     [/when (this unit|this card) is put into (the |your )?drop( zone)? from \(rc\)|when (this unit is |this card is )?retired from \(rc\)/i, "retired", "RC"],
@@ -420,7 +449,7 @@ const TextParse = (() => {
     [/when your (.*?)(vanguard|unit|rear-guard)(?: with "[^"]*" in its card name)? is attacked/i, "allyAttacked", null, { subjectAtt: true }],
     [/at the beginning of (the|your) end phase/i, "endTurn", null],
     [/when this card is put into (the|your) order zone/i, "toOrderZone", "OZ"],
-    [/when this unit'?s drive check reveals (an? )?(.*?)(card|unit)?\b,/i, "driveReveal", "VC", { subject: 2, subjectNoun: 3 }],
+    [/when this unit'?s drive check reveals (an? )?(.*?)(card|unit)?\s*,/i, "driveReveal", "VC", { subject: 2, subjectNoun: 3 }],
     [/when the attack (this unit|it) boosted hits a vanguard/i, "boostHit", "RC", { conds: [{ type: "targetVC" }] }],
     [/when the attack (this unit|it) boosted hits/i, "boostHit", "RC"],
     [/when it boosts/i, "boost", "RC"],
@@ -441,7 +470,7 @@ const TextParse = (() => {
     [/when (this unit|this card) is placed on \(rc\)|when placed on \(rc\)/i, "placedRC", "RC"],
     [/when (this unit|this card) is placed on \(gc\)|when placed on \(gc\)/i, "placedGC", "GC"],
     [/when (this unit|this card) is placed\b|when placed\b/i, "placed", null],
-    [/when your (other )?(.*?)(rear-guards?|units?) (is|are) placed on( your)? \(rc\)|when another (.*?) is placed on your \(rc\)/i, "allyPlacedRC", "RC", { subject: 2 }],
+    [/when your (other )?((?:(?!opponent)[^,])*?)(rear-guards?|units?|<[^>]+>|"[^"]+")((?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?) (is|are) placed(?: on( your| another)? \(rc\))?(?: from (?:your |the )?(deck|drop zone|drop|soul|hand|bind zone))?( in the same column as this unit)?(?=,| during| by| other|$)|when another (.*?) is placed on your \(rc\)/i, "allyPlacedRC", "RC", { allyPlaced: true }],
     [/when your opponent'?s (.*?)rear-guards? (is|are) placed|when your opponent calls/i, "oppPlacedRC", null, { subject: 1 }],
     [/at the beginning of your main phase/i, "mainStart", null],
     [/at the beginning of your battle phase/i, "battleStart", null],
@@ -461,7 +490,7 @@ const TextParse = (() => {
     [/when (this unit|it) attacks a vanguard/i, "attack", null, { conds: [{ type: "targetVC" }] }],
     [/when (this unit|it) attacks a rear-guard/i, "attack", null],
     [/when (this unit|it) attacks/i, "attack", null],
-    [/when your (.*?)(vanguard|unit|rear-guard)(?: with "[^"]*" in its card name)? attacks/i, "allyAttacks", null, { subjectWhole: true }],
+    [/when your (.*?)(vanguard|unit|rear-guard)(?: with (?:"[^"]*"(?:,? or )?)+ in its card name)? attacks/i, "allyAttacks", null, { subjectWhole: true }],
     [/when your opponent'?s (.*?)(vanguard|unit|rear-guard) attacks/i, "oppAttacks", null],
     [/at the end of your opponent'?s turn/i, "oppTurnEnd", null],
     [/at the end of (your|that|the) turn|at the end of turn/i, "endTurn", null],
@@ -470,7 +499,7 @@ const TextParse = (() => {
     [/when your opponent'?s (.*?)rear-guards? (is|are) retired/i, "oppRetired", null, { subject: 1 }],
     [/when (this card is )?discarded from (your )?hand|when this card is discarded/i, "discarded", "hand"],
     [/when (this card is )?put into (your |the )?soul/i, "toSoul", "soul"],
-    [/when your drive check reveals (an? )?(.*?)(card|unit)?\b,/i, "driveReveal", null, { subject: 2, subjectNoun: 3 }],
+    [/when your drive check reveals (an? )?(.*?)(card|unit)?\s*,/i, "driveReveal", null, { subject: 2, subjectNoun: 3 }],
     [/when (this card is )?revealed (for|in) a drive check/i, "revealedDrive", "any"],
     [/when your damage check reveals (an? )?(.*?)(card|unit)?\b,/i, "damageReveal", null, { subject: 2, subjectNoun: 3 }],
     [/when (this card is )?revealed (for|in) a damage check/i, "revealedDamage", "any"],
@@ -495,6 +524,21 @@ const TextParse = (() => {
       if (extra.subjectAtt) { const wf = filt(m[0].replace(/^when your /i, "").replace(/ is attacked$/i, "")); if (wf) ab.whenFilter = wf; }
       if (extra.subjectVC) { const wf = filt(m[0].replace(/^when your /i, "").replace(/'?s attack hits.*$/i, "")) || {}; ab.whenFilter = wf; ab.conds.push({ type: "unit", who: "attacker", filter: { ...wf } }); }
       if (extra.nameSubject) ab.whenFilter = { nameExact: m[extra.nameSubject] };
+      if (extra.allyPlaced) {
+        const subj = ((m[2] || "") + " " + (/^[<"]/.test(m[3] || "") ? m[3] : "") + (m[4] || "")).replace(/\s+/g, " ").trim();
+        const wf = subj ? filt(subj) : null;
+        if (wf && Object.keys(wf).length) ab.whenFilter = wf;
+        if (/^"/.test(m[3] || "")) ab.whenFilter = { ...(ab.whenFilter || {}), nameExact: m[3].replace(/"/g, "") };
+        if (m[1]) ab.whenFilter = { ...(ab.whenFilter || {}), other: true };
+        if (m[8]) ab.whenColumn = true;
+        if (m[7]) ab.whenFrom = { deck: "deck", drop: "drop", "drop zone": "drop", soul: "soul", hand: "hand", "bind zone": "bind" }[m[7].toLowerCase()];
+      }
+      if (extra.column) ab.whenColumn = true;
+      if (extra.byVC) { const vf = extra.byVC !== true && m[extra.byVC] ? filt("with " + m[extra.byVC] + " in its card name") : null; ab.whenByVC = vf && Object.keys(vf).length ? vf : true; }
+      if (extra.min) ab.whenMin = toNum(m[extra.min]);
+      if (extra.byCard && m[extra.byCard]) ab.whenByCard = filt(m[extra.byCard]) || {};
+      if (extra.subjectOther) ab.whenFilter = { ...(ab.whenFilter || {}), other: true };
+      if (extra.subjectText && m[extra.subjectText]) { const wf = filt(m[extra.subjectText]); if (wf && Object.keys(wf).length) ab.whenFilter = { ...(ab.whenFilter || {}), ...wf }; }
       if (extra.subjectPlacedVC) {
         const who = String(m[1] || m[2] || "").replace(/original card name/i, "card name").replace(/^"([^"]+)"$/, 'unit named "$1"').trim();
         const wf = filt(who.replace(/^(other )/i, ""));
@@ -881,6 +925,10 @@ const TextParse = (() => {
         if (!zone && tm.zoneHint) ab.zone = tm.zoneHint;
         if (tm.whenFrom) ab.whenFrom = tm.whenFrom;
         if (tm.whenFilter) ab.whenFilter = tm.whenFilter;
+        for (const k of ["whenColumn", "whenByVC", "whenMin", "whenByCard"]) if (tm[k]) ab[k] = tm[k];
+        // "when …, during your (opponent's) turn," inside the timing clause
+        if (/during your opponent'?s turn/i.test(tm.clause)) ab.conds.push({ type: "oppTurn" });
+        else if (/during your turn/i.test(tm.clause)) ab.conds.push({ type: "myTurn" });
         ab.conds.push(...tm.conds);
         rest = tm.rest;
       } else { ab.when = "attack"; unread.push("timing: " + rest.split(",")[0]); }
