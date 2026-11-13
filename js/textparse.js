@@ -293,6 +293,9 @@ const TextParse = (() => {
     const sg = text.match(/while (?:you are )?paying the cost (?:for|of) \[?stride\]?,? this card gets grade \+(\d)/i);
     if (sg) out.strideGrade = +sg[1];
     if (/this card cannot be ridden/i.test(text)) out.cantBeRidden = true;
+    // Arms: "Right Deity Arms - "Sealed Blaze Maiden, Bavsargra"", "Arms - "X"" (the vanguard it attaches to)
+    const armsM = text.match(/(?:(?:right|left) deity )?arms\s*[-–－]\s*"([^"]+)"/i);
+    if (armsM) { out.arms = true; out.armsName = armsM[1].trim(); }
     const rf = text.match(/this card can only be ridden from (?:a |an )?(grade \d )?(?:card |unit )?(?:with "([^"]+)" in its card name|named "([^"]+)")/i);
     if (rf) out.rideFrom = { ...(rf[1] ? { gmin: +rf[1].match(/\d/)[0], gmax: +rf[1].match(/\d/)[0] } : {}), ...(rf[2] ? { name: rf[2] } : { nameExact: rf[3] }) };
     const onlyN = text.match(/you may only have (one|two|three|four|\d+) "([^"]+)" in (?:a|your) deck/i);
@@ -675,6 +678,10 @@ const TextParse = (() => {
     if ((m = t.match(/if "([^"]+)" is in your (soul|drop|hand|damage zone|bind zone|order zone)/i))) add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if it is your battle phase/i.test(t)) add({ type: "battlePhase" });
     if (/if this unit is (?:at )?\[rest\]/i.test(t)) add({ type: "unit", who: "self", filter: { restState: "rest" } });
+    // Arms on your vanguard: "if your (VC) has two or more Arms", "if you have two or more Arms on your (VC)", "if your vanguard is Armed (with two or more cards)"
+    if ((m = t.match(rx(`if (?:your \\(VC\\) has|you have) ${N} or more arms(?: on your \\(VC\\))?`))) || (m = t.match(rx(`if (?:your vanguard|this unit) is armed with ${N} or more cards`))))
+      add({ type: "count", what: "myArms", op: "ge", n: toNum(m[1]) });
+    else if (/if your \(VC\) has an arms|if your vanguard is armed(?! with)/i.test(t)) add({ type: "count", what: "myArms", op: "ge", n: 1 });
     // markers
     if ((m = t.match(/if (?:this unit is on an? \(RC\) with an?|this unit'?s circle has an?|there is an?) ([A-Za-z ]+?) marker(?: on this unit'?s circle)?(?=,|$)/i)))
       add({ type: "markers", name: m[1].trim(), where: "self", op: "ge", n: 1 });
@@ -1278,7 +1285,9 @@ const TextParse = (() => {
     if (isOrder) {
       // trigger orders: "Play Effect (…) - …" is the order's own text
       const body = lines.filter((l) => !KEYWORD_LINE.test(l) && !/^\[(auto|act|cont)\]/i.test(l) && !ADD_EFF.test(l))
-        .map((l) => l.replace(/^play effect\s*(?:\([^)]*\))?\s*[-–－]\s*/i, "")).join(" ");
+        .map((l) => l.replace(/^play effect\s*(?:\([^)]*\))?\s*[-–－]\s*/i, "")
+          // the Arms keyword at the start ("Right Deity Arms - "X"", "<Dragon World> Arms - Vanguard") is a card field, not effect text
+          .replace(/^(?:<[^>]+>\s*)?(?:(?:right|left) deity )?arms\s*[-–－]\s*(?:"[^"]+"|vanguard)\s*/i, "")).filter((l) => l.trim()).join(" ");
       const blitz = /blitz order/i.test(text);
       if (body) out.push(ability(body, blitz ? "BLITZ" : "ORDER", extraAbs));
     }

@@ -239,6 +239,7 @@ const Game = (() => {
       case "imprisoned": return m((p.orderZone || []).filter((c) => c.imprisoned !== undefined));
       case "myCrest": return m(p.crest);
       case "myLocked": return rcOf(pi).filter((k) => p.slots[k] && p.slots[k].locked).length;
+      case "myArms": return m(p.slots.vc.arms || []); // Arms attached to your vanguard
       case "oppLocked": return rcOf(1 - pi).filter((k) => o.slots[k] && o.slots[k].locked).length;
       case "oppFrontRC": return units(o, frontOf(1 - pi).filter((k) => k !== "vc"));
       case "lastCount": return ctx.last ? ctx.last.count : 0;
