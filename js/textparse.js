@@ -672,6 +672,9 @@ const TextParse = (() => {
     if ((m = t.match(rx(`if you have ${N} rear-guards$`)))) add({ type: "count", what: "myRC", op: "ge", n: toNum(m[1]) });
     if ((m = t.match(/if "([^"]+)" is in your (soul|drop|hand|damage zone|bind zone|order zone)/i))) add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if it is your battle phase/i.test(t)) add({ type: "battlePhase" });
+    // "if this unit was placed by riding from "X" this turn", "if your vanguard was placed this turn by riding from a grade 3"
+    if ((m = t.match(/if (?:this unit|your vanguard) was placed (?:this turn )?by riding from (?:a |an )?(.+?)(?: this turn)?(?=,|$)/i)))
+      add({ type: "rodeFrom", filter: /^"[^"]+"$/.test(m[1].trim()) ? { nameExact: m[1].trim().replace(/"/g, "") } : filt(m[1]) || {} });
     if (/if it is your main phase/i.test(t)) add({ type: "mainPhase" });
     if (!out.some((c) => c.type === "count") && (m = t.match(/if you have an? (?:card|unit) with "([^"]+)" in its card name in your (soul|drop zone|drop|hand|damage zone|bind zone|order zone)/i)))
       add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { name: m[1] } });
@@ -788,6 +791,9 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
     if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
+    // "get an Imaginary Gift:Force, put that marker on your (VC)", "you get two Imaginary Gift:Accel"
+    if ((m = t.match(/^(?:you )?get (an?|one|two|three) imaginary gifts*:?s*(force|accel|protect)/i))) return Array.from({ length: toNum(m[1]) }, () => ({ type: "gift", kind: m[2].toLowerCase() }));
+    if (/^put (that|the) marker on your (VC)$/i.test(t)) return [];
     if ((m = t.match(/^deal (one|two|three|d+) damage(?: to (?:your opponent|that unit|it|the vanguard))?$/i))) return [{ type: "dealDamage", n: toNum(m[1]), who: "opp" }];
     if (/^choose (one of )?your opponent'?s vanguards?$/i.test(t)) { ctx.last = { target: "oppVc" }; ctx.lastUsed = false; return []; }
     if (/^return this (unit|card) to (your|the) deck$/i.test(t)) return [{ type: "move", from: "self", to: "deck" }];
@@ -1018,8 +1024,13 @@ const TextParse = (() => {
     let condText = "";
     if (m) {
       condText = rest.slice(0, m.index);
-      const r = costsIn(m[1]); ab.costs.push(...r.costs); unread.push(...r.unread.map((u) => "cost: " + u));
+      const r = costsIn(m[1]);
       rest = rest.slice(m.index + m[0].length);
+      // "[COST][Counter-Blast 1] or [Energy-Blast 3]": pay either one
+      const alt = rest.match(/^\s*or \[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?/i);
+      const r2 = alt ? costsIn(alt[1]) : null;
+      if (alt && r.costs.length && r2.costs.length && !r.unread.length && !r2.unread.length) { ab.costs.push({ type: "oneOf", options: [r.costs, r2.costs] }); rest = rest.slice(alt[0].length); }
+      else { ab.costs.push(...r.costs); unread.push(...r.unread.map((u) => "cost: " + u)); }
     }
     // conditions: only the "if …," clauses that come before the first effect apply to the whole ability
     const cl = clauses(rest.replace(/^\s*[,!.]\s*/, "").replace(/^play this with\s*[,!]?\s*/i, ""));

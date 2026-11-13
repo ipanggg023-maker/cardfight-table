@@ -389,6 +389,7 @@ const Game = (() => {
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
       case "world": return String(c.text || "").toLowerCase().split("|").map((x) => x.trim()).includes((p.world || "").toLowerCase()); // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
+      case "rodeFrom": { const vs = p.slots.vc; return vs.rodeTurn === S.turn && !!vs.rodeFrom && match(vs.rodeFrom, c.filter, { pi }); } // your vanguard was placed this turn by riding from …
       case "onRC": return !!ctx.key && ctx.key !== "vc" && rcOf(pi).includes(ctx.key);
       case "gradeVs": { const a = +p.slots.vc.card.grade, b = +P(1 - pi).slots.vc.card.grade; return ({ lt: a < b, le: a <= b, eq: a === b, ge: a >= b, gt: a > b })[c.op || "lt"]; }
       case "orderZone": return (p.orderZone || []).length >= n;
@@ -451,6 +452,7 @@ const Game = (() => {
       case "retireSelf": case "selfToSoul": return selfThere(pi, ctx) && ctx.key !== "vc";
       case "retireRC": return rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key && match(p.slots[k].card, c.filter, { pi, ctx })).length >= n;
       case "discardGrades": return handGrades(p.hand) >= n; // discard cards whose grades total N or more
+      case "oneOf": return (c.options || []).some((opt) => opt.every((x) => canPay(pi, x, ctx))); // "[Counter-Blast 1] or [Energy-Blast 3]"
       case "dropToTop": { const max = c.maxTrig === "" || c.maxTrig === undefined ? n : +c.maxTrig; return p.drop.length >= n && p.drop.filter((x) => !x.trigger).length + Math.min(max, p.drop.filter((x) => x.trigger).length) >= n; }
       default: return true;
     }
@@ -462,6 +464,13 @@ const Game = (() => {
         const up = p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx }));
         const picked = c.filter && up.length > n ? await chooseCards(pi, `Counter-Blast ${n}: choose face-up damage cards`, up, n, n) : up.slice(0, n);
         picked.forEach((d) => (d.down = true));
+        break;
+      }
+      case "oneOf": {
+        const ok = (c.options || []).filter((opt) => opt.every((x) => canPay(pi, x, ctx)));
+        let pick = ok[0];
+        if (ok.length > 1) { const [id] = await choose(pi, "Pay which cost?", ok.map((opt, i) => ({ id: "c" + i, label: opt.map((x) => (SCHEMA.costs[x.type] ? SCHEMA.costs[x.type].text(x) : x.type)).join(" & ") })), 1, 1); pick = ok[+String(id).slice(1)] || ok[0]; }
+        for (const x of pick || []) await pay(pi, x, ctx);
         break;
       }
       case "discardGrades": {
@@ -1358,6 +1367,7 @@ const Game = (() => {
     if (vs.arms && vs.arms.length && card.name !== old.name) { p.drop.push(...vs.arms); vs.arms = []; } // arms follow only a same-name ride (CR 17.7)
     p.soul.push(old);
     p.slots.vc.card = card;
+    vs.rodeFrom = old; vs.rodeTurn = S.turn; // "if this unit was placed by riding from "X" this turn"
     if (!opts.effect) S.rode = true;
     if (opts.effect) vs.rest = opts.stand ? false : vs.rest; // "ride it as [Stand]"
     log(`${p.name} rides ${card.name} (G${card.grade})${opts.effect ? " by an effect" : ""}`);
