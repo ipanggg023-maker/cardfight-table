@@ -164,6 +164,7 @@ const Game = (() => {
     for (let i = 0; i < n; i++) {
       if (!p.deck.length) return lose(pi, "deck is empty");
       p.hand.push(p.deck.pop());
+      collectAll(pi, "drew", { subject: p.hand[p.hand.length - 1] }); // "when you draw a card"
     }
   }
   const faceUp = (p) => p.damage.filter((c) => !c.down).length;
@@ -564,7 +565,7 @@ const Game = (() => {
   // choose, then the other player; abilities triggered meanwhile join the queue.
   let depth = 0, inCheck = false, qN = 0;
   // events about a card that just changed place: its printed zone is where it was, so the zone isn't checked
-  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed", "boundFromRC", "rcToDeck"]);
+  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed", "boundFromRC", "rcToDeck", "replacedBy"]);
   function collect(pi, key, event, extra = {}) {
     if (over()) return;
     const list = extra.card ? ownAbilities(extra.card) : key ? abilitiesAt(pi, key) : [];
@@ -664,7 +665,7 @@ const Game = (() => {
   // from = where the card came from ("hand", "deck", "drop", "soul", "bind", "damage"…), for "when placed from hand" etc.
   async function place(pi, card, key, from = "") {
     const p = P(pi);
-    if (p.slots[key]) { log(`${p.slots[key].card.name} was replaced and retired`); retireBy(pi, key, null); }
+    if (p.slots[key]) { const oldC = p.slots[key].card; collect(pi, null, "replacedBy", { card: oldC, zone: "RC", subject: card, placedKey: key }); log(`${oldC.name} was replaced and retired`); retireBy(pi, key, null); }
     p.slots[key] = slot(card);
     log(`${p.name} calls ${card.name}${from === "token" ? " (token)" : from && from !== "hand" ? " from the " + from : ""}`);
     // Harmony (CR 14.33): when your other unit is placed in the same column as a Harmony unit, both are in harmony until end of turn
@@ -884,7 +885,7 @@ const Game = (() => {
       if (fromRC && e.to === "hand") { collect(side, null, "returnedHand", { card: c, zone: "RC", subject: c }); collectAll(side, "allyReturnedHand", { subject: c, byPi: pi, byKey: ctx.key }); }
       if (fromRC && e.to === "soul") soulEvent(side, c, "RC");
       else if (e.to === "soul") soulEvent(side, c, fromName);
-      if (fromRC && (e.to === "deckTop" || e.to === "deckBottom")) collect(side, null, "rcToDeck", { card: c, zone: "RC", subject: c });
+      if (fromRC && (e.to === "deckTop" || e.to === "deckBottom")) { collect(side, null, "rcToDeck", { card: c, zone: "RC", subject: c }); if (side !== pi) collectAll(pi, "oppToDeck", { subject: c, byPi: pi, byKey: ctx.key, byCard: ctx.card }); }
       if (fromRC && e.to === "bind") { collect(side, null, "boundFromRC", { card: c, zone: "RC", subject: c, byPi: pi, byKey: ctx.key }); collectAll(1 - side, "oppBound", { subject: c, byPi: pi, byKey: ctx.key }); }
       if (e.from === "soul" && e.to === "drop") collect(side, null, "soulToDrop", { card: c, zone: "soul", subject: c });
       if (e.to === "drop" && (e.from === "hand" || e.from === "oppHand")) discarded(side, c);
@@ -892,7 +893,13 @@ const Game = (() => {
     if (!picked.length) log(`Move: no card (${zn(e.from)} → ${zn(e.to)})`);
     return { count: picked.length, cards: picked };
   }
+  // units chosen by an effect also fire "when this unit is chosen by the ability of …" (event chosenBy)
   async function pickUnits(pi, e, ctx) {
+    const us = await pickUnitsRaw(pi, e, ctx);
+    if (/^choose/.test(e.target || "")) for (const u of us) { const sl = P(u.pi).slots[u.key]; if (sl) collect(u.pi, u.key, "chosenBy", { byPi: pi, byKey: ctx.key, byCard: ctx.card, subject: sl.card }); }
+    return us;
+  }
+  async function pickUnitsRaw(pi, e, ctx) {
     const n = +e.n || 1, f = e.filter, o = 1 - pi, env = { pi, ctx };
     const self = selfThere(pi, ctx) ? [{ pi, key: ctx.key }] : [];
     const label = `${SCHEMA.effects[e.type].label}${e.amount ? " " + e.amount : ""}: ${TARGETS[e.target] || ""}`;
@@ -1371,6 +1378,7 @@ const Game = (() => {
       await callAnywhere(pi, old, "soul");
     }
     collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc", subject: card, from });
+    collect(pi, null, "replacedBy", { card: old, zone: "VC", subject: card, placedKey: "vc" }); // "when your other unit is placed on this unit's circle"
     collect(pi, "vc", "placedVC", { from, subject: card });
     collect(pi, "vc", "placed", { from, subject: card });
     collectAll(pi, "allyPlacedVC", { from, subject: card }); // "when your (grade 3) vanguard is placed"

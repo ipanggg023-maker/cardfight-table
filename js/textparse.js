@@ -393,6 +393,14 @@ const TextParse = (() => {
   // ---------- timings ----------
   // [regex, event, zone hint, extra {conds, whenFilter, whenFrom}]
   const EVENTS = [
+    // round 4: chosen by an ability, drawing, replaced on its circle, opponent's rear-guard into the deck
+    [/when this unit is chosen by (?:the )?(?:ability|effect) of your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?)/i, "chosenBy", null, { byVCText: 1 }],
+    [/when this unit is chosen by your vanguard'?s (?:ability|effect)/i, "chosenBy", null, { byVC: true }],
+    [/when this unit is chosen by (?:the )?(?:ability|effect) of your ((?:grade \d or (?:greater|less) )?(?:card|unit)s?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?)/i, "chosenBy", null, { byCard: 1 }],
+    [/when you draw a card/i, "drew", null],
+    [/when your other unit is placed on this unit'?s circle/i, "replacedBy", null],
+    [/when your opponent'?s rear-guard is put into (?:his or her|their) deck(?: (?:due to|by) (?:an effect from )?(?:one of )?your (?:other )?cards?)?/i, "oppToDeck", null],
+    [/when (?:this unit|it) (?:\[stand\]|stands) by the (?:ability|effect) of your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?)/i, "stood", null, { byVCText: 1 }],
     // round 2 (official list): columns, stands, discards, soul, binds, locks, Soul-Blast at once, order zone
     [/when your other (?:unit|rear-guard)s? (?:is|are) placed (?:on (?:an? )?\(RC\) )?in the same column as this unit/i, "allyPlacedRC", null, { column: true }],
     [/when your other (rear-guard|unit) in the same column as this unit is placed/i, "allyPlacedRC", null, { column: true }],
@@ -537,6 +545,8 @@ const TextParse = (() => {
       if (extra.column) ab.whenColumn = true;
       if (extra.byVC) { const vf = extra.byVC !== true && m[extra.byVC] ? filt("with " + m[extra.byVC] + " in its card name") : null; ab.whenByVC = vf && Object.keys(vf).length ? vf : true; }
       if (extra.min) ab.whenMin = toNum(m[extra.min]);
+      // "by the ability of your grade 3 or greater vanguard with "X" in its card name": a filter on your vanguard
+      if (extra.byVCText) { const vf = filt(m[extra.byVCText].replace(/vanguard/i, "")) || {}; ab.whenByVC = Object.keys(vf).length ? vf : true; }
       if (extra.byCard && m[extra.byCard]) ab.whenByCard = filt(m[extra.byCard]) || {};
       if (extra.subjectOther) ab.whenFilter = { ...(ab.whenFilter || {}), other: true };
       if (extra.subjectText && m[extra.subjectText]) { const wf = filt(m[extra.subjectText]); if (wf && Object.keys(wf).length) ab.whenFilter = { ...(ab.whenFilter || {}), ...wf }; }

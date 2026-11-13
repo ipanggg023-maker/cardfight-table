@@ -113,6 +113,10 @@ const SCHEMA = {
     allyReturnedHand: "When your rear-guard is returned to hand",
     rcToDeck: "When this unit is put into your deck from (RC)",
     cardToOrderZone: "When a card is put into your order zone",
+    chosenBy: "When this unit is chosen by an ability (by your vanguard / a named card)",
+    drew: "When you draw a card",
+    replacedBy: "When your other unit is placed on this unit's circle",
+    oppToDeck: "When your opponent's rear-guard is put into his or her deck (by your card)",
   },
   // events that are about another card: the AUTO ability may filter it ("when your grade 3 rear-guard is placed…")
   eventSubject: { allyHit: "the attacking unit", allyAttacked: "the attacked unit", placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
