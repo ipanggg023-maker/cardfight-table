@@ -99,12 +99,16 @@ const RESTRICT_RULES = { banned: "Restricted (banned)", 1: "Restricted to 1", 2:
 // ---------- deck check ----------
 // deck: {format, ride:[ids G0..G3] (ride-deck formats), starter: id (other formats), energy, main:[50 ids]}
 // Returns a list of problems (empty = legal).
+// tokens, tickets and crests are made by effects; they can't be put in a deck (CR 15.4–15.7)
+const notForDecks = (c) => !!(c && (c.token || c.ticket || c.type === "crest"));
 function validateDeck(deck, byId) {
   const F = FORMATS[formatOf(deck)], errs = [];
   const main = deck.main.map((id) => byId[id]).filter(Boolean);
   const missing = deck.main.length - main.length;
   if (missing) errs.push(`${missing} card(s) in this deck were deleted`);
   let ride = [], extra = [];
+  const made = [...main, ...(deck.ride || []).map((id) => byId[id]), ...(deck.g || []).map((id) => byId[id])].filter(notForDecks);
+  if (made.length) errs.push(`Tokens, tickets and crests can't be in a deck: ${[...new Set(made.map((c) => c.name))].join(", ")}`);
   if (F.rideDeck) {
     ride = (deck.ride || []).map((id) => byId[id]);
     if (ride.length !== 4 || ride.some((c) => !c)) errs.push("Ride deck needs 4 units (grade 0–3)");

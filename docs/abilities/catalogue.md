@@ -7,7 +7,7 @@ Each row is one pattern that appears in card text: a kind of ability, where it w
 a cost, a condition, an effect or a keyword. "Cards" = how many unique cards use it at least once.
 "Engine" = whether the ability blocks in `js/schema.js` + `js/engine.js` can build it today.
 
-**Cards that only use ✅ patterns today: 10,986 (73.7%).**
+**Cards that only use ✅ patterns today: 12,839 (86.1%).**
 Everything else needs at least one 🟡/❌ pattern (or the ✋ Manual block). The plan to close the gap is in
 `docs/abilities/PLAN.md`.
 
@@ -123,7 +123,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Counts: hand / soul / drop / damage / rear-guards ≥ N | 1088 | 190 | 254 | 116 | 389 | 139 | ✅ yes | bind zone, face-up damage, opponent counts missing | Harmonics Messiah; Dragonic Overlord the End; Dueling Dragon King, ZANGEKI |
 | If your opponent's vanguard is grade N+ | 662 | 81 | 13 | 153 | 242 | 173 | ✅ yes |  | Holy Great Sage of Black Shadows, Isabelle; Barcgal; Maiden of Irradiate |
 | Number of face-up G cards | 564 | 62 | 450 | 19 | 23 | 10 | ✅ yes |  | Untainted Holy Damsel, Green Katrina; Supremacy Dragon, Claret Sword Dragon; Chronojet Dragon |
-| Same column / column of this unit | 559 | 59 | 144 | 85 | 192 | 79 | ❌ no |  | Gunburst Linebacker; Aegir-roll Dragon; Maiden of Irradiate |
+| Same column / column of this unit | 559 | 59 | 144 | 85 | 192 | 79 | ✅ yes |  | Gunburst Linebacker; Aegir-roll Dragon; Maiden of Irradiate |
 | If you have a <clan>/<nation> vanguard or unit | 545 | 473 | 26 | 6 | 15 | 25 | ✅ yes | clan/nation filters in conditions | Gear Goat of Aperture Leaping; Scale Dragon of the Magma Cave; Guardian of the Skies, Night Griffon |
 | Opponent's counts (their damage, hand, rear-guards) | 264 | 37 | 67 | 73 | 69 | 18 | ✅ yes |  | Demon World Marquis, Amon; Dragon Knight, Barkil; Star-vader, Chaos Breaker Dragon |
 | If your vanguard is in Legion | 208 | 161 | 44 | 1 |  | 2 | ✅ yes |  | Seeker, Light Saver Dragon; Holy Edge Celestial, Malchidael; Onmyo Stealth Rogue, Seimei |
@@ -131,7 +131,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | If you have a heart card with … | 176 | 4 | 136 | 5 | 12 | 19 | ❌ no |  | Duo Absolute Sister, Meer; Rain Element, Madew; Snow Element, Valancher |
 | If your order zone has N+ / a set order | 155 | 1 |  |  | 80 | 74 | ✅ yes |  | Kanone Schnellkrieger; Butterfly Diagram Repeater; Result of the Experiment Henceforth |
 | If you persona rode this turn | 134 |  |  |  | 79 | 55 | ✅ yes |  | Spiral Cutie Angel; Everspring Hunter, Emerence; Stealth Fiend, Kawasohime |
-| If this unit's / your vanguard's power is N+ | 115 | 17 | 50 | 24 | 22 | 2 | ❌ no |  | Luster Impact Dragon; Dragon Undead, Malefic Dragon; Label Pangolin |
+| If this unit's / your vanguard's power is N+ | 115 | 17 | 50 | 24 | 22 | 2 | ✅ yes |  | Luster Impact Dragon; Dragon Undead, Malefic Dragon; Label Pangolin |
 | If it is the Nth battle | 86 | 35 | 21 | 23 | 7 |  | ✅ yes |  | Couple Dagger Sailor; Light Elemental, Honoly; Light Signals Penguin Soldier |
 | If this unit is boosted / rested / in a state | 53 | 6 | 31 | 5 | 10 | 1 | ✅ yes |  | Aegir-roll Dragon; Admired Sparkle, Spica; Brisk Medical, Iruel |
 | If you are in Dark Night / Abyssal Dark Night | 50 |  |  |  | 47 | 3 | ✅ yes |  | Cardinal Principle, Cagula; Eclipsed Moonlight; Cardinal Fang, Raphilogg |
@@ -174,10 +174,10 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Drive +/− | 329 | 9 | 51 | 69 | 144 | 56 | ✅ yes |  | Dragonic Overlord the End; Demon World Marquis, Amon; Relation Weaver, Petralka |
 | Your opponent chooses (and retires/discards) | 312 | 30 | 128 | 64 | 76 | 14 | ✅ yes | the other player makes the choice | Stealth Fiend, Kurobane Tengu; Demon World Marquis, Amon; Security Upgrader |
 | Opponent cannot call (grade N / sentinels) to GC / RC | 271 | 12 | 63 | 84 | 76 | 36 | ✅ yes |  | Dead Armor Dragon; Chronojet Dragon; Fleet Swallower |
-| Markers (Protect, Force, Accel, crests, counters) | 265 | 12 | 1 | 88 | 118 | 46 | 🟡 partly |  | Quaking Heavenly Dragon, Astraios Dragon; Dragontree of Ecliptic Decimation, Griphogila; Energy Generator |
+| Markers (Protect, Force, Accel, crests, counters) | 265 | 12 | 1 | 88 | 118 | 46 | ✅ yes |  | Quaking Heavenly Dragon, Astraios Dragon; Dragontree of Ecliptic Decimation, Griphogila; Energy Generator |
 | Put a card into the drop (mill / from soul) | 263 | 39 | 82 | 69 | 55 | 18 | ✅ yes |  | Holy Great Sage of Black Shadows, Isabelle; Mage of Entwined Roots, Amergin; Giant Deity of Distant World, Valkerion |
 | Ride by an effect (from deck / drop / soul / hand) | 263 | 41 | 36 | 45 | 95 | 46 | ✅ yes | Superior Ride | Chronojet Dragon; Seeker, Thing Saver Dragon; Dragheart, Luard |
-| Call tokens (Plant / Shadow Army / Hollow…) | 261 | 9 | 25 | 72 | 109 | 46 | ❌ no | tokens | Untainted Holy Damsel, Green Katrina; Sunlight Garden's Guide; Stealth Dragon, Gengan |
+| Call tokens (Plant / Shadow Army / Hollow…) | 261 | 9 | 25 | 72 | 109 | 46 | ✅ yes | tokens | Untainted Holy Damsel, Green Katrina; Sunlight Garden's Guide; Stealth Dragon, Gengan |
 | Call from the drop zone | 234 | 13 | 25 | 39 | 104 | 53 | ✅ yes |  | Knight of Occult, Golmark; Pirate Swordsman, Colombard; Spiritual Body Condensation |
 | Call from the soul | 226 | 33 | 47 | 45 | 67 | 34 | ✅ yes |  | King of Masks, Dantarian; Master of Gravity, Baromagnes; One Who Governs Chaos |
 | Lock / unlock | 223 | 59 | 83 | 27 | 38 | 16 | ✅ yes |  | Harmonics Messiah; Star-vader, Chaos Breaker Dragon; Prelude of Genesis |
@@ -185,9 +185,9 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Power − to opponent's units | 157 | 53 | 34 | 24 | 35 | 11 | ✅ yes |  | Explosive! Melting Heart!; Invasion Monster, Azuzuradon; Fleeting Shine That Lights Life |
 | Deal damage / put cards into the damage zone | 150 | 48 | 40 | 23 | 38 | 1 | 🟡 partly |  | Incise Angel; Knight of Instant Slash, Greete; Prescription Angel |
 | Move a rear-guard to another circle / swap | 137 | 15 | 42 | 26 | 37 | 17 | ❌ no | move by effect | Zeroth Dragon of Distant Sea, Megiddo; Dragontree of Ecliptic Decimation, Griphogila; Empyrean Blue Dragon, Shelling Cannon Dragon |
-| Tickets / Quick Shield / crest-like markers | 133 | 3 |  | 93 | 25 | 12 | ❌ no | tickets | Barcgal; Harmonics Messiah; Persona Shield |
+| Tickets / Quick Shield / crest-like markers | 133 | 3 |  | 93 | 25 | 12 | ✅ yes | tickets | Barcgal; Harmonics Messiah; Persona Shield |
 | Cannot guard with … / guard restrictions | 120 | 10 | 55 | 17 | 34 | 4 | ✅ yes |  | Chronojet Dragon; Evil Eye of Prohibition, Quen Lu; Thunder Elemental, Gororo |
-| States: Mental Pollution, Harmony, Melody, Pleasure… | 85 | 3 | 52 | 21 | 2 | 7 | ❌ no | named states | Wonder Frill, Nanoka; Dreaming Step, Shizuku; Superb New Student, Shizuku |
+| States: Mental Pollution, Harmony, Melody, Pleasure… | 85 | 3 | 52 | 21 | 2 | 7 | ✅ yes | named states | Wonder Frill, Nanoka; Dreaming Step, Shizuku; Superb New Student, Shizuku |
 | Resist (cannot be chosen by opponent's effects) | 72 | 5 | 61 |  | 5 | 1 | ✅ yes |  | Dark Metal Chameleon; Dark Element, Dizmel; Lady Skylark |
 | Energy (generate, check, use) | 68 | 3 |  |  | 12 | 53 | ✅ yes |  | Energy Generator; Construct Golem; Blitz Sales, Stil |
 | Extra attacks / attack from the back row | 67 |  | 16 | 5 | 23 | 23 | ❌ no |  | Empyrean Blue Dragon, Shelling Cannon Dragon; Phantasmic Stealth Fiend, Megalonozuchi; Dragritter of Flame Blade, Grhy |
@@ -211,27 +211,27 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Sentinel (perfect guard) | 652 | 71 | 149 | 182 | 183 | 67 | ✅ yes |  | Elementaria Sanctitude; Maiden of Blossom Rain; Steam Guard, Kastilia |
 | Boost / Intercept / Twin Drive skill icons | 643 | 302 | 286 | 15 | 29 | 11 | ✅ yes |  | Elementaria Sanctitude; Diabolos Madonna, Mabel; Time Stamping Dragon |
 | G Guardian | 330 | 16 | 147 | 78 | 72 | 17 | ✅ yes |  | Light Element, Agleam; Metal Element, Scryew; Dark Element, Dizmel |
-| Forerunner | 291 | 95 | 191 | 2 | 3 |  | ❌ no |  | Chrono Dran G; Red Pulse Dracokid; Wingal Liberator |
-| Set order / Prison / World / Song | 287 | 4 |  | 1 | 201 | 81 | 🟡 partly | Prison and Song subtypes missing | Kanone Schnellkrieger; Explosive! Melting Heart!; Flash Scissors Monster, Scissors Bar |
+| Forerunner | 291 | 95 | 191 | 2 | 3 |  | ✅ yes |  | Chrono Dran G; Red Pulse Dracokid; Wingal Liberator |
+| Set order / Prison / World / Song | 287 | 4 |  | 1 | 201 | 81 | ✅ yes | Prison and Song subtypes missing | Kanone Schnellkrieger; Explosive! Melting Heart!; Flash Scissors Monster, Scissors Bar |
 | Legion / Seek Mate | 208 | 161 | 44 | 1 |  | 2 | ✅ yes |  | Seeker, Light Saver Dragon; Holy Edge Celestial, Malchidael; Onmyo Stealth Rogue, Seimei |
 | Lock (Link Joker) | 166 | 49 | 57 | 13 | 38 | 9 | ✅ yes |  | Star-vader, Chaos Breaker Dragon; Dragonic Overlord "The Яe-birth"; Prelude of Genesis |
 | Lord (cannot attack without same clan) | 163 | 126 | 25 | 4 | 4 | 4 | ✅ yes |  | Knight of Old Fate, Cordiela; Pentagonal Magus; Binary Star Twin Gunner |
 | Imaginary Gift (Force/Accel/Protect) | 160 | 11 | 19 | 72 | 54 | 4 | ✅ yes |  | Quaking Heavenly Dragon, Astraios Dragon; Perfect Performance, Ange; Seeker, Thing Saver Dragon |
-| Glitter (Bermuda) | 152 | 1 |  |  | 129 | 22 | ❌ no |  | Fountain of Knowledge, Eva; Result of the Experiment Henceforth; Shutter Chance, Ilse |
-| overDress / XoverDress / RevolDress / DressBoost | 87 | 2 |  |  | 77 | 8 | 🟡 partly | RevolDress and DressBoost missing | Vairina Exspecta; Trickmoon; Prayers That Will Reach Someday |
-| Melody / Harmony / Happy Toys / Oversized / Völundr / ExplosiveGrowth | 85 |  |  | 19 | 35 | 31 | ❌ no | D-era keyword skills | The Close Pair Under the Moonlit Night; Live in Utopia, Luka; 5 Together, Sonata |
+| Glitter (Bermuda) | 152 | 1 |  |  | 129 | 22 | ✅ yes |  | Fountain of Knowledge, Eva; Result of the Experiment Henceforth; Shutter Chance, Ilse |
+| overDress / XoverDress / RevolDress / DressBoost | 87 | 2 |  |  | 77 | 8 | ✅ yes | RevolDress and DressBoost missing | Vairina Exspecta; Trickmoon; Prayers That Will Reach Someday |
+| Melody / Harmony / Happy Toys / Oversized / Völundr / ExplosiveGrowth | 85 |  |  | 19 | 35 | 31 | ✅ yes | D-era keyword skills | The Close Pair Under the Moonlit Night; Live in Utopia, Luka; 5 Together, Sonata |
 | Persona Ride | 84 |  |  |  | 56 | 28 | ✅ yes |  | Oath of Vengeance, Thegrea; Masque of Hydragrum; Everspring Hunter, Emerence |
 | Over trigger (+100M, its own text) | 75 | 1 |  | 2 | 42 | 30 | ✅ yes |  | Dragontree of Ecliptic Decimation, Griphogila; CARDFIGHT!! VANGUARD overDress; Spiritual King of Determination, Olbaria |
-| Crests (Energy Generator and others) | 67 | 3 | 1 |  | 41 | 22 | 🟡 partly | only Energy Generator | Energy Generator; Footprints Marking Passage of Time; Prelude of Genesis |
+| Crests (Energy Generator and others) | 67 | 3 | 1 |  | 41 | 22 | ✅ yes | only Energy Generator | Energy Generator; Footprints Marking Passage of Time; Prelude of Genesis |
 | Arms (left/right) | 66 |  |  |  | 51 | 15 | ✅ yes |  | Sealed Blaze Dragon, Samahdi; Blaze Maiden, Cindi; Resourceful Mechanic, Winston |
 | Blitz order | 53 |  |  | 1 | 22 | 30 | ✅ yes |  | Pure Fragrance Maiden, Lexy; Effervescent Shadow Dream Blade; Prepared for the Heat, Siana |
 | Regalis Piece | 49 |  |  |  | 17 | 32 | ✅ yes |  | Union the Sky; Cardinal Fang, Raphilogg; Days of Training, Lascaria |
-| Mate unit / ExtraDeck-like ('cannot be in your main deck') | 36 | 3 | 17 |  | 8 | 8 | 🟡 partly |  | Heat Elemental, Magum; Golden Dragon, Rising Shine Dragon; Holy Dragon, Religious Soul Saver |
+| Mate unit / ExtraDeck-like ('cannot be in your main deck') | 36 | 3 | 17 |  | 8 | 8 | ✅ yes |  | Heat Elemental, Magum; Golden Dragon, Rising Shine Dragon; Holy Dragon, Religious Soul Saver |
 | Alchemagic | 25 |  |  |  | 22 | 3 | ✅ yes |  | Fleet Swallower; Cursed Souls Squirming in Agony; Mysterious Rain Spiritualist, Zorga |
 | Front trigger | 25 |  |  | 15 | 10 |  | ✅ yes |  | Wandering Starhulk Deity, Brandt Ringer; Fighting Fist Dragon, God Hand Dragon; Fusing Striker |
 | Ace Unit | 6 |  |  |  |  | 6 | ✅ yes |  | Dragritter, Miqdard; Depravity Funeral Judgment, Valack; Veirmeil Exordia |
 | Break Ride | 5 |  | 5 |  |  |  | ✅ yes |  | Neumond Blaukluger; Brand-New-PR♥ISM, Glister Emeral; Spade Jack of Nightmareland |
-| Cross Ride / Cross Break Ride | 0 |  |  |  |  |  | ❌ no |  |  |
+| Cross Ride / Cross Break Ride | 0 |  |  |  |  |  | ✅ yes |  |  |
 | Trigger order | 0 |  |  |  |  |  | ❌ no |  |  |
 | Stand trigger | 0 |  |  |  |  |  | ✅ yes |  |  |
 

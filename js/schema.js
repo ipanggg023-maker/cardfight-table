@@ -18,6 +18,9 @@ const TARGETS = {
   chooseOppRC: "choose opponent's rear-guard(s)",
   chooseOppFrontRC: "choose opponent's front row rear-guard(s)",
   chooseOppUnit: "choose opponent's unit(s)",
+  myColumn: "your other units in this unit's column",
+  oppColumn: "opponent's units in this unit's column",
+  chooseOppColumn: "choose opponent's unit(s) in this unit's column",
 };
 const CONT_TARGETS = ["self", "vc", "allFront", "allFrontRC", "allMyRC", "allMyUnits"];
 
@@ -37,7 +40,7 @@ const SCHEMA = {
   // replacement events (kind REPL) and where the card goes instead
   replEvents: { wouldBeRetired: "If this unit would be retired", wouldBeRetiredByOpp: "If this unit would be retired by your opponent (effect or attack)", wouldLeaveGC: "If this card would be put into the drop from (GC)" },
   insteadTo: { stay: "it stays (nothing happens)", soul: "put it into your soul", hand: "return it to your hand", deckTop: "put it on top of your deck", deckBottom: "put it on the bottom of your deck", bind: "bind it", removed: "remove it from the game" },
-  zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", hand: "Hand", drop: "Drop", soul: "Soul", damage: "Damage zone (face up)", bind: "Bind zone", G: "G zone (face up)", any: "Anywhere" },
+  zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", hand: "Hand", drop: "Drop", soul: "Soul", damage: "Damage zone (face up)", bind: "Bind zone", G: "G zone (face up)", crest: "Crest zone", any: "Anywhere" },
   events: {
     placedVC: "When placed on VC (ridden)",
     riddenUpon: "When this unit is ridden upon",
@@ -111,6 +114,8 @@ const SCHEMA = {
       text: (p) => `${SCHEMA.paramOptions.who[p.who || "vc"]} is ${flt(p.filter)}` },
     wentFirst: { label: "You went first", params: [], text: () => "you went first" },
     wentSecond: { label: "You went second", params: [], text: () => "you went second" },
+    power: { label: "Power: a unit's [Power] is N or more (Success, \"if this unit's power is…\")", params: [["who", "powWho", "unit"], ["op", "op", "is"], ["n", "num"]],
+      text: (p) => `${SCHEMA.paramOptions.powWho[p.who || "self"]}'s [Power] is ${OPS[p.op || "ge"]} ${p.n}` },
     ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
   },
@@ -154,6 +159,13 @@ const SCHEMA = {
     grant: { label: "★ Give an ability (gets [AUTO]…): gives ability number N of this card",
       params: [["ability", "num", "ability number on this card"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"]],
       text: (p) => `${tgt(p)} get(s) ability ${p.ability || "?"} ${dur(p)}` },
+    token: { label: "★ Call token(s) (Plant, Shadow Army…: a library card with Token ticked)", params: [["name", "text", "token card name"], ["n", "num", "how many"], ["where", "tokenWhere", "to"]],
+      text: (p) => `call ${p.n || 1} "${p.name || "?"}" token(s) to ${p.where === "empty" ? "open (RC)" : "(RC)"}` },
+    ticket: { label: "★ Put ticket(s) into hand (Quick Shield, Persona Shield…: a library card with Ticket ticked)", params: [["name", "text", "ticket card name"], ["n", "num", "how many"], ["who", "side", "to"]],
+      text: (p) => `put ${p.n || 1} "${p.name || "?"}" ticket(s) into ${p.who === "opp" ? "your opponent's" : "your"} hand` },
+    crest: { label: "★ Get a crest (a library card with type Crest; its abilities work in the crest zone)", params: [["name", "text", "crest card name"]], text: (p) => `put the crest "${p.name || "?"}" into your crest zone` },
+    setState: { label: "★ Put units into a named state (Mental Pollution, engorged, successful…)", params: [["name", "text", "state name"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"]],
+      text: (p) => `${tgt(p)} become(s) [${p.name || "?"}] state ${dur(p)}` },
     rideBy: { label: "★ Ride by an effect (Superior Ride: from deck / drop / soul / hand / ride deck / this card)",
       params: [["from", "rideFrom", "ride a card from"], ["filter", "filter"], ["upTo", "bool", "may choose none"], ["stand", "bool", "ride it as [Stand]"]],
       text: (p) => `ride ${p.from === "self" ? "this card" : `${flt(p.filter)} from your ${SCHEMA.paramOptions.rideFrom[p.from || "deck"]}`}${p.stand ? " as [Stand]" : ""}` },
@@ -182,6 +194,8 @@ const SCHEMA = {
       cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantStand: "does not stand" },
     prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard" },
     side: { opp: "your opponent", me: "you" },
+    tokenWhere: { any: "a (RC) you choose", empty: "an open (RC)" },
+    powWho: { self: "this unit", vc: "your vanguard", anyRC: "one of your rear-guards", anyUnit: "one of your units", oppVc: "opponent's vanguard" },
     rideFrom: { deck: "deck", drop: "drop", soul: "soul", hand: "hand", rideDeck: "ride deck", bind: "bind zone", self: "this card itself" },
     from: { deck: "deck", drop: "drop", soul: "soul" },
     dest: { hand: "hand", RC: "RC (call)", soul: "soul" },
@@ -191,7 +205,8 @@ const SCHEMA = {
       myBind: "your bind zone", myDeck: "your deck", myGUp: "your face-up G cards", myOrderZone: "your order zone", myRC: "your rear-guards", myFrontRC: "your front row rear-guards",
       myBackRC: "your back row rear-guards", myUnits: "your units", myRested: "your rested rear-guards", myEnergy: "your energy",
       oppHand: "opponent's hand", oppSoul: "opponent's soul", oppDrop: "opponent's drop", oppDamage: "opponent's damage zone", oppBind: "opponent's bind zone",
-      oppRC: "opponent's rear-guards", oppUnits: "opponent's units", battleNo: "this turn's battles (this is the Nth)", lastCount: "cards the step before handled", lastMatch: "cards the step before handled (matching)" },
+      oppRC: "opponent's rear-guards", oppUnits: "opponent's units",
+      myColumn: "your other units in this unit's column", oppColumn: "opponent's units in this unit's column", imprisoned: "opponent's cards in your Prison", myCrest: "your crest zone", battleNo: "this turn's battles (this is the Nth)", lastCount: "cards the step before handled", lastMatch: "cards the step before handled (matching)" },
     op: { ge: "≥ (or more)", le: "≤ (or less)", eq: "= (exactly)", gt: "> (more than)", lt: "< (less than)" },
     who: { vc: "your vanguard", self: "this unit", oppVc: "opponent's vanguard", attacker: "the attacking unit", attacked: "the attacked unit" },
     mfrom: { self: "this card itself", hand: "your hand", deck: "your deck (search)", deckTop: "the top of your deck (look at N)", drop: "your drop", soul: "your soul",
@@ -200,7 +215,7 @@ const SCHEMA = {
       oppHand: "opponent's hand", oppDeckTop: "the top of opponent's deck", oppDrop: "opponent's drop", oppSoul: "opponent's soul", oppDamage: "opponent's damage zone",
       oppRC: "opponent's rear-guards", oppFrontRC: "opponent's front row rear-guards" },
     mto: { hand: "hand", RC: "RC (call)", soul: "soul", drop: "drop (discard / retire)", deckTop: "top of the deck", deckBottom: "bottom of the deck", bind: "bind zone",
-      damageUp: "damage zone (face up)", damageDown: "damage zone (face down)", removed: "removed from the game", orderZone: "order zone" },
+      damageUp: "damage zone (face up)", damageDown: "damage zone (face down)", removed: "removed from the game", orderZone: "order zone", prison: "your Prison (imprison)" },
     chooser: { me: "you choose", opp: "your opponent chooses" },
     lookRest: { shuffle: "shuffle the rest into the deck", bottom: "the rest on the bottom", top: "the rest back on top", drop: "the rest into the drop", soul: "the rest into the soul" },
     trig: { "": "any", none: "not a trigger", any: "any trigger", crit: "critical", front: "front", draw: "draw", heal: "heal", over: "over", stand: "stand" },
@@ -246,6 +261,8 @@ function flt(f, short) {
   if (f.sameNameVC) bits.push("with your vanguard's name");
   if (f.gradeVC) bits.push("grade " + SCHEMA.paramOptions.gradeVC[f.gradeVC]);
   if (f.other) bits.push("other than this card");
+  if (f.state) bits.push(`in [${f.state}] state`);
+  if (f.restState) bits.push(f.restState === "rest" ? "rested" : "standing");
   if (!bits.length) return short ? "" : "card(s)";
   return short ? ", " + bits.join(", ") : bits.join(" ") + " card(s)";
 }

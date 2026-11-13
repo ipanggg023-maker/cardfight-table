@@ -151,7 +151,7 @@ function renderCard() {
     </details>
     <div class="fgrid">
       <label>Name ${txt("name", c.name)}</label>
-      <label>Card type ${sel("type", { unit: "Normal unit", trigger: "Trigger unit", order: "Order", g: "G unit (grade 4)" }, c.type)}</label>
+      <label>Card type ${sel("type", { unit: "Normal unit", trigger: "Trigger unit", order: "Order", g: "G unit (grade 4)", crest: "Crest (made by effects)" }, c.type)}</label>
       ${c.type === "g" ? `<label>G unit kind ${sel("gKind", { stride: "Stride (vanguard)", guardian: "G guardian (guard step)" }, c.gKind || "stride")}</label>` : ""}
       <label>Grade ${num("grade", c.grade)}</label>
       <label>Power ${num("power", c.power)}</label>
@@ -177,6 +177,12 @@ function renderCard() {
       <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
       <label class="chk" title="Your opponent's effects can't choose this unit"><input type="checkbox" data-path="resist" ${c.resist ? "checked" : ""}> Resist</label>
       <label class="chk" title="Can't attack while you have a unit of another clan / nation"><input type="checkbox" data-path="lord" ${c.lord ? "checked" : ""}> Lord</label>
+      <label class="chk" title="When a unit of the same clan rides this unit, you may call it from the soul to (RC)"><input type="checkbox" data-path="forerunner" ${c.forerunner ? "checked" : ""}> Forerunner</label>
+      <label class="chk" title="When your other unit is placed in this unit's column, both are in harmony until end of turn"><input type="checkbox" data-path="harmony" ${c.harmony ? "checked" : ""}> Harmony</label>
+      <label class="chk" title="This card can't be called (from hand or by effects)"><input type="checkbox" data-path="cantBeCalled" ${c.cantBeCalled ? "checked" : ""}> Can't be called</label>
+      <label class="chk" title="Made by effects only (Plant, Shadow Army…): exists only on circles, can't be in a deck"><input type="checkbox" data-path="token" ${c.token ? "checked" : ""}> Token</label>
+      <label class="chk" title="Made by effects only (Quick Shield…): exists only in hand / order zone, can't be in a deck"><input type="checkbox" data-path="ticket" ${c.ticket ? "checked" : ""}> Ticket</label>
+      ${c.type === "order" ? `<label class="chk" title="Music set order: goes to the drop at the end of the turn"><input type="checkbox" data-path="music" ${c.music ? "checked" : ""}> Music</label>` : ""}
       ${c.type === "order" ? `<label class="chk"><input type="checkbox" data-path="setOrder" ${c.setOrder ? "checked" : ""}> Set order (stays in the order zone)</label>
         <label class="chk"><input type="checkbox" data-path="alchemagic" ${c.alchemagic ? "checked" : ""}> Alchemagic (may add a normal order from your drop)</label>
         <label class="chk"><input type="checkbox" data-path="arms" ${c.arms ? "checked" : ""}> Arms (attaches to your vanguard)</label>` : ""}
@@ -291,6 +297,8 @@ function rowHTML(path, row, lib, contOnly) {
       case "prule": return lab(sel(p, SCHEMA.paramOptions.prule, v || "cantGuard"));
       case "side": return lab(sel(p, SCHEMA.paramOptions.side, v || "opp"));
       case "rideFrom": return lab(sel(p, SCHEMA.paramOptions.rideFrom, v || "deck"));
+      case "tokenWhere": return lab(sel(p, SCHEMA.paramOptions.tokenWhere, v || "any"));
+      case "powWho": return lab(sel(p, SCHEMA.paramOptions.powWho, v || "self"));
       case "mfrom": return lab(sel(p, SCHEMA.paramOptions.mfrom, v || "drop"));
       case "mto": return lab(sel(p, SCHEMA.paramOptions.mto, v || "hand"));
       case "chooser": return lab(sel(p, SCHEMA.paramOptions.chooser, v || "me"));
@@ -314,7 +322,7 @@ function rowHTML(path, row, lib, contOnly) {
 // path helpers
 // Card filter form (Ability Language v2): grade, name, type + more (clan/nation, trigger, exact name, vs your vanguard, other than this card)
 function filterHTML(p, f, title) {
-  const more = f.clan || f.trig || f.nameExact || f.sentinel || f.sameNameVC || f.gradeVC || f.other;
+  const more = f.clan || f.trig || f.nameExact || f.sentinel || f.sameNameVC || f.gradeVC || f.other || f.state || f.restState;
   return `<div class="flt">${title ? `<span class="ftitle">${esc(title)}:</span>` : ""}<label>min grade ${num(p + ".gmin", f.gmin)}</label><label>max grade ${num(p + ".gmax", f.gmax)}</label>
     <label>name has ${txt(p + ".name", f.name)}</label><label>type ${sel(p + ".ctype", SCHEMA.paramOptions.ctype, f.ctype || "any")}</label>
     <details class="fmore" ${more ? "open" : ""}><summary>more</summary>
@@ -325,6 +333,8 @@ function filterHTML(p, f, title) {
       <label>sentinel ${sel(p + ".sentinel", { "": "any", yes: "sentinels only", no: "not sentinels" }, f.sentinel || "")}</label>
       <label class="chk"><input type="checkbox" data-path="${p}.sameNameVC" ${f.sameNameVC ? "checked" : ""}> same name as your vanguard</label>
       <label class="chk"><input type="checkbox" data-path="${p}.other" ${f.other ? "checked" : ""}> other than this card</label>
+      <label>in state (units) ${txt(p + ".state", f.state, "e.g. harmony")}</label>
+      <label>rested? (units) ${sel(p + ".restState", { "": "any", rest: "rested", stand: "standing" }, f.restState || "")}</label>
     </details></div>`;
 }
 function getParent(obj, path) {
@@ -382,6 +392,9 @@ function defaultRow(type) {
   if (type === "playerRule") Object.assign(r, { who: "opp", what: "cantGuard" });
   if (type === "grant") r.ability = 2;
   if (type === "rideBy") Object.assign(r, { from: "deck" });
+  if (type === "token") Object.assign(r, { name: "Plant", where: "any" });
+  if (type === "ticket") Object.assign(r, { name: "Quick Shield", who: "me" });
+  if (type === "power" && SCHEMA.conds.power && !r.amount) Object.assign(r, { who: "self", op: "ge", n: 20000 });
   if (["draw", "CC", "SC", "EC", "power", "crit"].includes(type)) delete r.per;
   return r;
 }

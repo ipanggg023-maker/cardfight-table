@@ -74,6 +74,8 @@ Built in steps, each one tested on real cards in the test table and with a full 
 
 ## Phase 3: Keywords and era mechanics
 
+Done 2026-11-13: tokens, tickets, crests (library cards), Forerunner, Harmony, named states, columns, power conditions (Success), Prison, Music, cannot be called, keyword templates. Census: 86.1%. Not yet: trigger orders, Attach/Alchemix, grade change / "regarded as", copy abilities, extra attacks, original power changes (crest text), Song.
+
 Forerunner, Lord, Glitter, Ritual, Harmony/Melody and the other D-era keyword skills (Happy Toys, Oversized!, Völundr,
 ExplosiveGrowth, Rewrite, OverSoul), RevolDress / DressBoost, Prison/Song set orders, named states (Mental Pollution…),
 **tokens** (Plant, Shadow Army, Hollow…), **tickets** (Quick Shield…), more **crests** (Standard stride crests such as

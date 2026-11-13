@@ -17,12 +17,6 @@ const CardCheck = (() => {
   // Covered since Ability Language v2 step 1–3: for each, if you did, choose one of the following, top/bottom of deck,
   // moves from drop/soul/bind, opponent chooses, went first/second, battle number (Move cards, counts, onlyIf, chooseOpts).
   const GAPS = [
-    [/same column|this unit's column/, "columns"],
-    [/\btoken\b|\bplant\b|shadow army|\bhollow\b/, "tokens"],
-    [/ticket|quick shield/, "tickets"],
-    [/\bforerunner\b/, "Forerunner"],
-    [/\bglitter\b/, "Glitter"],
-    [/\[[a-z ]+ state\]|mental pollution|\bharmony\b|\bmelody\b/, "named states"],
     [/grade \+\d|is (also )?regarded as/, "grade change / regarded as"],
     [/deal \d+ damage|into (your|their|your opponent's) damage zone/, "deal damage"],
     [/heart card|heart with/, "heart conditions"],
@@ -55,6 +49,9 @@ const CardCheck = (() => {
     if (/^(boost|intercept|twin drive|triple drive)\b/.test(l)) return { ok: "skill icon" };
     if (/^\[?resist\]?/.test(l)) return c.resist ? { ok: "Resist box" } : { warn: "Tick “Resist”" };
     if (/^lord\b/.test(l)) return c.lord ? { ok: "Lord box" } : { warn: "Tick “Lord”" };
+    if (/^forerunner\b/.test(l)) return c.forerunner ? { ok: "Forerunner box" } : { warn: "Tick “Forerunner”" };
+    if (/^harmony\b|^\[harmony\]/.test(l)) return c.harmony ? { ok: "Harmony box" } : { warn: "Tick “Harmony”" };
+    if (/this card cannot be called/.test(l)) return c.cantBeCalled ? { ok: "Can't be called box" } : { warn: "Tick “Can't be called”" };
     return null;
   }
   const kindOf = (l, c) => {

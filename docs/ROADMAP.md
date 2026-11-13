@@ -10,6 +10,7 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Card library import (CGS GitHub data, 21k cards), tcgapi.dev import (needs key + relay)
 - Local pictures: `vanguard_images` (Edit.py) + "Link pictures" folder matcher
 - Playmats per player (Classic / overDress Red / Blue / custom upload), DD2-style HUD, phase banner
+- Phase 3 keywords: tokens, tickets, crests, Forerunner, Harmony, named states, columns, Success power condition, Prison, Music, cannot be called, keyword templates (2026-11-13)
 - Ability Language v2 steps 6–7: replacement abilities (would be retired / leave the GC → instead), Superior Ride by an effect, ride source + "when X rides this unit" (2026-11-13)
 - Ability Language v2 step 5: retired / discarded / boosted / guard step / no hit / drive & damage check reveals / opponent places / order played / put into soul timings, "placed from" and "the card it is about" filters, abilities in hand / drop / soul / damage / bind / G zone, same-name 1/Turn, Ritual (2026-11-13)
 - Ability Language v2 step 4: until end of opponent's / next turn, restrictions, player rules (GC / RC / intercept / guard with 2+), Resist, Lord, granted abilities (2026-11-13)

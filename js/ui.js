@@ -172,7 +172,7 @@ async function startHosted() {
   const mats = [Mats.resolve(1, Mats.choice(1)), ui.guest.mat || { key: "classic", img: "" }];
   Object.assign(ui, { online: { seat: 0 }, mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   $("#setup").hidden = true;
-  Net.startHosted(names, [deck, ui.guest.deck], mats, [(() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })(), ui.guest.uid || null]);
+  Net.startHosted(names, [deck, ui.guest.deck], mats, [(() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })(), ui.guest.uid || null], await DB.extras());
   const loading = loadingTable("Shuffling decks…");
   render();
   await loading;
@@ -212,7 +212,7 @@ async function startGame() {
     ui.hotseat = $("#hotseat").checked;
     ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
     const fp = $("#firstP").value;
-    Game.newGame([$("#n1").value.trim() || "Player 1", $("#n2").value.trim() || "Player 2"], decks, { first: fp === "" ? null : +fp });
+    Game.newGame([$("#n1").value.trim() || "Player 1", $("#n2").value.trim() || "Player 2"], decks, { first: fp === "" ? null : +fp, extras: await DB.extras() });
     toast(`${Game.state().players[Game.state().first].name} goes first`);
     Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
     $("#setup").hidden = true;
@@ -370,7 +370,7 @@ function renderSide(root, pi, side) {
     : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
   setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
     <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.orderZone || []).length ? chip("Orders", p.orderZone.length, "oz", "orderZone") : ""}${p.world ? chip("World", esc(p.world), "world") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
+      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.orderZone || []).length ? chip("Orders", p.orderZone.length, "oz", "orderZone") : ""}${p.world ? chip("World", esc(p.world), "world") : ""}${(p.crest || []).length ? chip("Crest", p.crest.length, "crest", "crest") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
   setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
   const topDrop = p.drop[p.drop.length - 1];
   if (topDrop) seen.set(topDrop.uid, topDrop);
@@ -804,7 +804,7 @@ async function startTest(id) {
   ui.test = { card };
   ui.hotseat = false;
   ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
-  Game.newGame(["Tester", "Dummy"], [testDeck(card), testDeck(null)], { first: 0 });
+  Game.newGame(["Tester", "Dummy"], [testDeck(card), testDeck(null)], { first: 0, extras: await DB.extras() });
   Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
   await Game.mulligan([]);
   await Game.mulligan([]);

@@ -57,6 +57,7 @@ const Game = (() => {
       gDeck: (deck.g || []).map(inst), gUp: [], vcGradeAtStart: 0, // G zone: face down / face up (CR 4.14)
       giftType: "", giftVariant: {}, marks: {}, accel: [], legionUsed: [], // imaginary gifts, Legion
       orderZone: [], world: "", regalisUsed: 0, divineUsed: false, uniqueUsed: false, // D era: set orders, World, once-per-game skills
+      crest: [], // crest zone (CR 4.18): crests from effects (Chronojet Dragon…); Energy Generator stays as useEnergy
       slots: { vc: slot(first), fl: null, fr: null, bl: null, bc: null, br: null },
       driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
       orderTurn: -1, egTurn: -1, // turn number of the last order played / Energy Generator draw (1 each per turn)
@@ -65,6 +66,7 @@ const Game = (() => {
     return p;
   }
   // opts.first: 0 / 1 = that player goes first; anything else = random (CR 8.2.1.6)
+  // opts.extras: token / ticket / crest cards from the library (effects create copies of them by name)
   function newGame(names, decks, opts = {}) {
     uidN = 0;
     resume = null;
@@ -75,6 +77,7 @@ const Game = (() => {
       rode: false, battle: null, winner: null, pending: null, busy: false,
       log: [], reveal: [], used: new Set(), usedGame: new Set(),
       queue: [], loss: [null, null], // waiting AUTO abilities; pending losses (decided at check timing)
+      extras: Object.fromEntries((opts.extras || []).map((c) => [String(c.name).toLowerCase(), c])),
     };
     depth = 0; inCheck = false; qN = 0;
     log(`Game start! ${P(first).name} goes first (draws on turn 1 but can't attack)`);
@@ -141,6 +144,11 @@ const Game = (() => {
     if (!S || over()) return;
     // the Protect gift card only exists in the hand or on the guardian circle (CR 15.3)
     S.players.forEach((p) => ["drop", "soul", "bind", "damage", "removed", "deck"].forEach((z) => { if (p[z].some((c) => c.protect)) p[z] = p[z].filter((c) => !c.protect); }));
+    // tokens only exist on circles, tickets only in the hand / order zone (CR 15.4, 15.5): anywhere else they cease to exist
+    S.players.forEach((p) => {
+      ["drop", "soul", "bind", "damage", "removed", "deck", "hand", "orderZone", "gUp"].forEach((z) => { if ((p[z] || []).some((c) => c.token)) p[z] = p[z].filter((c) => !c.token); });
+      ["drop", "soul", "bind", "damage", "removed", "deck"].forEach((z) => { if (p[z].some((c) => c.ticket)) p[z] = p[z].filter((c) => !c.ticket); });
+    });
     S.players.forEach((p, pi) => { if (p.damage.length >= 6 && !S.loss[pi]) S.loss[pi] = "6 damage"; });
     const [a, b] = S.loss;
     if (!a && !b) return;
@@ -193,7 +201,8 @@ const Game = (() => {
   function countOf(pi, what, f, ctx = {}) {
     const p = P(pi), o = P(1 - pi), env = { pi, ctx };
     const m = (list) => (list || []).filter((c) => match(c, f, env)).length;
-    const units = (q, keys) => keys.filter((k) => q.slots[k] && !q.slots[k].locked && match(q.slots[k].card, f, env)).length;
+    const units = (q, keys) => keys.filter((k) => q.slots[k] && !q.slots[k].locked && match(q.slots[k].card, f, env) && slotOK(q === p ? pi : 1 - pi, k, f)).length;
+    const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
       case "mySoul": return m(p.soul);
@@ -219,6 +228,10 @@ const Game = (() => {
       case "oppRC": return units(o, rcOf(1 - pi));
       case "oppUnits": return units(o, unitsOf(1 - pi));
       case "battleNo": return S.battleNo || 0;
+      case "myColumn": return col ? units(p, unitsOf(pi).filter((k) => COL[k] === col && k !== ctx.key)) : 0;
+      case "oppColumn": return col ? units(o, unitsOf(1 - pi).filter((k) => COL[k] === MIRROR[col])) : 0;
+      case "imprisoned": return m((p.orderZone || []).filter((c) => c.imprisoned !== undefined));
+      case "myCrest": return m(p.crest);
       case "lastCount": return ctx.last ? ctx.last.count : 0;
       case "lastMatch": return (ctx.last && ctx.last.cards ? ctx.last.cards : []).filter((c) => match(c, f, env)).length;
       default: return 0;
@@ -229,9 +242,23 @@ const Game = (() => {
   const zoneOf = (key) => (key === "vc" ? "VC" : "RC");
   const zoneOK = (abZone, zone) => !abZone || abZone === "any" || abZone === zone || (abZone === "VC/RC" && (zone === "VC" || zone === "RC"));
   // card zones that hold abilities of their own (CR 11.1.4): [AUTO](Hand), [ACT](Drop), [CONT](G zone)…
-  const CARD_ZONES = { hand: "hand", drop: "drop", soul: "soul", damage: "damage", bind: "bind", G: "gUp" };
+  const CARD_ZONES = { hand: "hand", drop: "drop", soul: "soul", damage: "damage", bind: "bind", G: "gUp", crest: "crest" };
+  // column of a circle; the opponent's facing column is mirrored (your left faces their right)
+  const COL = { fl: "L", bl: "L", vc: "C", bc: "C", fr: "R", br: "R" };
+  const MIRROR = { L: "R", C: "C", R: "L" };
+  // named states on units ("in harmony", "[Mental Pollution] state"…): slot.mods {stat: "state", name}
+  const hasState = (pi, key, name) => !!name && ((P(pi).slots[key] || {}).mods || []).some((m) => m.stat === "state" && m.name.toLowerCase() === String(name).toLowerCase());
+  // unit-only filter parts: state, rested / standing
+  function slotOK(pi, key, f) {
+    const sl = P(pi).slots[key];
+    if (!sl || !f) return !!sl;
+    if (f.state && !hasState(pi, key, f.state)) return false;
+    if (f.restState === "rest" && !sl.rest) return false;
+    if (f.restState === "stand" && sl.rest) return false;
+    return true;
+  }
   // locked cards are not units with information (CR 7.30), so effects never pick them as units
-  const unitsAt = (pi, keys, f, env = {}) => keys.filter((k) => P(pi).slots[k] && !P(pi).slots[k].locked && match(P(pi).slots[k].card, f, env)).map((key) => ({ pi, key }));
+  const unitsAt = (pi, keys, f, env = {}) => keys.filter((k) => P(pi).slots[k] && !P(pi).slots[k].locked && match(P(pi).slots[k].card, f, env) && slotOK(pi, k, f)).map((key) => ({ pi, key }));
 
   // ---------- power (incl. CONT abilities) ----------
   function contTargets(pi, t, k) {
@@ -372,9 +399,14 @@ const Game = (() => {
       case "count": return cmp(countOf(pi, c.what || "mySoul", c.filter, ctx), c.op || "ge", n);
       case "unit": { // a unit (your vanguard, this unit, the opponent's vanguard, the attacker / attacked unit) matches a filter
         const at = (q, k) => (q && q.slots[k] ? q.slots[k].card : null);
-        const card = { vc: at(p, "vc"), self: ctx.key ? at(p, ctx.key) : ctx.card, oppVc: at(o, "vc"),
-          attacker: S.battle ? at(P(S.active), S.battle.att) : null, attacked: S.battle ? at(P(1 - S.active), S.battle.tgt) : null }[c.who || "vc"];
-        return !!card && match(card, c.filter, { pi, ctx });
+        const where = { vc: [pi, "vc"], self: [pi, ctx.key], oppVc: [1 - pi, "vc"], attacker: S.battle ? [S.active, S.battle.att] : null, attacked: S.battle ? [1 - S.active, S.battle.tgt] : null }[c.who || "vc"];
+        const card = where && where[1] ? at(P(where[0]), where[1]) : c.who === "self" ? ctx.card : null;
+        return !!card && match(card, c.filter, { pi, ctx }) && (!where || !where[1] || slotOK(where[0], where[1], c.filter));
+      }
+      case "power": { // "if this unit's / your vanguard's [Power] is N or greater", "if you have a rear-guard with 20000+" (Success)
+        const keys = { self: ctx.key ? [ctx.key] : [], vc: ["vc"], anyRC: rcOf(pi), anyUnit: unitsOf(pi), oppVc: null }[c.who || "self"];
+        if (c.who === "oppVc") return cmp(power(1 - pi, "vc"), c.op || "ge", n);
+        return (keys || []).some((k) => p.slots[k] && cmp(power(pi, k), c.op || "ge", n));
       }
       case "wentFirst": return S.first === pi;
       case "ritual": return p.drop.filter((x) => x.grade === 1 && x.type !== "order").length >= n; // Ritual N (CR 14.37)
@@ -567,7 +599,15 @@ const Game = (() => {
     const p = P(pi);
     if (p.slots[key]) { log(`${p.slots[key].card.name} was replaced and retired`); retireBy(pi, key, null); }
     p.slots[key] = slot(card);
-    log(`${p.name} calls ${card.name}${from && from !== "hand" ? " from the " + from : ""}`);
+    log(`${p.name} calls ${card.name}${from === "token" ? " (token)" : from && from !== "hand" ? " from the " + from : ""}`);
+    // Harmony (CR 14.33): when your other unit is placed in the same column as a Harmony unit, both are in harmony until end of turn
+    for (const k of unitsOf(pi)) {
+      const sl = p.slots[k];
+      if (k !== key && sl && COL[k] && COL[k] === COL[key] && sl.card.harmony) {
+        for (const kk of [k, key]) if (!hasState(pi, kk, "harmony")) addMod(pi, kk, { stat: "state", name: "harmony", until: S.turn });
+        log(`♪ ${sl.card.name} and ${card.name} are in harmony`);
+      }
+    }
     collect(pi, key, "placedRC", { from, subject: card });
     for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key, from, subject: card });
     collectZones(pi, "allyPlacedRC", { placedKey: key, from, subject: card });
@@ -575,6 +615,7 @@ const Game = (() => {
     await settle();
   }
   async function callAnywhere(pi, card, from = "") {
+    if (card.cantBeCalled) { log(`${card.name} can't be called; it goes to the drop`); P(pi).drop.push(card); return; }
     const opts = rcOf(pi).map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
     const [key] = await choose(pi, `Call ${card.name} to which circle?`, opts, 1, 1);
     await place(pi, card, key, from);
@@ -702,6 +743,7 @@ const Game = (() => {
       case "damageUp": c.down = false; q.damage.push(c); break;
       case "damageDown": c.down = true; q.damage.push(c); break;
       case "orderZone": q.orderZone.push(c); break;
+      case "prison": c.imprisoned = side; P(actor).orderZone.push(c); log(`⛓ ${c.name} is imprisoned`); break;
       case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from); break;
       default: q.drop.push(c);
     }
@@ -781,6 +823,10 @@ const Game = (() => {
       case "chooseOppRC": return chooseUnits(pi, label, unitsAt(o, rcOf(o), f, env), n);
       case "chooseOppFrontRC": return chooseUnits(pi, label, unitsAt(o, ["fl", "fr"], f, env), n);
       case "chooseOppUnit": return chooseUnits(pi, label, unitsAt(o, unitsOf(o), f, env), n);
+      case "myColumn": return ctx.key ? unitsAt(pi, unitsOf(pi).filter((k) => COL[k] === COL[ctx.key] && k !== ctx.key), f, env) : [];
+      case "oppColumn": return ctx.key ? unitsAt(o, unitsOf(o).filter((k) => COL[k] === MIRROR[COL[ctx.key]]), f, env) : [];
+      case "chooseOppColumn": return ctx.key ? chooseUnits(pi, label, unitsAt(o, unitsOf(o).filter((k) => COL[k] === MIRROR[COL[ctx.key]]), f, env), n) : [];
+      case "chooseMyState": return chooseUnits(pi, label, unitsAt(pi, unitsOf(pi), f, env), n);
       default: return [];
     }
   }
@@ -791,6 +837,44 @@ const Game = (() => {
     switch (e.type) {
       case "move": return moveCards(pi, e, ctx);
       case "chooseOpts": return { count: 1 }; // handled in runEffects
+      case "token": { // call token units (CR 15.4.3): copies of a token card from the library
+        const def = S.extras[String(e.name || "").toLowerCase()];
+        if (!def) { log(`Token "${e.name}" isn't in the card library (make a card with Token ticked)`); return { count: 0 }; }
+        const out = [];
+        const cnt = Math.max(1, +e.n || 1);
+        for (let i = 0; i < cnt; i++) {
+          const t = { ...inst(def), token: true };
+          const keys = e.where === "empty" ? rcOf(pi).filter((k) => !p.slots[k]) : rcOf(pi);
+          if (!keys.length) break;
+          const [k] = keys.length === 1 ? keys : await choose(pi, `Call ${t.name} (token) to which circle?`, keys.map((k) => ({ id: k, label: `${slotName(k)}${p.slots[k] ? " (replace " + p.slots[k].card.name + ")" : " (empty)"}` })), 1, 1);
+          await place(pi, t, k, "token");
+          out.push(t);
+        }
+        return { count: out.length, cards: out };
+      }
+      case "ticket": { // put ticket cards into the hand (CR 15.5): Quick Shield, Persona Shield…
+        const def = S.extras[String(e.name || "").toLowerCase()];
+        if (!def) { log(`Ticket "${e.name}" isn't in the card library (make a card with Ticket ticked)`); return { count: 0 }; }
+        const who = e.who === "opp" ? P(1 - pi) : p, out = [];
+        for (let i = 0; i < Math.max(1, +e.n || 1); i++) { const t = { ...inst(def), ticket: true }; who.hand.push(t); out.push(t); }
+        log(`🎫 ${who.name} gets ${out.length} × ${def.name}`);
+        return { count: out.length, cards: out };
+      }
+      case "crest": { // put a crest into the crest zone (CR 15.7): its abilities work there (zone "crest")
+        const def = S.extras[String(e.name || "").toLowerCase()];
+        if (!def) { log(`Crest "${e.name}" isn't in the card library (make a card with type Crest)`); return { count: 0 }; }
+        if (p.crest.some((c) => c.name === def.name)) return { count: 0 };
+        const c = inst(def);
+        p.crest.push(c);
+        log(`🔰 ${p.name} gets the crest ${c.name}`);
+        return { count: 1, cards: [c] };
+      }
+      case "setState": { // "they become [X] state", "in harmony", "engorged"…
+        const us = await pickUnits(pi, e, ctx);
+        for (const u of us) addMod(u.pi, u.key, { stat: "state", name: e.name || "?", until: untilOf(pi, e.dur || "turn"), battle: e.dur === "battle" && !!S.battle });
+        if (us.length) log(`◆ ${us.map((u) => P(u.pi).slots[u.key].card.name).join(", ")}: ${e.name} state`);
+        return { count: us.length };
+      }
       case "rideBy": { // Superior Ride: ride a card from hand / deck / drop / soul / ride deck / this card, by an effect
         const src = e.from || "deck";
         const zone = src === "rideDeck" ? p.ride : src === "self" ? null : p[src];
@@ -1145,6 +1229,13 @@ const Game = (() => {
     }
     if (card.gift) await giveGift(pi, card.gift, true); // gifts resolve before AUTOs (CR 11.6.1)
     const from = opts.from || (fromHand ? "hand" : "rideDeck");
+    // Forerunner (CR 14.6): when a unit of the same clan rides this unit, you may call it from the soul to RC
+    const clanKey = (x) => String(x.clan || x.nation || "").trim().toLowerCase();
+    if (old.forerunner && !old.token && (!clanKey(old) || clanKey(old) === clanKey(card)) && p.soul.includes(old)
+      && await yesNo(pi, `Forerunner: call ${old.name} from your soul to (RC)?`)) {
+      p.soul.splice(p.soul.indexOf(old), 1);
+      await callAnywhere(pi, old, "soul");
+    }
     collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc", subject: card, from });
     collect(pi, "vc", "placedVC", { from, subject: card });
     await settle();
@@ -1187,6 +1278,7 @@ const Game = (() => {
     if (card.type === "order") return err("Orders are played with the Play button");
     if (card.protect) return err("Protect can only be put on the guardian circle");
     if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
+    if (card.cantBeCalled) return err(`${card.name} can't be called`);
     if (ruleOn(pi, "cantCall", card)) return err(`${card.name} can't be called now`);
     p.hand.splice(p.hand.indexOf(card), 1);
     await place(pi, card, key, "hand");
@@ -1460,14 +1552,8 @@ const Game = (() => {
       case "ride": {
         const card = take(op.uid);
         if (!card) return err("Card not found");
-        const vs = p.slots.vc, old = vs.card;
-        if (vs.heart) { toGZone(p, old); p.soul.push(vs.heart); vs.heart = null; } else p.soul.push(old);
-        vs.card = card;
-        log(`🧪 ${p.name} rides ${card.name}`);
-        if (card.gift) await giveGift(pi, card.gift, true);
-        collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
-        collect(pi, "vc", "placedVC");
-        await settle();
+        log(`🧪 test ride`);
+        await doRide(pi, card, false, { effect: true, from: "test", stand: true }); // the real ride (Forerunner, gifts, ride abilities)
         break;
       }
       case "call": {
@@ -1661,6 +1747,8 @@ const Game = (() => {
     if (S.phase === "mulligan") return err("Still in mulligan");
     returnGUnits();
     endPhaseReturns(S.active);
+    // Music set orders go to the drop at the end of the turn
+    S.players.forEach((pl) => { const music = (pl.orderZone || []).filter((c) => c.music); if (music.length) { pl.orderZone = pl.orderZone.filter((c) => !c.music); pl.drop.push(...music); } });
     collectAll(S.active, "endTurn");
     collectAll(1 - S.active, "oppTurnEnd");
     await settle();

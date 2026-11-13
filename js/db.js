@@ -252,7 +252,9 @@ const DB = (() => {
     const gAllowed = typeof gDeckAllowed === "function" ? gDeckAllowed(deck) : false;
     return { name: deck.name, format, g: gAllowed ? (deck.g || []).map(get).filter(Boolean) : [], energy: rideDeck && !!deck.energy, ride: rideDeck ? (deck.ride || []).map(get) : [], starter: rideDeck ? null : get(deck.starter) || null, main: deck.main.map(get) };
   }
-  return { all, put, del, newId, removeSamples, exportAll, importAll, loadDeck, sync, flush, canEditCards: () => !me() || admin() };
+  // token / ticket / crest cards: effects create copies of them by name during a game
+  async function extras() { return (await all("cards")).filter((c) => c.token || c.ticket || c.type === "crest"); }
+  return { extras, all, put, del, newId, removeSamples, exportAll, importAll, loadDeck, sync, flush, canEditCards: () => !me() || admin() };
 })();
 
 // Deck rule checks live in js/formats.js (validateDeck), one profile per play format.

@@ -32,6 +32,16 @@ const Tools = (() => {
     ["Placed on VC: draw 1 (CB 1)", { kind: "AUTO", zone: "VC", when: "placedVC", once: "", conds: [], costs: [{ type: "CB", n: 1 }], effects: [{ type: "draw", n: 1 }] }],
     ["Your turn: +5000 if you have 3+ damage (CONT)", { kind: "CONT", zone: "VC/RC", once: "", conds: [{ type: "myTurn" }, { type: "myDamage", n: 3 }], costs: [], effects: [{ type: "power", target: "self", amount: 5000 }] }],
     ["[ACT] 1/Turn: SB 1, draw 1", { kind: "ACT", zone: "VC", once: "turn", conds: [], costs: [{ type: "SB", n: 1 }], effects: [{ type: "draw", n: 1 }] }],
+    ["Quick Shield: when ridden upon, draw 1 and get a Quick Shield ticket", { kind: "AUTO", zone: "VC", when: "riddenUpon", once: "", mandatory: true, conds: [], costs: [], effects: [{ type: "draw", n: 1 }, { type: "ticket", name: "Quick Shield", n: 1, who: "me" }] }],
+    ["Plant token: call a Plant token", { kind: "AUTO", zone: "RC", when: "placedRC", once: "", conds: [], costs: [{ type: "CB", n: 1 }], effects: [{ type: "token", name: "Plant", n: 1, where: "any" }] }],
+    ["Harmony: +5000 while in harmony (CONT)", { kind: "CONT", zone: "RC", once: "", conds: [{ type: "unit", who: "self", filter: { state: "harmony" } }], costs: [], effects: [{ type: "power", target: "self", amount: 5000 }] }],
+    ["Success N: +5000 if a rear-guard has 20000+ power (CONT)", { kind: "CONT", zone: "RC", once: "", conds: [{ type: "myTurn" }, { type: "power", who: "anyRC", op: "ge", n: 20000 }], costs: [], effects: [{ type: "power", target: "self", amount: 5000 }] }],
+    ["Engorge: when it attacks, retire your other rear-guards → engorged", { kind: "AUTO", zone: "VC/RC", when: "attack", once: "", conds: [], costs: [], effects: [{ type: "move", from: "myRC", to: "drop", n: 2, upTo: true, chooser: "me", filter: { other: true } }, { type: "setState", name: "engorged", target: "self", dur: "turn", onlyIf: "did" }] }],
+    ["Shadowstitch: when its attack on a vanguard does not hit", { kind: "AUTO", zone: "VC/RC", when: "attackNoHit", once: "", conds: [{ type: "targetVC" }], costs: [], effects: [{ type: "SC", n: 1 }] }],
+    ["Restraint: this unit cannot attack (CONT)", { kind: "CONT", zone: "RC", once: "", conds: [], costs: [], effects: [{ type: "restrict", what: "cantAttack", target: "self" }] }],
+    ["Column: +5000 if another unit is in this unit's column (Friend)", { kind: "CONT", zone: "RC", once: "", conds: [{ type: "count", what: "myColumn", op: "ge", n: 1 }], costs: [], effects: [{ type: "power", target: "self", amount: 5000 }] }],
+    ["RevolDress: at the end of its battle, ride it as [Stand] (CB 1)", { kind: "AUTO", zone: "RC", when: "battleEnd", once: "turn", conds: [], costs: [{ type: "CB", n: 1 }], effects: [{ type: "rideBy", from: "self", stand: true }] }],
+    ["Prison: imprison 1 of your opponent's rear-guards", { kind: "ORDER", once: "", conds: [], costs: [], effects: [{ type: "move", from: "oppRC", to: "prison", n: 1, chooser: "me" }] }],
     ["✋ Manual effect (type what the card does)", { kind: "AUTO", zone: "VC/RC", when: "attack", once: "", conds: [], costs: [], effects: [{ type: "manual", text: "Describe what the card does" }] }],
   ];
   let mine = null; // [{id, name, data}] from the server (admins) or localStorage (guests)

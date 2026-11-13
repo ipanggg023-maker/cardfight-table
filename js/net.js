@@ -87,11 +87,12 @@ const Net = (() => {
     }
   }
   // Called by the host's UI once both players are known.
-  function startHosted(names, decks, mats, uids = [null, null]) {
-    game = { names, decks, mats, uids };
+  function startHosted(names, decks, mats, uids = [null, null], extras = []) {
+    game = { names, decks, mats, uids, extras };
+    extras.forEach((c) => c.image && (images[c.id] = c.image));
     match = { id: newMatchId(), uids };
     decks.forEach(collectImages);
-    Game.newGame(names, decks);
+    Game.newGame(names, decks, { extras: game.extras || [] });
     pushStart();
   }
   function pushStart() {
@@ -99,7 +100,7 @@ const Net = (() => {
     pushState();
   }
   const pushState = () => { if (Game.state()) send({ t: "state", s: Game.snapshot(GUEST) }); };
-  const rematch = () => game && startHosted(game.names, game.decks, game.mats, game.uids);
+  const rematch = () => game && startHosted(game.names, game.decks, game.mats, game.uids, game.extras);
 
   // ---------- guest ----------
   async function join(roomCode, hello, cb) {
