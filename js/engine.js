@@ -1072,7 +1072,11 @@ const Game = (() => {
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } break;
       case "EC": p.energy = Math.min(10, p.energy + n); break;
-      case "heal": for (let i = 0; i < n && p.damage.length; i++) p.drop.push(p.damage.pop()); break;
+      case "heal": { // the player chooses which damage to heal (CR 11.10.2.5)
+        const hs = await chooseCards(pi, `Heal: choose ${Math.min(n, p.damage.length)} damage`, p.damage, Math.min(n, p.damage.length), Math.min(n, p.damage.length));
+        for (const h of hs) { p.damage.splice(p.damage.indexOf(h), 1); p.drop.push(h); log(`♥ ${p.name} heals ${h.name}`); }
+        break;
+      }
       case "shield": if (S.battle) S.battle.shieldBonus += amt; break;
       case "cantBeHit": if (S.battle) { S.battle.perfect = true; log("🛡 The attacked unit cannot be hit"); } break;
       case "search": {
@@ -1534,7 +1538,10 @@ const Game = (() => {
     if (S.phase !== "main") return err("Move units in the main phase");
     if (PARTNER[a] !== b) return err("Units move front/back in the same column only");
     const p = P(S.active);
+    if (!p.slots[a] && !p.slots[b]) return err("No unit to move");
+    if ((p.slots[a] && p.slots[a].locked) || (p.slots[b] && p.slots[b].locked)) return err("Locked cards can't move"); // CR 7.30
     [p.slots[a], p.slots[b]] = [p.slots[b], p.slots[a]];
+    log(`${p.name} moves ${[p.slots[a], p.slots[b]].filter(Boolean).map((s) => s.card.name).join(" and ")}`);
   });
 
   // ACT abilities of units on the field
