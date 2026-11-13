@@ -279,7 +279,7 @@ function infoPanel(c) {
     ${c.sentinel ? "<p>◆ Sentinel: discard 1 to make the attacked unit unhittable</p>" : ""}
     ${c.persona ? "<p>Persona Ride</p>" : ""}
     ${(c.abilities || []).map((a) => `<p class="abl">${esc(describeAbility(a))}</p>`).join("")}
-    ${c.text ? `<p class="muted pre">${esc(c.text)}</p>` : ""}`;
+    ${c.text ? `<p class="muted pre">${esc(c.text)}</p>` : ""}${c.notes ? `<p class="pre rnotes"><b>Rulings:</b> ${esc(c.notes)}</p>` : ""}`;
 }
 
 const SLOT_LABEL = { vc: "VC", fl: "RC", fr: "RC", bl: "RC", bc: "RC", br: "RC" };

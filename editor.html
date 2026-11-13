@@ -36,12 +36,22 @@
       <select id="qn" title="Clan / nation"></select>
       <select id="qr" title="Race"></select>
       <select id="qs" title="Status (text check)"><option value="">All statuses</option><option value="gaps">⚠ Needs work</option><option value="none">◻ No blocks yet</option><option value="manual">✋ Uses Manual</option><option value="auto">✅ Automatic</option><option value="vanilla">· No abilities</option></select>
+      <select id="qset" title="Set" hidden></select>
+      <select id="qsort" title="Order"><option value="">Order: grade</option><option value="name">Order: name</option><option value="status">Order: needs work first</option><option value="box">Order: in Store boxes first</option><option value="set">Order: set + number</option></select>
       <button id="newCard" class="go">+ New card</button>
     </div>
     <div id="cardStats" class="cstats"></div>
+    <div class="qnav">
+      <button id="prevCard" title="Previous card in this list (Alt+↑)">↑ Prev</button><button id="nextCard" title="Next card in this list (Alt+↓)">↓ Next</button>
+      <button id="boardBtn" title="Progress per set">📊 Progress</button>
+      <label class="chk" title="Pick many cards and change them together"><input type="checkbox" id="bulkMode"> Bulk edit</label>
+    </div>
+    <div id="bulkBox" class="bulkbox" hidden></div>
     <ul id="cardList" class="clist"></ul>
   </div>
   <div class="formcol" id="cardForm"></div>
+  <div id="board" class="board" hidden></div>
+  <aside id="histBox" class="histbox" hidden></aside>
 </section>
 
 <section id="tab-decks" class="tab" hidden>
@@ -167,6 +177,7 @@
 <script src="js/tcgapi.js"></script>
 <script src="js/cgs.js"></script>
 <script src="js/editor.js"></script>
+<script src="js/editor-tools.js"></script>
 <script>mountUserChip(); if (location.hash === "#decks") document.querySelector('[data-tab="decks"]').click();</script>
 </body>
 </html>

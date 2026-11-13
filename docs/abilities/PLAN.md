@@ -28,7 +28,7 @@ first trial decks → DZ-BT09). The admin enters card data; the game must be abl
 
 ## Phase 1: Admin tools for exact card work (first, because every later step is checked with them)
 
-Done 2026-11-13: 1 (status, filter, totals; per-set board still to do), 2 (text check panel), 3 (test table).
+Done 2026-11-13: all of Phase 1 (1 status + per-set board, 2 text check, 3 test table, 4 reprints, 5 templates, 6 bulk edit, 7 history + restore, 8 review queue + shortcuts, 9 rulings notes).
 
 1. **Card status everywhere.** Each card gets a status: ✅ automatic / ✋ uses Manual / ⚠ text not covered by blocks / ◻ no abilities.
    Filters in the Cards tab and a progress board (per set and per era: how many cards are done).

@@ -483,3 +483,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 .tt-card { margin: 0; }
 #testBody > * { min-width: 0; }
 #testBody select { max-width: 100%; min-width: 0; }
+
+/* rulings notes in the card detail */
+.rnotes { font-size: .78rem; color: #ffd28a; border-left: 2px solid var(--gold); padding-left: 6px; }

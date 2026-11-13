@@ -94,12 +94,20 @@ function renderList() {
   const f = { q: $("#q").value, g: $("#qg").value, n: fillPick($("#qn"), "All clans", clanOf, $("#qn").value), r: fillPick($("#qr"), "All races", "race", $("#qr").value) };
   const LIMIT = 400; // drawing thousands of rows at once stalls the page; search to narrow down
   const qs = $("#qs").value;
-  const found = cards.filter((c) => cardMatches(c, f) && (!qs || CardCheck.analyze(c).status === qs));
+  const qset = $("#qset") ? $("#qset").value : "", sort = $("#qsort") ? $("#qsort").value : "";
+  const found = cards.filter((c) => cardMatches(c, f) && (!qs || CardCheck.analyze(c).status === qs) && (!qset || Tools.setOf(c) === qset));
+  const rank = { gaps: 0, none: 1, manual: 2, auto: 3, vanilla: 4 };
+  if (sort === "name") found.sort((a, b) => a.name.localeCompare(b.name));
+  if (sort === "status") found.sort((a, b) => rank[CardCheck.analyze(a).status] - rank[CardCheck.analyze(b).status]);
+  if (sort === "box") found.sort((a, b) => Tools.inBox(b.id) - Tools.inBox(a.id) || rank[CardCheck.analyze(a).status] - rank[CardCheck.analyze(b).status]);
+  if (sort === "set") found.sort((a, b) => String(Tools.setOf(a) + " " + (a.source && a.source.number || "")).localeCompare(Tools.setOf(b) + " " + (b.source && b.source.number || ""), undefined, { numeric: true }));
+  if (typeof fillSets === "function") fillSets();
+  if (typeof renderBoard === "function") renderBoard();
   const tally = {};
   cards.forEach((c) => { const s = CardCheck.analyze(c).status; tally[s] = (tally[s] || 0) + 1; });
   setHTML($("#cardStats"), Object.entries(CardCheck.STATUS).filter(([k]) => tally[k]).map(([k, v]) => `<button data-st="${k}" class="${qs === k ? "on" : ""}" title="${v.label}">${v.icon} ${tally[k].toLocaleString()}</button>`).join(""));
   setHTML($("#cardList"), found.slice(0, LIMIT)
-    .map((c) => `<li data-id="${esc(c.id)}" class="${cur && cur.id === c.id ? "on" : ""}"><span class="st st-${CardCheck.analyze(c).status}" title="${CardCheck.STATUS[CardCheck.analyze(c).status].label}">${CardCheck.STATUS[CardCheck.analyze(c).status].icon}</span><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>${esc(c.name)}
+    .map((c) => `<li data-id="${esc(c.id)}" class="${cur && cur.id === c.id ? "on" : ""}${typeof picked !== "undefined" && picked.has(c.id) ? " picked" : ""}">${typeof Tools !== "undefined" && Tools.inBox(c.id) ? '<span class="inbox" title="In a Store box">◈</span>' : ""}<span class="st st-${CardCheck.analyze(c).status}" title="${CardCheck.STATUS[CardCheck.analyze(c).status].label}">${CardCheck.STATUS[CardCheck.analyze(c).status].icon}</span><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>${esc(c.name)}
       <span class="x">${c.type === "trigger" && !c.trigger ? "⚠" : ""}${c.trigger ? TRIG[c.trigger].icon : ""}${c.sentinel ? "◆" : ""}${(c.abilities || []).length ? "✦" + c.abilities.length : ""}</span></li>`).join("")
     || `<li class="muted">No cards</li>`) ;
   if (found.length > LIMIT) $("#cardList").insertAdjacentHTML("beforeend", `<li class="muted">… ${(found.length - LIMIT).toLocaleString()} more. Search or filter to see them.</li>`), ($("#cardList")._h = null);
@@ -134,6 +142,7 @@ function renderCard() {
   if (!c) { $("#cardForm").innerHTML = `<p class="muted">Pick a card on the left or create a new one.</p>`; return; }
   $("#cardForm").innerHTML = `
     <h2>${esc(c.name)}</h2>
+    ${typeof cardExtrasHTML === "function" ? cardExtrasHTML(c) : ""}
     <details class="paste" ${c.abilities.length || c.text ? "" : "open"}>
       <summary>Fill from card text</summary>
       <p class="muted">Paste the card's text (stats and [AUTO]/[ACT]/[CONT] lines). Stats and abilities are filled in as a best guess. Check every purple line below, then save.</p>
@@ -183,10 +192,13 @@ function renderCard() {
     </div>
     <div class="full"><label>Official card text (checked against the blocks below) <textarea data-path="text" id="cardText">${esc(c.text)}</textarea></label></div>
     <div id="textCheck" class="tcheck"></div>
+    <div class="full"><label>Rulings notes (official Q&amp;A, how it works; shown in the game's card detail) <textarea data-path="notes" class="notes" placeholder="e.g. Q: Can this target a locked card? A: No.">${esc(c.notes || "")}</textarea></label></div>
     <h2>Abilities</h2>
     ${(c.abilities || []).map(abilityHTML).join("") || `<p class="muted">No abilities. Vanilla units, triggers and sentinels need none.</p>`}
     <div class="btnrow">
       <button data-do="addAb">+ Add ability</button>
+      <select id="tplPick"><option value="">+ Add from template…</option></select>
+      <button data-x="delTpl" title="Delete the template picked in the list">Delete template</button>
     </div>
     <div class="btnrow">
       <button data-do="save" class="go">Save card</button>
@@ -196,6 +208,7 @@ function renderCard() {
     </div>`;
   $("#imgFile").addEventListener("change", onImage);
   renderCheck();
+  if (typeof templatePicker === "function") templatePicker();
 }
 // Text ↔ blocks check (js/cardcheck.js): each text ability, the block it matched, and what differs
 function renderCheck() {
@@ -236,6 +249,7 @@ function abilityHTML(ab, ai) {
       ${ab.kind === "AUTO" ? `<label>When ${sel(`${base}.when`, SCHEMA.events, ab.when)}</label>` : ""}
       <label>Limit ${sel(`${base}.once`, { "": "No limit", turn: "1/Turn", game: "1/Game (1/Fight, per card)", divine: "Divine Skill (1 per game, all cards)", unique: "Unique Skill (1 per game, all cards)" }, ab.once || "")}</label>
       ${ab.kind === "AUTO" ? `<label class="chk" title="Tick when the card text has no &quot;you may&quot;: it resolves without asking"><input type="checkbox" data-path="${base}.mandatory" ${ab.mandatory ? "checked" : ""}> Mandatory</label>` : ""}
+      ${typeof abilityExtrasHTML === "function" ? abilityExtrasHTML(ai) : ""}
       <button class="del" data-do="delAb" data-i="${ai}">Remove ability</button>
     </div>
     <div class="preview">${esc(describeAbility(ab))}</div>
@@ -351,10 +365,13 @@ $("#cardForm").addEventListener("click", async (e) => {
       if (cur.type === "order") { cur.power = 0; cur.shield = 0; }
       if (cur.type !== "trigger") cur.trigger = null;
       await DB.put("cards", cur);
+      let re = 0;
+      if ($("#syncReprints") && $("#syncReprints").checked) re = await Tools.syncReprints(cur);
       dirty = false;
       await reload();
       renderList();
-      return toast("Saved");
+      if (re) renderCard();
+      return toast(re ? `Saved (and ${re} reprint${re === 1 ? "" : "s"})` : "Saved");
     }
     case "test": {
       if (dirty) {
@@ -1292,9 +1309,13 @@ if (!DB.canEditCards()) {
   ["cards", "cgs", "online", "formats"].forEach((t) => { document.querySelector(`[data-tab="${t}"]`).hidden = true; });
   document.querySelector('[data-tab="decks"]').click();
 }
+// start once every script on the page has run (js/editor-tools.js loads after this file)
+const scriptsReady = document.readyState === "loading" ? new Promise((r) => addEventListener("DOMContentLoaded", r, { once: true })) : Promise.resolve();
 Loader.wait((async () => {
+  await scriptsReady;
   await DB.removeSamples();
   owned = await Cloud.owned();
+  if (DB.canEditCards()) await Tools.loadBoxCards();
   if (owned) $("#tab-decks").classList.add("owned-only");
   await reload();
   renderList();

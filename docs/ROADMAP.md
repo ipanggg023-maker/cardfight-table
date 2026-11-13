@@ -10,6 +10,7 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Card library import (CGS GitHub data, 21k cards), tcgapi.dev import (needs key + relay)
 - Local pictures: `vanguard_images` (Edit.py) + "Link pictures" folder matcher
 - Playmats per player (Classic / overDress Red / Blue / custom upload), DD2-style HUD, phase banner
+- Admin card tools part 2: reprints, templates, bulk edit, history + restore, review queue, progress per set, rulings notes (2026-11-13)
 - Admin card tools part 1: card status + filter, text ↔ blocks check, test table (2026-11-13)
 - Admin page: players (roles, coins, cards, bans, names), match and pack history, admin log (2026-11-12)
 - Coins from online matches: both players report, paid when they agree, daily limit (2026-11-12)
