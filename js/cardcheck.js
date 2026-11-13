@@ -17,18 +17,12 @@ const CardCheck = (() => {
   // Covered since Ability Language v2 step 1–3: for each, if you did, choose one of the following, top/bottom of deck,
   // moves from drop/soul/bind, opponent chooses, went first/second, battle number (Move cards, counts, onlyIf, chooseOpts).
   const GAPS = [
-    [/gets? "\[|gets all of the following|this card gets all/, "granted ability (gets \"[AUTO]…\")"],
-    [/cannot (attack|boost|intercept|be chosen|be retired|be attacked|stand|be returned)/, "restriction (“cannot …”)"],
-    [/cannot call|must call|cannot guard|must guard|cannot be guarded/, "call / guard restriction"],
-    [/\bresist\b/, "Resist"],
     [/instead|would be (retired|put|bound)/, "replacement (“instead / would be”)"],
     [/(?<!st)ride (it|this card|that card) (as \[stand\]|from)|superior ride|(?<!st)ride .{0,40} from (your )?(deck|drop|soul)/, "ride by an effect"],
     [/same column|this unit's column/, "columns"],
-    [/until end of (your opponent's turn|your next turn|the next turn)/, "duration until the opponent's / next turn"],
     [/\btoken\b|\bplant\b|shadow army|\bhollow\b/, "tokens"],
     [/ticket|quick shield/, "tickets"],
     [/\bforerunner\b/, "Forerunner"],
-    [/\blord\b/, "Lord"],
     [/\bglitter\b/, "Glitter"],
     [/\britual \d/, "Ritual"],
     [/\[[a-z ]+ state\]|mental pollution|\bharmony\b|\bmelody\b/, "named states"],
@@ -69,6 +63,8 @@ const CardCheck = (() => {
     if (/^\[?xoverdress\]?/.test(l)) return c.xoverDress ? { ok: "XoverDress names" } : { warn: "Fill “XoverDress: needed rear-guards”" };
     if (/^\[?overdress\]?/.test(l)) return c.dress ? { ok: "overDress box" } : { warn: "Tick “overDress”" };
     if (/^(boost|intercept|twin drive|triple drive)\b/.test(l)) return { ok: "skill icon" };
+    if (/^\[?resist\]?/.test(l)) return c.resist ? { ok: "Resist box" } : { warn: "Tick “Resist”" };
+    if (/^lord\b/.test(l)) return c.lord ? { ok: "Lord box" } : { warn: "Tick “Lord”" };
     return null;
   }
   const kindOf = (l, c) => {
@@ -124,8 +120,8 @@ const CardCheck = (() => {
       const kind = kindOf(l, c);
       if (!kind) { items.push({ text: raw, kind: null, ab: null, state: "note", notes: ["no [AUTO]/[ACT]/[CONT] mark: check it by eye"] }); continue; }
       // pair with the next block of the same kind (orders: any order block)
-      let i = abs.findIndex((ab, k) => k >= next && !used.has(k) && (ab.kind === kind || (kind === "ORDER" && ab.kind === "BLITZ") || (kind === "BLITZ" && ab.kind === "ORDER")));
-      if (i < 0) i = abs.findIndex((ab, k) => !used.has(k) && ab.kind === kind);
+      let i = abs.findIndex((ab, k) => k >= next && !used.has(k) && !ab.granted && (ab.kind === kind || (kind === "ORDER" && ab.kind === "BLITZ") || (kind === "BLITZ" && ab.kind === "ORDER")));
+      if (i < 0) i = abs.findIndex((ab, k) => !used.has(k) && !ab.granted && ab.kind === kind);
       if (i < 0) { items.push({ text: raw, kind, ab: null, state: "missing", notes: ["No block for this ability yet", ...gapsIn(l).map((g) => "Needs: " + g)] }); continue; }
       used.add(i); next = i + 1;
       const ab = abs[i];
@@ -134,7 +130,7 @@ const CardCheck = (() => {
       if (!manual) notes.push(...gapsIn(l).map((g) => "Needs a block the game doesn't have yet: " + g));
       items.push({ text: raw, kind, ab: i, state: notes.length ? "warn" : "ok", manual, notes });
     }
-    const extraBlocks = abs.map((_, i) => i).filter((i) => !used.has(i));
+    const extraBlocks = abs.map((_, i) => i).filter((i) => !used.has(i) && !abs[i].granted);
     let status;
     if (!items.some((it) => it.kind) && !abs.length) status = items.some((it) => it.state === "warn") ? "gaps" : "vanilla";
     else if (!abs.length) status = "none";

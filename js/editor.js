@@ -175,6 +175,8 @@ function renderCard() {
       <label class="chk"><input type="checkbox" data-path="sentinel" ${c.sentinel ? "checked" : ""}> Sentinel (perfect guard: discard 1)</label>
       <label class="chk"><input type="checkbox" data-path="persona" ${c.persona ? "checked" : ""}> Persona Ride</label>
       <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
+      <label class="chk" title="Your opponent's effects can't choose this unit"><input type="checkbox" data-path="resist" ${c.resist ? "checked" : ""}> Resist</label>
+      <label class="chk" title="Can't attack while you have a unit of another clan / nation"><input type="checkbox" data-path="lord" ${c.lord ? "checked" : ""}> Lord</label>
       ${c.type === "order" ? `<label class="chk"><input type="checkbox" data-path="setOrder" ${c.setOrder ? "checked" : ""}> Set order (stays in the order zone)</label>
         <label class="chk"><input type="checkbox" data-path="alchemagic" ${c.alchemagic ? "checked" : ""}> Alchemagic (may add a normal order from your drop)</label>
         <label class="chk"><input type="checkbox" data-path="arms" ${c.arms ? "checked" : ""}> Arms (attaches to your vanguard)</label>` : ""}
@@ -240,7 +242,7 @@ function abilityHTML(ab, ai) {
   const order = ab.kind === "ORDER" || ab.kind === "BLITZ";
   const part = (key, title, lib) => `<div class="part"><h4>${title}</h4>
     ${(ab[key] || []).map((row, ri) => rowHTML(`${base}.${key}.${ri}`, row, lib, ab.kind === "CONT" && key === "effects")).join("")}
-    <div class="addrow">${sel(`@add:${base}.${key}`, { "": "+ add " + title.toLowerCase().replace(/s$/, "") + "…", ...Object.fromEntries(Object.entries(lib).filter(([k]) => ab.kind !== "CONT" || key !== "effects" || ["power", "crit"].includes(k)).map(([k, v]) => [k, v.label])) }, "")}</div></div>`;
+    <div class="addrow">${sel(`@add:${base}.${key}`, { "": "+ add " + title.toLowerCase().replace(/s$/, "") + "…", ...Object.fromEntries(Object.entries(lib).filter(([k]) => ab.kind !== "CONT" || key !== "effects" || ["power", "crit", "restrict", "playerRule"].includes(k)).map(([k, v]) => [k, v.label])) }, "")}</div></div>`;
   return `<div class="abil" data-ab="${ai}">
     <div class="head">
       <span class="abno">Ability ${ai + 1}</span>
@@ -249,6 +251,7 @@ function abilityHTML(ab, ai) {
       ${ab.kind === "AUTO" ? `<label>When ${sel(`${base}.when`, SCHEMA.events, ab.when)}</label>` : ""}
       <label>Limit ${sel(`${base}.once`, { "": "No limit", turn: "1/Turn", game: "1/Game (1/Fight, per card)", divine: "Divine Skill (1 per game, all cards)", unique: "Unique Skill (1 per game, all cards)" }, ab.once || "")}</label>
       ${ab.kind === "AUTO" ? `<label class="chk" title="Tick when the card text has no &quot;you may&quot;: it resolves without asking"><input type="checkbox" data-path="${base}.mandatory" ${ab.mandatory ? "checked" : ""}> Mandatory</label>` : ""}
+      <label class="chk" title="This ability is the quoted one another ability gives (&quot;gets [AUTO]…&quot;). It does nothing on its own; a ★ Give an ability step gives it to units."><input type="checkbox" data-path="${base}.granted" ${ab.granted ? "checked" : ""}> Given by another ability only</label>
       ${typeof abilityExtrasHTML === "function" ? abilityExtrasHTML(ai) : ""}
       <button class="del" data-do="delAb" data-i="${ai}">Remove ability</button>
     </div>
@@ -272,7 +275,7 @@ function rowHTML(path, row, lib, contOnly) {
         const opts = contOnly ? Object.fromEntries(CONT_TARGETS.map((t) => [t, TARGETS[t]])) : TARGETS;
         return lab(sel(p, opts, v || "self"));
       }
-      case "dur": return lab(sel(p, SCHEMA.paramOptions.dur, v || "turn"));
+      case "dur": return contOnly ? "" : lab(sel(p, SCHEMA.paramOptions.dur, v || "turn"));
       case "from": return lab(sel(p, SCHEMA.paramOptions.from, v || "deck"));
       case "dest": return lab(sel(p, SCHEMA.paramOptions.dest, v || "hand"));
       case "restDest": return lab(sel(p, SCHEMA.paramOptions.restDest, v || "shuffle"));
@@ -280,6 +283,9 @@ function rowHTML(path, row, lib, contOnly) {
       case "count": return lab(sel(p, { ...(k === "per" ? { "": "— (no “for each”)" } : {}), ...SCHEMA.paramOptions.count }, v || (k === "per" ? "" : "mySoul")));
       case "op": return lab(sel(p, SCHEMA.paramOptions.op, v || "ge"));
       case "who": return lab(sel(p, SCHEMA.paramOptions.who, v || "vc"));
+      case "restrict": return lab(sel(p, SCHEMA.paramOptions.restrict, v || "cantAttack"));
+      case "prule": return lab(sel(p, SCHEMA.paramOptions.prule, v || "cantGuard"));
+      case "side": return lab(sel(p, SCHEMA.paramOptions.side, v || "opp"));
       case "mfrom": return lab(sel(p, SCHEMA.paramOptions.mfrom, v || "drop"));
       case "mto": return lab(sel(p, SCHEMA.paramOptions.mto, v || "hand"));
       case "chooser": return lab(sel(p, SCHEMA.paramOptions.chooser, v || "me"));
@@ -360,6 +366,9 @@ function defaultRow(type) {
   if (type === "move") Object.assign(r, { from: "drop", to: "hand", n: 1, chooser: "me" });
   if (type === "count") Object.assign(r, { what: "mySoul", op: "ge", n: 1 });
   if (type === "unit") r.who = "vc";
+  if (type === "restrict") r.what = "cantAttack";
+  if (type === "playerRule") Object.assign(r, { who: "opp", what: "cantGuard" });
+  if (type === "grant") r.ability = 2;
   if (["draw", "CC", "SC", "EC", "power", "crit"].includes(type)) delete r.per;
   return r;
 }

@@ -7,7 +7,7 @@ Each row is one pattern that appears in card text: a kind of ability, where it w
 a cost, a condition, an effect or a keyword. "Cards" = how many unique cards use it at least once.
 "Engine" = whether the ability blocks in `js/schema.js` + `js/engine.js` can build it today.
 
-**Cards that only use ✅ patterns today: 7,220 (48.4%).**
+**Cards that only use ✅ patterns today: 7,686 (51.6%).**
 Everything else needs at least one 🟡/❌ pattern (or the ✋ Manual block). The plan to close the gap is in
 `docs/abilities/PLAN.md`.
 
@@ -159,11 +159,11 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Retire opponent's rear-guard(s) | 779 | 168 | 188 | 120 | 213 | 90 | ✅ yes |  | Chronojet Dragon; Dragheart, Luard; Balance Wiggler |
 | [Stand] a unit | 736 | 101 | 139 | 109 | 246 | 141 | ✅ yes |  | Dragonic Overlord the End; Blue Artillery Dragon, Inlet Pulse Dragon; Flower of Ruined Castle, Empousa |
 | Discard as an effect (you or opponent) | 707 | 63 | 187 | 146 | 225 | 86 | ✅ yes |  | Stealth Fiend, Kurobane Tengu; Harmonics Messiah; Lady Battler of the White Dwarf |
-| Gets an ability ("[AUTO]…") / gets all of the following | 668 | 51 | 292 | 27 | 124 | 174 | ❌ no | granted abilities | Untainted Holy Damsel, Green Katrina; Ancestral Dragon King of Zenith Colors, Founaherdio; Great Dragon Emperor of Distant Blaze, Gidoradevalt |
+| Gets an ability ("[AUTO]…") / gets all of the following | 668 | 51 | 292 | 27 | 124 | 174 | ✅ yes | granted abilities | Untainted Holy Damsel, Green Katrina; Ancestral Dragon King of Zenith Colors, Founaherdio; Great Dragon Emperor of Distant Blaze, Gidoradevalt |
 | Counter-Charge N | 606 | 20 | 225 | 96 | 210 | 55 | ✅ yes |  | Progenitor Dragon of Lightning Flame, Gilgal; Steam Maiden, Elul; Trickmoon |
 | Critical + | 588 | 95 | 119 | 115 | 184 | 75 | ✅ yes |  | Demon World Marquis, Amon; Dragontree of Ecliptic Decimation, Griphogila; Vairina Exspecta |
 | Heal: damage to the drop | 538 | 59 | 230 | 146 | 71 | 32 | ✅ yes |  | Source Dragon Deity of Blessings, Blessfavor; Happiness Noble, Fairoid; Sphere Magus |
-| Cannot attack / boost / intercept / be chosen / be retired | 510 | 165 | 84 | 76 | 117 | 68 | ❌ no | restriction effects | Knight of Tenacity, Aidan; Knight of War Damage, Fosado; Trickstar |
+| Cannot attack / boost / intercept / be chosen / be retired | 510 | 165 | 84 | 76 | 117 | 68 | ✅ yes | restriction effects | Knight of Tenacity, Aidan; Knight of War Damage, Fosado; Trickstar |
 | Cannot be hit | 486 | 65 | 124 | 117 | 150 | 30 | ✅ yes |  | Elementaria Sanctitude; Maiden of Blossom Rain; Steam Guard, Kastilia |
 | Call from hand | 438 | 36 | 133 | 90 | 125 | 54 | ✅ yes |  | Dead Armor Dragon; Ancestral Dragon King of Zenith Colors, Founaherdio; Great Dragon Emperor of Distant Blaze, Gidoradevalt |
 | Replacement: instead / would … | 406 | 13 | 8 | 85 | 167 | 133 | ❌ no |  | Pile Deletor, Jaluel; Demon World Marquis, Amon; Steam Maiden, Elul |
@@ -173,7 +173,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Bind a card (from field / hand / deck / drop) | 331 | 19 | 115 | 76 | 77 | 44 | ✅ yes |  | Goddess of the Sun, Amaterasu; Chronojet Dragon G; Refresh Time, Portia |
 | Drive +/− | 329 | 9 | 51 | 69 | 144 | 56 | ✅ yes |  | Dragonic Overlord the End; Demon World Marquis, Amon; Relation Weaver, Petralka |
 | Your opponent chooses (and retires/discards) | 312 | 30 | 128 | 64 | 76 | 14 | ✅ yes | the other player makes the choice | Stealth Fiend, Kurobane Tengu; Demon World Marquis, Amon; Security Upgrader |
-| Opponent cannot call (grade N / sentinels) to GC / RC | 271 | 12 | 63 | 84 | 76 | 36 | ❌ no |  | Dead Armor Dragon; Chronojet Dragon; Fleet Swallower |
+| Opponent cannot call (grade N / sentinels) to GC / RC | 271 | 12 | 63 | 84 | 76 | 36 | ✅ yes |  | Dead Armor Dragon; Chronojet Dragon; Fleet Swallower |
 | Markers (Protect, Force, Accel, crests, counters) | 265 | 12 | 1 | 88 | 118 | 46 | 🟡 partly |  | Quaking Heavenly Dragon, Astraios Dragon; Dragontree of Ecliptic Decimation, Griphogila; Energy Generator |
 | Put a card into the drop (mill / from soul) | 263 | 39 | 82 | 69 | 55 | 18 | ✅ yes |  | Holy Great Sage of Black Shadows, Isabelle; Mage of Entwined Roots, Amergin; Giant Deity of Distant World, Valkerion |
 | Ride by an effect (from deck / drop / soul / hand) | 263 | 41 | 36 | 45 | 95 | 46 | ❌ no | Superior Ride | Chronojet Dragon; Seeker, Thing Saver Dragon; Dragheart, Luard |
@@ -186,9 +186,9 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Deal damage / put cards into the damage zone | 150 | 48 | 40 | 23 | 38 | 1 | 🟡 partly |  | Incise Angel; Knight of Instant Slash, Greete; Prescription Angel |
 | Move a rear-guard to another circle / swap | 137 | 15 | 42 | 26 | 37 | 17 | ❌ no | move by effect | Zeroth Dragon of Distant Sea, Megiddo; Dragontree of Ecliptic Decimation, Griphogila; Empyrean Blue Dragon, Shelling Cannon Dragon |
 | Tickets / Quick Shield / crest-like markers | 133 | 3 |  | 93 | 25 | 12 | ❌ no | tickets | Barcgal; Harmonics Messiah; Persona Shield |
-| Cannot guard with … / guard restrictions | 120 | 10 | 55 | 17 | 34 | 4 | ❌ no |  | Chronojet Dragon; Evil Eye of Prohibition, Quen Lu; Thunder Elemental, Gororo |
+| Cannot guard with … / guard restrictions | 120 | 10 | 55 | 17 | 34 | 4 | ✅ yes |  | Chronojet Dragon; Evil Eye of Prohibition, Quen Lu; Thunder Elemental, Gororo |
 | States: Mental Pollution, Harmony, Melody, Pleasure… | 85 | 3 | 52 | 21 | 2 | 7 | ❌ no | named states | Wonder Frill, Nanoka; Dreaming Step, Shizuku; Superb New Student, Shizuku |
-| Resist (cannot be chosen by opponent's effects) | 72 | 5 | 61 |  | 5 | 1 | ❌ no |  | Dark Metal Chameleon; Dark Element, Dizmel; Lady Skylark |
+| Resist (cannot be chosen by opponent's effects) | 72 | 5 | 61 |  | 5 | 1 | ✅ yes |  | Dark Metal Chameleon; Dark Element, Dizmel; Lady Skylark |
 | Energy (generate, check, use) | 68 | 3 |  |  | 12 | 53 | ✅ yes |  | Energy Generator; Construct Golem; Blitz Sales, Stil |
 | Extra attacks / attack from the back row | 67 |  | 16 | 5 | 23 | 23 | ❌ no |  | Empyrean Blue Dragon, Shelling Cannon Dragon; Phantasmic Stealth Fiend, Megalonozuchi; Dragritter of Flame Blade, Grhy |
 | World (Dark Night) | 65 | 3 | 1 | 1 | 51 | 9 | ✅ yes |  | Cardinal Fang, Marizma; Cardinal Principle, Cagula; Eclipsed Moonlight |
@@ -198,7 +198,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Delete | 51 | 8 | 31 | 10 | 2 |  | ✅ yes |  | Pile Deletor, Jaluel; Clipping Deletor, Evo; Waving Deletor, Greidhol |
 | Time Leap | 36 | 4 | 25 | 4 | 3 |  | ✅ yes |  | Chronojet Dragon G; Tick-away Dragon; Furyminute Dragon |
 | Card name becomes / also has the name | 16 | 3 | 1 | 1 | 6 | 5 | ❌ no |  | Aurora Star, Coral; Epee De Justice, Thegrea; Desire Devil, Saasyou |
-| Durations: until end of your opponent's / your next turn | 4 |  |  | 2 | 2 |  | ❌ no |  | Wandering Starhulk Deity, Brandt Ringer; Wandering Starhulk Ruler, Brandt; A Viridescent Flash, Rorowa |
+| Durations: until end of your opponent's / your next turn | 4 |  |  | 2 | 2 |  | ✅ yes |  | Wandering Starhulk Deity, Brandt Ringer; Wandering Starhulk Ruler, Brandt; A Viridescent Flash, Rorowa |
 | Copy / gain the abilities of another card | 4 |  |  | 1 | 2 | 1 | ❌ no |  | Exceptional Expertise, Rising Nova; Atrocious? Moth Girl, Maple |
 | Change drive checks (choose order, more checks, check from…) | 3 | 1 | 1 |  | 1 |  | ❌ no |  | Evil-eye Hades Emperor, Shiranui "Mukuro"; Rondo of Eventide Moon, Feltyrosa; Goddess of Good Luck, Fortuna |
 | Gives trigger effects (critical, front, heal, draw…) / triggers more | 0 |  |  |  |  |  | ❌ no |  |  |
@@ -215,7 +215,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Set order / Prison / World / Song | 287 | 4 |  | 1 | 201 | 81 | 🟡 partly | Prison and Song subtypes missing | Kanone Schnellkrieger; Explosive! Melting Heart!; Flash Scissors Monster, Scissors Bar |
 | Legion / Seek Mate | 208 | 161 | 44 | 1 |  | 2 | ✅ yes |  | Seeker, Light Saver Dragon; Holy Edge Celestial, Malchidael; Onmyo Stealth Rogue, Seimei |
 | Lock (Link Joker) | 166 | 49 | 57 | 13 | 38 | 9 | ✅ yes |  | Star-vader, Chaos Breaker Dragon; Dragonic Overlord "The Яe-birth"; Prelude of Genesis |
-| Lord (cannot attack without same clan) | 163 | 126 | 25 | 4 | 4 | 4 | ❌ no |  | Knight of Old Fate, Cordiela; Pentagonal Magus; Binary Star Twin Gunner |
+| Lord (cannot attack without same clan) | 163 | 126 | 25 | 4 | 4 | 4 | ✅ yes |  | Knight of Old Fate, Cordiela; Pentagonal Magus; Binary Star Twin Gunner |
 | Imaginary Gift (Force/Accel/Protect) | 160 | 11 | 19 | 72 | 54 | 4 | ✅ yes |  | Quaking Heavenly Dragon, Astraios Dragon; Perfect Performance, Ange; Seeker, Thing Saver Dragon |
 | Glitter (Bermuda) | 152 | 1 |  |  | 129 | 22 | ❌ no |  | Fountain of Knowledge, Eva; Result of the Experiment Henceforth; Shutter Chance, Ilse |
 | overDress / XoverDress / RevolDress / DressBoost | 87 | 2 |  |  | 77 | 8 | 🟡 partly | RevolDress and DressBoost missing | Vairina Exspecta; Trickmoon; Prayers That Will Reach Someday |

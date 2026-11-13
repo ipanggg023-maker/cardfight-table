@@ -127,6 +127,7 @@ const Game = (() => {
     return ids.map((id) => cards.find((c) => c.uid === id));
   }
   async function chooseUnits(pi, prompt, units, n, exact = true) {
+    units = units.filter((u) => u.pi === pi || !(restricted(u.pi, u.key, "resist") || restricted(u.pi, u.key, "cantBeChosen")));
     const opts = units.map((u) => ({ id: u.pi + ":" + u.key, label: `${u.pi === pi ? "Your" : "Opponent's"} ${slotName(u.key)}: ${P(u.pi).slots[u.key].card.name}`, card: P(u.pi).slots[u.key].card }));
     const ids = await choose(pi, prompt, opts, exact ? n : 0, n);
     return ids.map((id) => ({ pi: +id.split(":")[0], key: id.split(":")[1] }));
@@ -237,11 +238,21 @@ const Game = (() => {
   // Cards whose abilities work from a circle: the unit, plus arms attached to the vanguard (CR 17.7)
   // locked or deleted cards have no text (CR 7.30, 7.32)
   const sourcesAt = (p, k) => (p.slots[k] && !p.slots[k].locked && !p.slots[k].deleted ? [p.slots[k].card, ...(k === "vc" ? p.slots.vc.arms || [] : [])] : []);
+  // Every ability working on a circle: the cards' own abilities (except "granted only" ones, which only exist when an
+  // effect gives them) + abilities granted to the unit for a while (slot.extra). Items: {card, ab, i, src}
+  function abilitiesAt(pi, k) {
+    const p = P(pi), out = [];
+    sourcesAt(p, k).forEach((card, src) => (card.abilities || []).forEach((ab, i) => { if (!ab.granted) out.push({ card, ab, i, src }); }));
+    const sl = p.slots[k];
+    if (sl && !sl.locked && !sl.deleted) (sl.extra || []).forEach((x, j) => out.push({ card: sl.card, ab: x.ab, i: "x" + j, src: 0 }));
+    return out;
+  }
+  const ownAbilities = (card) => (card.abilities || []).map((ab, i) => ({ card, ab, i, src: 0 })).filter((x) => !x.ab.granted);
   function cont(pi, key, stat) {
     const p = P(pi);
     let sum = 0;
-    const add = (card, k, zone) => {
-      for (const ab of card.abilities || []) {
+    const add = (card, k, zone, list) => {
+      for (const { ab } of list) {
         if (ab.kind !== "CONT" || !zoneOK(ab.zone, zone)) continue;
         if (!(ab.conds || []).every((c) => condOK(pi, c, { key: k, card }))) continue;
         for (const e of ab.effects || []) {
@@ -249,9 +260,55 @@ const Game = (() => {
         }
       }
     };
-    for (const k of unitsOf(pi)) for (const card of sourcesAt(p, k)) add(card, k, zoneOf(k));
-    for (const card of p.orderZone || []) add(card, null, "OZ"); // set orders in the order zone (CR 4.17)
-    return sum;
+    for (const k of unitsOf(pi)) for (const x of abilitiesAt(pi, k)) add(x.card, k, zoneOf(k), [x]);
+    for (const card of p.orderZone || []) add(card, null, "OZ", ownAbilities(card)); // set orders in the order zone (CR 4.17)
+    return sum + mods(pi, key, stat);
+  }
+  // ---------- timed modifiers, restrictions, player rules (Ability Language v2 step 4) ----------
+  // slot.mods: {stat: "power"|"crit"|"no", what?, amount?, until: turn number it ends after, battle: ends with the battle}
+  const mods = (pi, key, stat) => ((P(pi).slots[key] || {}).mods || []).filter((m) => m.stat === stat).reduce((n, m) => n + (+m.amount || 0), 0);
+  // the turn number whose end a duration reaches ("until end of your opponent's turn" = the next opponent turn's end)
+  function untilOf(pi, d) {
+    if (d === "oppTurn") return S.active === pi ? S.turn + 1 : S.turn;
+    if (d === "nextTurn") return S.active === pi ? S.turn + 2 : S.turn + 1;
+    if (d === "game") return Infinity;
+    return S.turn;
+  }
+  const LONG = new Set(["oppTurn", "nextTurn", "game"]);
+  function addMod(pi, key, m) { const sl = P(pi).slots[key]; if (sl) (sl.mods = sl.mods || []).push(m); }
+  // a unit-level restriction: timed (slot.mods "no"), from CONT abilities ("restrict" effects), or a card keyword (resist)
+  function restricted(pi, key, what) {
+    const sl = P(pi).slots[key];
+    if (!sl) return false;
+    if (what === "resist" && sl.card.resist) return true;
+    if ((sl.mods || []).some((m) => m.stat === "no" && m.what === what)) return true;
+    const p = P(pi);
+    const hit = (k, zone, list) => list.some(({ ab, card }) => ab.kind === "CONT" && zoneOK(ab.zone, zone)
+      && (ab.conds || []).every((c) => condOK(pi, c, { key: k, card }))
+      && (ab.effects || []).some((e) => e.type === "restrict" && e.what === what && contTargets(pi, e.target, k).includes(key) && match(sl.card, e.filter, { pi, ctx: { key: k, card } })));
+    for (const k of unitsOf(pi)) if (hit(k, zoneOf(k), abilitiesAt(pi, k))) return true;
+    for (const card of p.orderZone || []) if (hit(null, "OZ", ownAbilities(card))) return true;
+    return false;
+  }
+  // player rules: S.rules (timed) + CONT "playerRule" effects. {pi: the player it binds, what, filter}
+  function ruleOn(pi, what, card) {
+    const ok = (r) => r.pi === pi && r.what === what && (!card || match(card, r.filter));
+    if ((S.rules || []).some(ok)) return true;
+    for (const owner of [0, 1]) {
+      const p = P(owner);
+      const lists = [...unitsOf(owner).map((k) => [k, zoneOf(k), abilitiesAt(owner, k)]), ...(p.orderZone || []).map((c) => [null, "OZ", ownAbilities(c)])];
+      for (const [k, zone, list] of lists) for (const { ab, card: src } of list) {
+        if (ab.kind !== "CONT" || !zoneOK(ab.zone, zone) || !(ab.conds || []).every((c) => condOK(owner, c, { key: k, card: src }))) continue;
+        for (const e of ab.effects || []) if (e.type === "playerRule" && ok({ pi: e.who === "me" ? owner : 1 - owner, what: e.what, filter: e.filter })) return true;
+      }
+    }
+    return false;
+  }
+  // end of a battle / turn: timed things run out
+  function expire(battleOnly) {
+    const keep = (m) => (battleOnly ? !m.battle : !m.battle && m.until > S.turn);
+    S.players.forEach((pl) => Object.values(pl.slots).forEach((sl) => { if (sl) { if (sl.mods) sl.mods = sl.mods.filter(keep); if (sl.extra) sl.extra = sl.extra.filter(keep); } }));
+    if (S.rules) S.rules = S.rules.filter(keep);
   }
   function power(pi, key) {
     const p = P(pi), s = p.slots[key];
@@ -262,14 +319,14 @@ const Game = (() => {
     const heart = s.heart ? (+s.heart.power || 0) + (s.heartMate ? +s.heartMate.power || 0 : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
     const mate = s.mate ? +s.mate.power || 0 : 0; // legion: the mate's power is added (CR 6.4)
     const base = s.deleted ? 0 : s.card.power; // Delete: power drops by its printed power (CR 7.32)
-    return base + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power");
+    return Math.max(0, base + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power"));
   }
   function crit(pi, key) {
     const s = P(pi).slots[key];
     if (!s) return 0;
     const m = P(pi).marks[key];
     const base = m && m.forceII ? 2 : s.card.crit || 1; // Force II: the unit on that circle has original critical 2
-    return base + s.crit + s.critB + cont(pi, key, "crit");
+    return Math.max(0, base + s.crit + s.critB + cont(pi, key, "crit"));
   }
   // Gift bonuses during your turn: Force I +10000 per marker; accel circle +10000 (I) / +5000 (II) (CR 16.3)
   function giftPower(pi, key) {
@@ -417,13 +474,11 @@ const Game = (() => {
   let depth = 0, inCheck = false, qN = 0;
   function collect(pi, key, event, extra = {}) {
     if (over()) return;
-    const cards = extra.card ? [extra.card] : key ? sourcesAt(P(pi), key) : [];
+    const list = extra.card ? ownAbilities(extra.card) : key ? abilitiesAt(pi, key) : [];
     const zone = extra.zone || zoneOf(key);
-    for (const card of cards) {
-      (card.abilities || []).forEach((ab, i) => {
-        if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) return;
-        S.queue.push({ id: ++qN, pi, i, card, ctx: { key, zone, ...extra, card } });
-      });
+    for (const { card, ab, i } of list) {
+      if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) continue;
+      S.queue.push({ id: ++qN, pi, i, ab, card, ctx: { key, zone, ...extra, card } });
     }
   }
   function collectAll(pi, event, extra = {}) {
@@ -444,12 +499,12 @@ const Game = (() => {
         if (!mine.length) return;
         let item = mine[0];
         if (mine.length > 1) {
-          const opts = mine.map((q) => ({ id: "q" + q.id, label: `${q.card.name}: ${describeAbility(q.card.abilities[q.i])}`, card: q.card }));
+          const opts = mine.map((q) => ({ id: "q" + q.id, label: `${q.card.name}: ${describeAbility(q.ab || q.card.abilities[q.i])}`, card: q.card }));
           const [pick] = await choose(item.pi, "Choose which of your abilities resolves next", opts, 1, 1);
           item = mine.find((q) => "q" + q.id === pick) || item;
         }
         S.queue.splice(S.queue.indexOf(item), 1);
-        const ab = item.card.abilities[item.i];
+        const ab = item.ab || item.card.abilities[item.i];
         if (ab) await resolve(item.pi, item.card, ab, item.i, item.ctx, !ab.mandatory); // mandatory = no "you may"
       }
     } finally { inCheck = false; }
@@ -591,7 +646,11 @@ const Game = (() => {
     if (FIELD_FROM[e.from]) {
       const units = moveCandidates(pi, e, ctx);
       const us = e.all ? units : await chooseUnits(chooser, `Choose ${e.upTo ? "up to " : ""}${n} unit(s): to ${zn(e.to)}`, units, Math.min(n, units.length), !e.upTo);
-      for (const u of us) { const c = P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card; if (c && takeAnywhere(u.pi, c)) picked.push(c); }
+      for (const u of us) {
+        if (u.pi !== pi && e.to === "drop" && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; }
+        const c = P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card;
+        if (c && takeAnywhere(u.pi, c)) picked.push(c);
+      }
     } else if (e.from === "self") {
       if (ctx.card && takeAnywhere(pi, ctx.card)) picked = [ctx.card];
     } else {
@@ -653,19 +712,40 @@ const Game = (() => {
     switch (e.type) {
       case "move": return moveCards(pi, e, ctx);
       case "chooseOpts": return { count: 1 }; // handled in runEffects
+      case "restrict": { // "cannot attack / boost / intercept / be chosen / be retired / stand / be attacked", Resist
+        const us = await pickUnits(pi, e, ctx);
+        for (const u of us) addMod(u.pi, u.key, { stat: "no", what: e.what, until: untilOf(pi, e.dur || "turn"), battle: e.dur === "battle" && !!S.battle });
+        if (us.length) log(`🚫 ${us.map((u) => P(u.pi).slots[u.key].card.name).join(", ")}: ${SCHEMA.paramOptions.restrict[e.what] || e.what}`);
+        return { count: us.length };
+      }
+      case "playerRule": { // "your opponent cannot call grade 1+ from hand to GC", "cannot intercept", "must guard with 2+"…
+        const who = e.who === "me" ? pi : 1 - pi;
+        (S.rules = S.rules || []).push({ pi: who, what: e.what, filter: e.filter, until: untilOf(pi, e.dur || "turn"), battle: e.dur === "battle" && !!S.battle });
+        log(`🚫 ${P(who).name}: ${SCHEMA.paramOptions.prule[e.what] || e.what}`);
+        return { count: 1 };
+      }
+      case "grant": { // "this unit gets "[AUTO]…" until end of turn": gives ability number N of this card (marked "granted only")
+        const src = ctx.card && (ctx.card.abilities || [])[(+e.ability || 1) - 1];
+        if (!src) { log("Grant: no such ability on this card"); return { count: 0 }; }
+        const us = await pickUnits(pi, e, ctx);
+        for (const u of us) { const sl = P(u.pi).slots[u.key]; if (sl) (sl.extra = sl.extra || []).push({ ab: src, until: untilOf(pi, e.dur || "turn"), battle: e.dur === "battle" && !!S.battle }); }
+        if (us.length) log(`✨ ${us.map((u) => P(u.pi).slots[u.key].card.name).join(", ")} gain(s): ${describeAbility(src)}`);
+        return { count: us.length };
+      }
       case "power": case "crit": {
         const us = await pickUnits(pi, e, ctx);
         for (const u of us) {
           const s = P(u.pi).slots[u.key];
           if (!s) continue;
+          if (LONG.has(e.dur)) { addMod(u.pi, u.key, { stat: e.type, amount: amt, until: untilOf(pi, e.dur) }); continue; }
           if (e.type === "power") s[battle ? "powB" : "pow"] += amt;
           else s[battle ? "critB" : "crit"] += amt;
         }
         return { count: us.length, cards: us.map((u) => P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card).filter(Boolean) };
       }
-      case "stand": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key]) P(u.pi).slots[u.key].rest = false; break;
+      case "stand": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key] && !restricted(u.pi, u.key, "cantStand")) P(u.pi).slots[u.key].rest = false; break;
       case "rest": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key]) P(u.pi).slots[u.key].rest = true; break;
-      case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc" && P(u.pi).slots[u.key]) { out.push(P(u.pi).slots[u.key].card); log(`${P(u.pi).slots[u.key].card.name} is retired`); retire(u.pi, u.key); } } return { count: out.length, cards: out }; }
+      case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.pi !== pi && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; } if (u.key !== "vc" && P(u.pi).slots[u.key]) { out.push(P(u.pi).slots[u.key].card); log(`${P(u.pi).slots[u.key].card.name} is retired`); retire(u.pi, u.key); } } return { count: out.length, cards: out }; }
       case "bind": for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc") { log(`${P(u.pi).slots[u.key].card.name} is bound`); bindUnit(u.pi, u.key); } } break;
       case "drive": p.driveBonus += amt; break;
       case "draw": draw(pi, n); return { count: n };
@@ -828,7 +908,7 @@ const Game = (() => {
     const pi = S.active, p = P(pi);
     p.vcGradeAtStart = p.slots.vc.card.grade;
     (p.orderZone || []).forEach((c) => (c.rest = false));
-    Object.values(p.slots).forEach((s) => s && (s.rest = false));
+    for (const k of unitsOf(pi)) { const sl = p.slots[k]; if (sl && !restricted(pi, k, "cantStand")) sl.rest = false; }
     S.used = new Set();
     S.battleNo = 0;
     Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false });
@@ -1013,6 +1093,7 @@ const Game = (() => {
     if (card.type === "order") return err("Orders are played with the Play button");
     if (card.protect) return err("Protect can only be put on the guardian circle");
     if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
+    if (ruleOn(pi, "cantCall", card)) return err(`${card.name} can't be called now`);
     p.hand.splice(p.hand.indexOf(card), 1);
     await place(pi, card, key);
   });
@@ -1027,17 +1108,18 @@ const Game = (() => {
   // src: 0 = the unit, 1.. = arms attached to the vanguard
   function actList(pi, key) {
     const out = [];
-    sourcesAt(P(pi), key).forEach((card, src) => (card.abilities || []).forEach((ab, i) => {
+    abilitiesAt(pi, key).forEach(({ card, ab, i, src }) => {
       if (ab.kind === "ACT" && zoneOK(ab.zone, zoneOf(key)))
-        out.push({ i, src, text: (src ? card.name + ": " : "") + describeAbility(ab), ready: ready(pi, card, ab, i, { key, card }) });
-    }));
+        out.push({ i, src, text: (src ? card.name + ": " : "") + (typeof i === "string" ? "(granted) " : "") + describeAbility(ab), ready: ready(pi, card, ab, i, { key, card }) });
+    });
     return out;
   }
   const activate = (key, i, src = 0) => run(async () => {
     if (S.phase !== "main" || S.battle) return err("Use ACT abilities in your main phase");
-    const pi = S.active, card = sourcesAt(P(pi), key)[src];
-    if (!card) return err("No unit there");
-    const ab = (card.abilities || [])[i];
+    const pi = S.active;
+    const x = abilitiesAt(pi, key).find((y) => String(y.i) === String(i) && y.src === +src);
+    if (!x) return err("No unit there");
+    const card = x.card, ab = x.ab;
     if (!ab || ab.kind !== "ACT") return err("No such ability");
     if (!(await resolve(pi, card, ab, i, { key, zone: zoneOf(key), card }, false))) return err("Conditions or costs not met");
   });
@@ -1308,16 +1390,26 @@ const Game = (() => {
   function canAttack(key) {
     const s = S.players[S.active].slots[key];
     // the first player can't attack on their first turn (CR 10.3.2)
-    return S.phase === "battle" && S.turn > 1 && !S.battle && frontOf(S.active).includes(key) && !!s && !s.rest && !s.locked;
+    return S.phase === "battle" && S.turn > 1 && !S.battle && frontOf(S.active).includes(key) && !!s && !s.rest && !s.locked
+      && !restricted(S.active, key, "cantAttack") && !lordBlocks(S.active, key);
+  }
+  // Lord: this unit can't attack while you have a unit of another clan / nation
+  function lordBlocks(pi, key) {
+    const c = P(pi).slots[key].card;
+    if (!c.lord) return false;
+    const clan = (x) => String(x.clan || x.nation || "").trim().toLowerCase();
+    const mine = clan(c);
+    return !!mine && unitsOf(pi).some((k) => P(pi).slots[k] && !P(pi).slots[k].locked && clan(P(pi).slots[k].card) && clan(P(pi).slots[k].card) !== mine);
   }
   function boosterFor(pi, key) {
     const bk = BACK_OF[key], b = bk && P(pi).slots[bk];
-    return b && !b.rest && !b.locked && canBoostIcon(b.card) ? bk : null;
+    return b && !b.rest && !b.locked && canBoostIcon(b.card) && !restricted(pi, bk, "cantBoost") ? bk : null;
   }
   const attack = (att, useBoost, tgt) => run(async () => {
     if (!canAttack(att)) return err("That unit can't attack");
     const ai = S.active, di = 1 - ai, p = P(ai);
     if (!frontOf(di).includes(tgt) || !P(di).slots[tgt] || P(di).slots[tgt].locked) return err("Attack an opponent's front row unit");
+    if (restricted(di, tgt, "cantBeAttacked")) return err("That unit can't be attacked");
     p.slots[att].rest = true;
     const bk = useBoost ? boosterFor(ai, att) : null;
     if (bk) p.slots[bk].rest = true;
@@ -1347,8 +1439,10 @@ const Game = (() => {
     const card = d.hand.find((c) => c.uid === uid);
     if (!card) return err("Card not in hand");
     if (card.type === "order") return err("Orders can't guard. Blitz orders use the Play button");
+    if (ruleOn(di, "cantGuard", card)) return err(`${card.name} can't be called to the guardian circle now`);
     d.hand.splice(d.hand.indexOf(card), 1);
     b.guards.push(card);
+    b.handGuards = (b.handGuards || 0) + 1;
     await fire(di, null, "placedGC", { card, zone: "GC" });
     // Built-in sentinel only when the card doesn't already describe its own guard ability
     const ownGuardAbility = (card.abilities || []).some((a) => a.kind === "AUTO" && a.when === "placedGC");
@@ -1368,6 +1462,7 @@ const Game = (() => {
     if (s.locked) return err("A locked card can't intercept");
     if (!canInterceptIcon(s.card)) return err("This unit has no Intercept skill");
     if (key === b.tgt) return err("The attacked unit can't intercept");
+    if (restricted(di, key, "cantIntercept") || ruleOn(di, "cantIntercept")) return err("This unit can't intercept now");
     b.guards.push(s.card);
     const pm = d.marks[key];
     if (pm && pm.protectII) { b.shieldBonus += 10000 * pm.protectII; log(`Protect II: Shield +${(10000 * pm.protectII).toLocaleString()}`); }
@@ -1378,6 +1473,7 @@ const Game = (() => {
     const b = S.battle;
     if (!b) return err("No attack");
     const ai = S.active, di = 1 - ai, p = P(ai), d = P(di);
+    if (b.handGuards === 1 && ruleOn(di, "mustGuard2")) return err("You must call two or more cards from your hand to guard (or none)");
     S.controller = ai;
     if (b.att === "vc") {
       const n = driveOf(p.slots.vc.card) + p.driveBonus;
@@ -1422,6 +1518,7 @@ const Game = (() => {
     if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { log(`${d.slots[b.tgt].card.name} is retired`); retire(1 - ai, b.tgt); }
     if (!over()) await fire(ai, b.att, "battleEnd");
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && (s.powB = 0, s.critB = 0)));
+    expire(true);
     S.battle = null;
     S.controller = ai;
   }
@@ -1437,6 +1534,7 @@ const Game = (() => {
     if (over()) return;
     P(S.active).personaFront = false;
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && Object.assign(s, { pow: 0, crit: 0, powB: 0, critB: 0 })));
+    expire(false);
     S.active = 1 - S.active;
     S.controller = S.active;
     S.turn++;
