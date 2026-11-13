@@ -14,19 +14,15 @@ const CardCheck = (() => {
     vanilla: { icon: "·", label: "No abilities" },
   };
   // Patterns in card text that no block can do yet (from docs/abilities/catalogue.md). Remove a row when its block exists.
+  // Covered since Ability Language v2 step 1–3: for each, if you did, choose one of the following, top/bottom of deck,
+  // moves from drop/soul/bind, opponent chooses, went first/second, battle number (Move cards, counts, onlyIf, chooseOpts).
   const GAPS = [
-    [/for each|for every/, "scaling (“for each…”)"],
-    [/if you (did|put|revealed|called|retired|searched|discarded|drew|bound|stood)\b|if (it|the revealed card) is a (trigger|grade)/, "result branch (“if you did / if you put…”)"],
     [/gets? "\[|gets all of the following|this card gets all/, "granted ability (gets \"[AUTO]…\")"],
     [/cannot (attack|boost|intercept|be chosen|be retired|be attacked|stand|be returned)/, "restriction (“cannot …”)"],
     [/cannot call|must call|cannot guard|must guard|cannot be guarded/, "call / guard restriction"],
     [/\bresist\b/, "Resist"],
     [/instead|would be (retired|put|bound)/, "replacement (“instead / would be”)"],
-    [/choose (one|two|\d) of the following|perform (one|two|\d|all) of the following/, "modal choice (“choose one of the following”)"],
     [/(?<!st)ride (it|this card|that card) (as \[stand\]|from)|superior ride|(?<!st)ride .{0,40} from (your )?(deck|drop|soul)/, "ride by an effect"],
-    [/on the (top|bottom) of (your|the|their|his or her|its owner's) deck/, "put cards on top/bottom of the deck"],
-    [/from your (drop|soul|bind zone|damage zone)[^.]{0,80}(call|into your hand|put it into your hand)|call .{0,40} from (your )?(drop|soul|bind)/, "move from drop / soul / bind"],
-    [/your opponent chooses/, "opponent makes the choice"],
     [/same column|this unit's column/, "columns"],
     [/until end of (your opponent's turn|your next turn|the next turn)/, "duration until the opponent's / next turn"],
     [/\btoken\b|\bplant\b|shadow army|\bhollow\b/, "tokens"],
@@ -36,8 +32,6 @@ const CardCheck = (() => {
     [/\bglitter\b/, "Glitter"],
     [/\britual \d/, "Ritual"],
     [/\[[a-z ]+ state\]|mental pollution|\bharmony\b|\bmelody\b/, "named states"],
-    [/if you went (second|first)/, "went first / second"],
-    [/(\w+) battle of (that|the) turn/, "battle number"],
     [/grade \+\d|is (also )?regarded as/, "grade change / regarded as"],
     [/deal \d+ damage|into (your|their|your opponent's) damage zone/, "deal damage"],
     [/when this card is discarded|when (this card is )?discarded from/, "timing: discarded"],

@@ -277,18 +277,45 @@ function rowHTML(path, row, lib, contOnly) {
       case "dest": return lab(sel(p, SCHEMA.paramOptions.dest, v || "hand"));
       case "restDest": return lab(sel(p, SCHEMA.paramOptions.restDest, v || "shuffle"));
       case "giftKind": return lab(sel(p, SCHEMA.paramOptions.gift, v || "force"));
+      case "count": return lab(sel(p, { ...(k === "per" ? { "": "— (no “for each”)" } : {}), ...SCHEMA.paramOptions.count }, v || (k === "per" ? "" : "mySoul")));
+      case "op": return lab(sel(p, SCHEMA.paramOptions.op, v || "ge"));
+      case "who": return lab(sel(p, SCHEMA.paramOptions.who, v || "vc"));
+      case "mfrom": return lab(sel(p, SCHEMA.paramOptions.mfrom, v || "drop"));
+      case "mto": return lab(sel(p, SCHEMA.paramOptions.mto, v || "hand"));
+      case "chooser": return lab(sel(p, SCHEMA.paramOptions.chooser, v || "me"));
+      case "lookRest": return (row.from === "deckTop" || row.from === "oppDeckTop") ? lab(sel(p, SCHEMA.paramOptions.lookRest, v || "shuffle")) : "";
+      case "bool": return `<label class="chk"><input type="checkbox" data-path="${p}" ${v ? "checked" : ""}> ${esc(label || k)}</label>`;
       case "filter": {
-        const f = v || {};
-        return `<div class="flt"><label>min grade ${num(p + ".gmin", f.gmin)}</label><label>max grade ${num(p + ".gmax", f.gmax)}</label>
-          <label>name has ${txt(p + ".name", f.name)}</label><label>type ${sel(p + ".ctype", SCHEMA.paramOptions.ctype, f.ctype || "any")}</label></div>`;
+        if (k === "perFilter" && !row.per) return "";
+        return filterHTML(p, v || {}, label);
       }
     }
     return "";
   };
-  return `<div class="prow"><b>${esc(def.label)}</b>${def.params.map(field).join("")}<button class="del" data-do="delRow" data-path="${path}">✕</button></div>`;
+  // every effect step can depend on the step before ("if you did…") and be an option of "choose N of the following"
+  const isEffect = lib === SCHEMA.effects && !contOnly;
+  const flow = isEffect && row.type !== "chooseOpts" ? `<div class="flow">${sel(path + ".onlyIf", SCHEMA.paramOptions.onlyIf, row.onlyIf || "")}${sel(path + ".opt", SCHEMA.paramOptions.opt, row.opt || "")}
+    ${row.onlyIf === "match" || row.onlyIf === "noMatch" ? filterHTML(path + ".onlyFilter", row.onlyFilter || {}, "the step before's cards") : ""}</div>` : "";
+  const params = def.params.filter(([k, kind]) => !(kind === "num" && k === "look" && row.from !== "deckTop" && row.from !== "oppDeckTop"));
+  return `<div class="prow${row.opt ? " opt" : ""}"><b>${row.opt ? `<span class="optL">${row.opt}</span>` : ""}${esc(def.label)}</b>${params.map(field).join("")}${flow}<button class="del" data-do="delRow" data-path="${path}">✕</button></div>`;
 }
 
 // path helpers
+// Card filter form (Ability Language v2): grade, name, type + more (clan/nation, trigger, exact name, vs your vanguard, other than this card)
+function filterHTML(p, f, title) {
+  const more = f.clan || f.trig || f.nameExact || f.sentinel || f.sameNameVC || f.gradeVC || f.other;
+  return `<div class="flt">${title ? `<span class="ftitle">${esc(title)}:</span>` : ""}<label>min grade ${num(p + ".gmin", f.gmin)}</label><label>max grade ${num(p + ".gmax", f.gmax)}</label>
+    <label>name has ${txt(p + ".name", f.name)}</label><label>type ${sel(p + ".ctype", SCHEMA.paramOptions.ctype, f.ctype || "any")}</label>
+    <details class="fmore" ${more ? "open" : ""}><summary>more</summary>
+      <label>clan / nation / race ${txt(p + ".clan", f.clan, "e.g. Royal Paladin")}</label>
+      <label>trigger ${sel(p + ".trig", SCHEMA.paramOptions.trig, f.trig || "")}</label>
+      <label>exact name ${txt(p + ".nameExact", f.nameExact)}</label>
+      <label>grade vs your vanguard ${sel(p + ".gradeVC", SCHEMA.paramOptions.gradeVC, f.gradeVC || "")}</label>
+      <label>sentinel ${sel(p + ".sentinel", { "": "any", yes: "sentinels only", no: "not sentinels" }, f.sentinel || "")}</label>
+      <label class="chk"><input type="checkbox" data-path="${p}.sameNameVC" ${f.sameNameVC ? "checked" : ""}> same name as your vanguard</label>
+      <label class="chk"><input type="checkbox" data-path="${p}.other" ${f.other ? "checked" : ""}> other than this card</label>
+    </details></div>`;
+}
 function getParent(obj, path) {
   const parts = path.split(".");
   const last = parts.pop();
@@ -296,7 +323,7 @@ function getParent(obj, path) {
   for (const k of parts) { if (o[k] === undefined) o[k] = {}; o = o[k]; }
   return [o, last];
 }
-const NUM_FIELDS = new Set(["grade", "power", "shield", "crit", "n", "amount", "pick"]);
+const NUM_FIELDS = new Set(["grade", "power", "shield", "crit", "n", "amount", "pick", "look"]);
 function setPath(path, value) {
   const [o, k] = getParent(cur, path);
   o[k] = NUM_FIELDS.has(k) && value !== "" ? Number(value) : value;
@@ -330,6 +357,10 @@ function defaultRow(type) {
     if (kind === "target") r[k] = "self";
   });
   if (type === "lookTop") { r.n = 5; r.pick = 1; }
+  if (type === "move") Object.assign(r, { from: "drop", to: "hand", n: 1, chooser: "me" });
+  if (type === "count") Object.assign(r, { what: "mySoul", op: "ge", n: 1 });
+  if (type === "unit") r.who = "vc";
+  if (["draw", "CC", "SC", "EC", "power", "crit"].includes(type)) delete r.per;
   return r;
 }
 let checkT = 0;

@@ -158,8 +158,9 @@ const Game = (() => {
     }
   }
   const faceUp = (p) => p.damage.filter((c) => !c.down).length;
-  function match(c, f) {
-    if (!f) return true;
+  // Card filter (Ability Language v2). env = {pi, ctx} enables the fields that compare with your vanguard / this card.
+  function match(c, f, env = {}) {
+    if (!f || !c) return !!c || !f;
     if (f.gmin !== undefined && f.gmin !== "" && c.grade < +f.gmin) return false;
     if (f.gmax !== undefined && f.gmax !== "" && c.grade > +f.gmax) return false;
     if (f.name && !c.name.toLowerCase().includes(f.name.toLowerCase())) return false;
@@ -168,12 +169,66 @@ const Game = (() => {
     if (t === "trigger" && c.type !== "trigger") return false;
     if (t === "anyunit" && c.type === "order") return false;
     if (t === "order" && c.type !== "order") return false;
+    if (t === "g" && c.type !== "g") return false;
+    if (f.nameExact && c.name.toLowerCase() !== String(f.nameExact).toLowerCase()) return false;
+    if (f.clan) { const w = String(f.clan).toLowerCase(); if (![c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(w))) return false; }
+    if (f.trig && f.trig !== "") {
+      if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
+    }
+    if (f.sentinel === "yes" && !c.sentinel) return false;
+    if (f.sentinel === "no" && c.sentinel) return false;
+    if (env.pi !== undefined && S) {
+      const vc = P(env.pi).slots.vc && P(env.pi).slots.vc.card;
+      if (f.sameNameVC && (!vc || c.name !== vc.name)) return false;
+      if (f.gradeVC && vc) {
+        const g = vc.grade, x = c.grade;
+        if (!({ lt: x < g, le: x <= g, eq: x === g, ge: x >= g, gt: x > g, plus1: x === g + 1 })[f.gradeVC]) return false;
+      }
+      if (f.other && env.ctx && env.ctx.card && c.uid === env.ctx.card.uid) return false;
+    }
     return true;
   }
+  // ---------- counts (for "for each…", "if the number of…") ----------
+  function countOf(pi, what, f, ctx = {}) {
+    const p = P(pi), o = P(1 - pi), env = { pi, ctx };
+    const m = (list) => (list || []).filter((c) => match(c, f, env)).length;
+    const units = (q, keys) => keys.filter((k) => q.slots[k] && !q.slots[k].locked && match(q.slots[k].card, f, env)).length;
+    switch (what) {
+      case "myHand": return m(p.hand);
+      case "mySoul": return m(p.soul);
+      case "myDrop": return m(p.drop);
+      case "myDamage": return m(p.damage);
+      case "myDamageUp": return m(p.damage.filter((d) => !d.down));
+      case "myDamageDown": return m(p.damage.filter((d) => d.down));
+      case "myBind": return m(p.bind);
+      case "myDeck": return m(p.deck);
+      case "myGUp": return m(p.gUp) + (p.slots.vc.card.type === "g" && match(p.slots.vc.card, f, env) ? 1 : 0);
+      case "myOrderZone": return m(p.orderZone);
+      case "myRC": return units(p, rcOf(pi));
+      case "myFrontRC": return units(p, frontOf(pi).filter((k) => k !== "vc"));
+      case "myBackRC": return units(p, BACK);
+      case "myUnits": return units(p, unitsOf(pi));
+      case "myRested": return rcOf(pi).filter((k) => p.slots[k] && p.slots[k].rest && match(p.slots[k].card, f, env)).length;
+      case "myEnergy": return p.energy || 0;
+      case "oppHand": return m(o.hand);
+      case "oppSoul": return m(o.soul);
+      case "oppDrop": return m(o.drop);
+      case "oppDamage": return m(o.damage);
+      case "oppBind": return m(o.bind);
+      case "oppRC": return units(o, rcOf(1 - pi));
+      case "oppUnits": return units(o, unitsOf(1 - pi));
+      case "battleNo": return S.battleNo || 0;
+      case "lastCount": return ctx.last ? ctx.last.count : 0;
+      case "lastMatch": return (ctx.last && ctx.last.cards ? ctx.last.cards : []).filter((c) => match(c, f, env)).length;
+      default: return 0;
+    }
+  }
+  const times = (pi, e, ctx) => (e.per ? countOf(pi, e.per, e.perFilter, ctx) : 1); // "for each …"
+  const cmp = (a, op, b) => (op === "le" ? a <= b : op === "eq" ? a === b : op === "lt" ? a < b : op === "gt" ? a > b : a >= b);
   const zoneOf = (key) => (key === "vc" ? "VC" : "RC");
   const zoneOK = (abZone, zone) => !abZone || abZone === "any" || abZone === zone || (abZone === "VC/RC" && (zone === "VC" || zone === "RC"));
   // locked cards are not units with information (CR 7.30), so effects never pick them as units
-  const unitsAt = (pi, keys, f) => keys.filter((k) => P(pi).slots[k] && !P(pi).slots[k].locked && match(P(pi).slots[k].card, f)).map((key) => ({ pi, key }));
+  const unitsAt = (pi, keys, f, env = {}) => keys.filter((k) => P(pi).slots[k] && !P(pi).slots[k].locked && match(P(pi).slots[k].card, f, env)).map((key) => ({ pi, key }));
 
   // ---------- power (incl. CONT abilities) ----------
   function contTargets(pi, t, k) {
@@ -190,7 +245,7 @@ const Game = (() => {
         if (ab.kind !== "CONT" || !zoneOK(ab.zone, zone)) continue;
         if (!(ab.conds || []).every((c) => condOK(pi, c, { key: k, card }))) continue;
         for (const e of ab.effects || []) {
-          if (e.type === stat && contTargets(pi, e.target, k).includes(key) && match(p.slots[key].card, e.filter)) sum += +e.amount || 0;
+          if (e.type === stat && contTargets(pi, e.target, k).includes(key) && match(p.slots[key].card, e.filter, { pi, ctx: { key: k, card } })) sum += (+e.amount || 0) * times(pi, e, { key: k, card });
         }
       }
     };
@@ -252,6 +307,15 @@ const Game = (() => {
       case "targetVC": return !!S.battle && S.battle.tgt === "vc";
       case "selfFront": return frontOf(pi).includes(ctx.key);
       case "selfBack": return BACK.includes(ctx.key);
+      case "count": return cmp(countOf(pi, c.what || "mySoul", c.filter, ctx), c.op || "ge", n);
+      case "unit": { // a unit (your vanguard, this unit, the opponent's vanguard, the attacker / attacked unit) matches a filter
+        const at = (q, k) => (q && q.slots[k] ? q.slots[k].card : null);
+        const card = { vc: at(p, "vc"), self: ctx.key ? at(p, ctx.key) : ctx.card, oppVc: at(o, "vc"),
+          attacker: S.battle ? at(P(S.active), S.battle.att) : null, attacked: S.battle ? at(P(1 - S.active), S.battle.tgt) : null }[c.who || "vc"];
+        return !!card && match(card, c.filter, { pi, ctx });
+      }
+      case "wentFirst": return S.first === pi;
+      case "wentSecond": return S.first !== pi;
       default: return true;
     }
   }
@@ -262,7 +326,8 @@ const Game = (() => {
       case "CB": return faceUp(p) >= n;
       case "SB": return p.soul.length >= n;
       case "EB": return p.energy >= n;
-      case "discard": return p.hand.length >= n;
+      case "discard": return p.hand.filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
+      case "move": return moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : n);
       case "restSelf": return selfThere(pi, ctx) && !P(pi).slots[ctx.key].rest;
       case "retireSelf": case "selfToSoul": return selfThere(pi, ctx) && ctx.key !== "vc";
       case "retireRC": return rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key).length >= n;
@@ -281,7 +346,7 @@ const Game = (() => {
       }
       case "EB": p.energy -= n; break;
       case "discard": {
-        const picked = await chooseCards(pi, `Discard ${n} card(s)`, p.hand, n, n);
+        const picked = await chooseCards(pi, `Discard ${n} card(s)`, p.hand.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
         picked.forEach((x) => { p.hand.splice(p.hand.indexOf(x), 1); p.drop.push(x); });
         break;
       }
@@ -300,6 +365,7 @@ const Game = (() => {
         picked.forEach((x) => { p.drop.splice(p.drop.indexOf(x), 1); p.deck.push(x); });
         break;
       }
+      case "move": await moveCards(pi, { ...c, upTo: false }, ctx); break;
       case "retireRC": {
         const us = await chooseUnits(pi, `Retire ${n} of your rear-guards`, unitsAt(pi, rcOf(pi)).filter((u) => u.key !== ctx.key), n);
         us.forEach((u) => retire(u.pi, u.key));
@@ -339,7 +405,7 @@ const Game = (() => {
     depth++; // abilities triggered while this resolves wait for the next check timing
     try {
       for (const c of ab.costs || []) await pay(pi, c, ctx);
-      for (const e of ab.effects || []) { if (over()) break; await effect(pi, e, { ...ctx, card }); }
+      await runEffects(pi, ab.effects || [], { ...ctx, card });
     } finally { depth--; }
     await settle();
     return true;
@@ -434,8 +500,131 @@ const Game = (() => {
   }
 
   // ---------- effects ----------
+  // Effects run in order. Each step's result {count, cards} is "the step before" for the next one:
+  // e.onlyIf: "did" / "didNot" / "match" (its cards include e.onlyFilter) / "noMatch" → "if you did…", "if a grade 3 was revealed…".
+  // A "chooseOpts" step asks which option letters (e.opt = "A".."D" on the following steps) to perform.
+  async function runEffects(pi, effs, ctx) {
+    let last = null, opts = null;
+    for (const e of effs) {
+      if (over()) break;
+      if (e.type === "chooseOpts") {
+        const letters = [...new Set(effs.filter((x) => x.opt).map((x) => x.opt))].sort();
+        const opt = letters.map((L) => ({ id: L, label: `${L}: ${effs.filter((x) => x.opt === L).map((x) => SCHEMA.effects[x.type] ? SCHEMA.effects[x.type].text(x) : x.type).join(", then ")}` }));
+        const k = Math.max(1, +e.n || 1);
+        opts = new Set(await choose(pi, `Choose ${k} of the following`, opt, Math.min(k, opt.length), Math.min(k, opt.length)));
+        last = { count: opts.size, cards: [] };
+        continue;
+      }
+      if (e.opt && !(opts && opts.has(e.opt))) continue;
+      if (e.onlyIf) {
+        const L = last || { count: 0, cards: [] };
+        const hit = (L.cards || []).some((c) => match(c, e.onlyFilter, { pi, ctx }));
+        const ok = { did: L.count > 0, didNot: L.count === 0, match: hit, noMatch: !hit }[e.onlyIf];
+        if (ok === false) continue;
+      }
+      const r = await effect(pi, e, { ...ctx, last });
+      last = r && typeof r === "object" ? { count: r.count || 0, cards: r.cards || [] } : { count: 1, cards: [] };
+    }
+    return last;
+  }
+  // ---------- Move cards (Ability Language v2): any zone → any zone ----------
+  // e = {from, to, n, upTo, all, random, look (deck top: how many to look at), rest (where the rest go), filter, chooser: "me"|"opp", reveal}
+  const ZONE_OF = { hand: "hand", deck: "deck", deckTop: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gzone: "gUp", orderZone: "orderZone",
+    oppHand: "hand", oppDeckTop: "deck", oppDrop: "drop", oppSoul: "soul", oppDamage: "damage", oppBind: "bind" };
+  const FIELD_FROM = { myRC: "rc", myUnits: "units", myFrontRC: "front", myBackRC: "back", oppRC: "rc", oppUnits: "units", oppFrontRC: "front" };
+  const sideOf = (pi, from) => (String(from).startsWith("opp") ? 1 - pi : pi);
+  function moveCandidates(pi, e, ctx) {
+    const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
+    if (e.from === "self") return ctx.card ? [ctx.card] : [];
+    if (FIELD_FROM[e.from]) {
+      const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK }[FIELD_FROM[e.from]];
+      return unitsAt(side, keys, e.filter, env).filter((u) => !(e.filter && e.filter.other && ctx.key === u.key && side === pi));
+    }
+    if (e.from === "deckTop" || e.from === "oppDeckTop") return q.deck.slice(-Math.max(1, +e.look || +e.n || 1)).filter((c) => match(c, e.filter, env));
+    return (q[ZONE_OF[e.from] || "drop"] || []).filter((c) => match(c, e.filter, env));
+  }
+  // take a card off wherever it is (zones or a circle). Returns false for G units (they go to the G zone instead)
+  function takeAnywhere(side, card) {
+    const q = P(side);
+    for (const z of ["hand", "deck", "drop", "soul", "damage", "bind", "gUp", "orderZone", "removed"]) {
+      const i = (q[z] || []).indexOf(card);
+      if (i >= 0) { q[z].splice(i, 1); return true; }
+    }
+    for (const k of unitsOf(side)) {
+      if (q.slots[k] && q.slots[k].card === card) {
+        if (k === "vc") return false; // the vanguard only leaves by riding
+        leaveCircle(side, k, "drop");
+        const i = q.drop.indexOf(card);
+        if (i < 0) return false;
+        q.drop.splice(i, 1);
+        return true;
+      }
+    }
+    return false;
+  }
+  async function putCard(side, c, to, actor) {
+    const q = P(side);
+    switch (to) {
+      case "hand": q.hand.push(c); break;
+      case "deckTop": q.deck.push(c); break;
+      case "deckBottom": q.deck.unshift(c); break;
+      case "soul": q.soul.push(c); break;
+      case "bind": q.bind.push(c); break;
+      case "removed": q.removed.push(c); break;
+      case "damageUp": c.down = false; q.damage.push(c); break;
+      case "damageDown": c.down = true; q.damage.push(c); break;
+      case "orderZone": q.orderZone.push(c); break;
+      case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c); break;
+      default: q.drop.push(c);
+    }
+  }
+  const ZONE_NAME = { hand: "hand", deck: "deck", deckTop: "top of the deck", drop: "drop", soul: "soul", damage: "damage zone", bind: "bind zone", gzone: "G zone", orderZone: "order zone",
+    deckBottom: "bottom of the deck", damageUp: "damage zone", damageDown: "damage zone (face down)", RC: "RC", removed: "removed zone",
+    myRC: "rear-guards", myUnits: "units", myFrontRC: "front row rear-guards", myBackRC: "back row rear-guards", self: "this card" };
+  async function moveCards(pi, e, ctx) {
+    const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
+    const chooser = e.chooser === "opp" ? 1 - pi : pi;
+    const n = Math.max(1, +e.n || 1);
+    const zn = (z) => ZONE_NAME[String(z).replace(/^opp/, "").replace(/^[A-Z]/, (m) => m.toLowerCase())] || ZONE_NAME[z] || z;
+    let picked = [];
+    // from the field: choose units, then they leave their circles
+    if (FIELD_FROM[e.from]) {
+      const units = moveCandidates(pi, e, ctx);
+      const us = e.all ? units : await chooseUnits(chooser, `Choose ${e.upTo ? "up to " : ""}${n} unit(s): to ${zn(e.to)}`, units, Math.min(n, units.length), !e.upTo);
+      for (const u of us) { const c = P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card; if (c && takeAnywhere(u.pi, c)) picked.push(c); }
+    } else if (e.from === "self") {
+      if (ctx.card && takeAnywhere(pi, ctx.card)) picked = [ctx.card];
+    } else {
+      const deckTop = e.from === "deckTop" || e.from === "oppDeckTop";
+      const look = deckTop ? q.deck.splice(Math.max(0, q.deck.length - Math.max(1, +e.look || n))) : null;
+      const pool = look || q[ZONE_OF[e.from] || "drop"];
+      const cands = pool.filter((c) => match(c, e.filter, env));
+      if (look && e.reveal) log(`${q.name} reveals ${look.map((c) => c.name).join(", ") || "nothing"}`);
+      if (e.all) picked = cands.slice();
+      else if (e.random) { const tmp = cands.slice(); shuffle(tmp); picked = tmp.slice(0, n); }
+      else if (deckTop && !e.look) picked = cands.slice(-n); // "put the top N cards into …": no choice
+      else picked = await chooseCards(chooser, `${look ? `Top ${look.length} cards` : `${chooser !== side ? "Opponent's " : ""}${zn(e.from)}`}: choose ${e.upTo ? "up to " : ""}${n} → ${zn(e.to)}`, cands, e.upTo ? 0 : Math.min(n, cands.length), Math.min(n, cands.length));
+      for (const c of picked) pool.splice(pool.indexOf(c), 1);
+      if (look) {
+        const rest = look.filter((c) => !picked.includes(c));
+        const r = e.rest || "shuffle";
+        if (r === "bottom") q.deck.unshift(...rest);
+        else if (r === "top") q.deck.push(...rest);
+        else if (r === "drop") q.drop.push(...rest);
+        else if (r === "soul") q.soul.push(...rest);
+        else { q.deck.push(...rest); shuffle(q.deck); }
+      }
+      if (e.from === "deck" || e.from === "oppDeck") shuffle(q.deck); // searching the deck shuffles it
+    }
+    // a deck search into the hand stays secret unless the card says "reveal"
+    const secret = (e.from === "deck" || e.from === "deckTop") && e.to === "hand" && !e.reveal;
+    if (picked.length) log(`${q.name}: ${secret ? picked.length + " card(s)" : picked.map((c) => c.name).join(", ")} → ${zn(e.to)}`);
+    for (const c of picked) await putCard(side, c, e.to, pi);
+    if (!picked.length) log(`Move: no card (${zn(e.from)} → ${zn(e.to)})`);
+    return { count: picked.length, cards: picked };
+  }
   async function pickUnits(pi, e, ctx) {
-    const n = +e.n || 1, f = e.filter, o = 1 - pi;
+    const n = +e.n || 1, f = e.filter, o = 1 - pi, env = { pi, ctx };
     const self = selfThere(pi, ctx) ? [{ pi, key: ctx.key }] : [];
     const label = `${SCHEMA.effects[e.type].label}${e.amount ? " " + e.amount : ""}: ${TARGETS[e.target] || ""}`;
     switch (e.target || "self") {
@@ -443,39 +632,43 @@ const Game = (() => {
       case "vc": return [{ pi, key: "vc" }];
       case "placed": return ctx.placedKey && P(pi).slots[ctx.placedKey] ? [{ pi, key: ctx.placedKey }] : [];
       case "attacker": return S.battle ? [{ pi: S.active, key: S.battle.att }] : [];
-      case "allFront": return unitsAt(pi, frontOf(pi), f);
-      case "allFrontRC": return unitsAt(pi, ["fl", "fr"], f);
-      case "allMyRC": return unitsAt(pi, rcOf(pi), f);
-      case "allMyUnits": return unitsAt(pi, unitsOf(pi), f);
-      case "chooseMy": return chooseUnits(pi, label, unitsAt(pi, unitsOf(pi), f), n);
-      case "chooseMyRC": return chooseUnits(pi, label, unitsAt(pi, rcOf(pi), f), n);
-      case "chooseMyFrontRC": return chooseUnits(pi, label, unitsAt(pi, ["fl", "fr"], f), n);
-      case "chooseMyBackRC": return chooseUnits(pi, label, unitsAt(pi, BACK, f), n);
-      case "chooseOppRC": return chooseUnits(pi, label, unitsAt(o, rcOf(o), f), n);
-      case "chooseOppFrontRC": return chooseUnits(pi, label, unitsAt(o, ["fl", "fr"], f), n);
-      case "chooseOppUnit": return chooseUnits(pi, label, unitsAt(o, unitsOf(o), f), n);
+      case "allFront": return unitsAt(pi, frontOf(pi), f, env);
+      case "allFrontRC": return unitsAt(pi, ["fl", "fr"], f, env);
+      case "allMyRC": return unitsAt(pi, rcOf(pi), f, env);
+      case "allMyUnits": return unitsAt(pi, unitsOf(pi), f, env);
+      case "chooseMy": return chooseUnits(pi, label, unitsAt(pi, unitsOf(pi), f, env), n);
+      case "chooseMyRC": return chooseUnits(pi, label, unitsAt(pi, rcOf(pi), f, env), n);
+      case "chooseMyFrontRC": return chooseUnits(pi, label, unitsAt(pi, ["fl", "fr"], f, env), n);
+      case "chooseMyBackRC": return chooseUnits(pi, label, unitsAt(pi, BACK, f, env), n);
+      case "chooseOppRC": return chooseUnits(pi, label, unitsAt(o, rcOf(o), f, env), n);
+      case "chooseOppFrontRC": return chooseUnits(pi, label, unitsAt(o, ["fl", "fr"], f, env), n);
+      case "chooseOppUnit": return chooseUnits(pi, label, unitsAt(o, unitsOf(o), f, env), n);
       default: return [];
     }
   }
   async function effect(pi, e, ctx) {
-    const p = P(pi), n = +e.n || 1, amt = +e.amount || 0;
+    const k = times(pi, e, ctx); // "for each …"
+    const p = P(pi), n = (+e.n || 1) * (["draw", "CC", "SC", "EC", "heal"].includes(e.type) ? k : 1), amt = (+e.amount || 0) * k;
     const battle = e.dur === "battle" && S.battle;
     switch (e.type) {
+      case "move": return moveCards(pi, e, ctx);
+      case "chooseOpts": return { count: 1 }; // handled in runEffects
       case "power": case "crit": {
-        for (const u of await pickUnits(pi, e, ctx)) {
+        const us = await pickUnits(pi, e, ctx);
+        for (const u of us) {
           const s = P(u.pi).slots[u.key];
           if (!s) continue;
           if (e.type === "power") s[battle ? "powB" : "pow"] += amt;
           else s[battle ? "critB" : "crit"] += amt;
         }
-        break;
+        return { count: us.length, cards: us.map((u) => P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card).filter(Boolean) };
       }
       case "stand": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key]) P(u.pi).slots[u.key].rest = false; break;
       case "rest": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key]) P(u.pi).slots[u.key].rest = true; break;
-      case "retire": for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc") { log(`${P(u.pi).slots[u.key].card.name} is retired`); retire(u.pi, u.key); } } break;
+      case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc" && P(u.pi).slots[u.key]) { out.push(P(u.pi).slots[u.key].card); log(`${P(u.pi).slots[u.key].card.name} is retired`); retire(u.pi, u.key); } } return { count: out.length, cards: out }; }
       case "bind": for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc") { log(`${P(u.pi).slots[u.key].card.name} is bound`); bindUnit(u.pi, u.key); } } break;
       case "drive": p.driveBonus += amt; break;
-      case "draw": draw(pi, n); break;
+      case "draw": draw(pi, n); return { count: n };
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": for (let i = 0; i < n && p.deck.length; i++) p.soul.push(p.deck.pop()); break;
       case "EC": p.energy = Math.min(10, p.energy + n); break;
@@ -484,18 +677,18 @@ const Game = (() => {
       case "cantBeHit": if (S.battle) { S.battle.perfect = true; log("🛡 The attacked unit cannot be hit"); } break;
       case "search": {
         const zone = p[e.from || "deck"];
-        const picked = await chooseCards(pi, `Search ${e.from || "deck"}: choose up to ${n}`, zone.filter((c) => match(c, e.filter)), 0, n);
+        const picked = await chooseCards(pi, `Search ${e.from || "deck"}: choose up to ${n}`, zone.filter((c) => match(c, e.filter, { pi, ctx })), 0, n);
         for (const c of picked) { zone.splice(zone.indexOf(c), 1); await sendTo(pi, c, e.dest); }
         if ((e.from || "deck") === "deck") shuffle(p.deck);
-        break;
+        return { count: picked.length, cards: picked };
       }
       case "lookTop": {
         const top = p.deck.splice(Math.max(0, p.deck.length - n));
-        const picked = await chooseCards(pi, `Top ${top.length} cards: choose up to ${+e.pick || 1}`, top.filter((c) => match(c, e.filter)), 0, +e.pick || 1);
+        const picked = await chooseCards(pi, `Top ${top.length} cards: choose up to ${+e.pick || 1}`, top.filter((c) => match(c, e.filter, { pi, ctx })), 0, +e.pick || 1);
         const rest = top.filter((c) => !picked.includes(c));
         if (e.rest === "bottom") p.deck.unshift(...rest); else { p.deck.push(...rest); shuffle(p.deck); }
         for (const c of picked) await sendTo(pi, c, e.dest);
-        break;
+        return { count: picked.length, cards: picked };
       }
       case "gift": await giveGift(pi, e.kind || "force", false); break;
       case "lock": // Lock (CR 7.30): face down, standing; the circle is a lock circle until unlocked
@@ -554,9 +747,9 @@ const Game = (() => {
         break;
       }
       case "callFromHand": {
-        const picked = await chooseCards(pi, `Call up to ${n} from hand`, p.hand.filter((c) => c.type !== "order" && match(c, e.filter)), 0, n);
+        const picked = await chooseCards(pi, `Call up to ${n} from hand`, p.hand.filter((c) => c.type !== "order" && match(c, e.filter, { pi, ctx })), 0, n);
         for (const c of picked) { p.hand.splice(p.hand.indexOf(c), 1); await callAnywhere(pi, c); }
-        break;
+        return { count: picked.length, cards: picked };
       }
     }
   }
@@ -637,6 +830,7 @@ const Game = (() => {
     (p.orderZone || []).forEach((c) => (c.rest = false));
     Object.values(p.slots).forEach((s) => s && (s.rest = false));
     S.used = new Set();
+    S.battleNo = 0;
     Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false });
     S.rode = false;
     S.reveal = [];
@@ -1128,6 +1322,7 @@ const Game = (() => {
     const bk = useBoost ? boosterFor(ai, att) : null;
     if (bk) p.slots[bk].rest = true;
     S.battle = { att, tgt, boostKey: bk, guards: [], perfect: false, shieldBonus: 0 };
+    S.battleNo = (S.battleNo || 0) + 1; // "the Nth battle of that turn"
     S.reveal = [];
     log(`${p.slots[att].card.name}${bk ? " (boosted)" : ""} attacks ${P(di).slots[tgt].card.name}`);
     collect(ai, att, "attack");

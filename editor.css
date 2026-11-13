@@ -218,3 +218,14 @@ table.bd tr[data-set]:hover { background: #ffffff08; cursor: pointer; }
 .hb-row { display: grid; gap: 4px; border-top: 1px solid #1f3554; padding: 8px 0; font-size: .82rem; }
 .hb-row ul { margin: 4px 0 0; padding-left: 18px; color: #c9d6ea; }
 .hb-row button { justify-self: start; padding: 3px 10px; font-size: .78rem; }
+
+/* ---------- Ability Language v2 rows ---------- */
+.prow .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; border-top: 1px dashed #29446a; padding-top: 4px; margin-top: 2px; }
+.prow .flow select { font-size: .76rem; }
+.prow.opt { box-shadow: inset 3px 0 var(--cyan); }
+.optL { display: inline-block; background: var(--cyan); color: #06121f; border-radius: 4px; padding: 0 5px; margin-right: 5px; font-size: .75rem; }
+.flt .ftitle { color: var(--muted); font-size: .75rem; align-self: center; }
+.flt details.fmore { width: 100%; }
+.flt details.fmore summary { cursor: pointer; color: var(--muted); font-size: .76rem; }
+.flt details.fmore[open] { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; }
+.flt details.fmore[open] summary { width: 100%; }

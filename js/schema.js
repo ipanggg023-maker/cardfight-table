@@ -21,6 +21,10 @@ const TARGETS = {
 };
 const CONT_TARGETS = ["self", "vc", "allFront", "allFrontRC", "allMyRC", "allMyUnits"];
 
+// Move cards (effect and cost) share these settings
+const MOVE_PARAMS = [["from", "mfrom", "from"], ["to", "mto", "to"], ["n", "num", "how many"], ["upTo", "bool", "up to (may choose fewer)"], ["all", "bool", "all matching cards"],
+  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["filter", "filter"]];
+const PER = [["per", "count", "× for each card in (optional)"], ["perFilter", "filter", "counting only"]];
 const SCHEMA = {
   kinds: {
     AUTO: "AUTO (triggers on an event)",
@@ -76,13 +80,20 @@ const SCHEMA = {
     targetVC: { label: "Attack target is a vanguard", params: [], text: () => "attacking a vanguard" },
     selfFront: { label: "This unit is in the front row", params: [], text: () => "this unit is in the front row" },
     selfBack: { label: "This unit is in the back row", params: [], text: () => "this unit is in the back row" },
+    count: { label: "Count: number of cards / units (≥, ≤, =)", params: [["what", "count", "count"], ["op", "op", "is"], ["n", "num"], ["filter", "filter"]],
+      text: (p) => `the number of ${flt(p.filter)} in ${cnt(p.what)} is ${OPS[p.op || "ge"]} ${p.n}` },
+    unit: { label: "A unit is … (your vanguard / this unit / opponent's vanguard is a <clan>, grade, name…)", params: [["who", "who", "unit"], ["filter", "filter"]],
+      text: (p) => `${SCHEMA.paramOptions.who[p.who || "vc"]} is ${flt(p.filter)}` },
+    wentFirst: { label: "You went first", params: [], text: () => "you went first" },
+    wentSecond: { label: "You went second", params: [], text: () => "you went second" },
   },
 
   costs: {
     CB: { label: "Counter-Blast", params: [["n", "num"]], text: (p) => `Counter-Blast ${p.n}` },
     SB: { label: "Soul-Blast", params: [["n", "num"]], text: (p) => `Soul-Blast ${p.n}` },
     EB: { label: "Energy-Blast", params: [["n", "num"]], text: (p) => `Energy-Blast ${p.n}` },
-    discard: { label: "Discard from hand", params: [["n", "num"]], text: (p) => `discard ${p.n} card(s)` },
+    discard: { label: "Discard from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `discard ${p.n} ${flt(p.filter)}` },
+    move: { label: "Move cards (put a card from hand into soul, bind this card, put this unit on the bottom of the deck…)", params: MOVE_PARAMS, text: (p) => moveText(p) },
     restSelf: { label: "[Rest] this unit", params: [], text: () => "[Rest] this unit" },
     retireSelf: { label: "Retire this unit", params: [], text: () => "retire this unit" },
     selfToSoul: { label: "Put this unit into soul", params: [], text: () => "put this unit into soul" },
@@ -92,20 +103,22 @@ const SCHEMA = {
   },
 
   effects: {
-    power: { label: "Power +", params: [["amount", "num"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"]],
-      text: (p) => `${tgt(p)} get(s) [Power] +${p.amount} ${dur(p)}` },
-    crit: { label: "Critical +", params: [["amount", "num"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"]],
-      text: (p) => `${tgt(p)} get(s) [Critical] +${p.amount} ${dur(p)}` },
+    power: { label: "Power +", params: [["amount", "num"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"], ...PER],
+      text: (p) => `${tgt(p)} get(s) [Power] +${p.amount}${per(p)} ${dur(p)}` },
+    crit: { label: "Critical +", params: [["amount", "num"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"], ...PER],
+      text: (p) => `${tgt(p)} get(s) [Critical] +${p.amount}${per(p)} ${dur(p)}` },
     drive: { label: "Drive +", params: [["amount", "num"]], text: (p) => `your vanguard gets drive +${p.amount} until end of turn` },
     stand: { label: "[Stand] unit", params: [["target", "target"], ["n", "num"], ["filter", "filter"]], text: (p) => `[Stand] ${tgt(p)}` },
     rest: { label: "[Rest] unit", params: [["target", "target"], ["n", "num"], ["filter", "filter"]], text: (p) => `[Rest] ${tgt(p)}` },
     retire: { label: "Retire unit", params: [["target", "target"], ["n", "num"], ["filter", "filter"]], text: (p) => `retire ${tgt(p)}` },
     bind: { label: "Bind unit", params: [["target", "target"], ["n", "num"], ["filter", "filter"]], text: (p) => `bind ${tgt(p)}` },
-    draw: { label: "Draw", params: [["n", "num"]], text: (p) => `draw ${p.n}` },
-    CC: { label: "Counter-Charge", params: [["n", "num"]], text: (p) => `Counter-Charge ${p.n}` },
-    SC: { label: "Soul-Charge", params: [["n", "num"]], text: (p) => `Soul-Charge ${p.n}` },
-    EC: { label: "Energy-Charge", params: [["n", "num"]], text: (p) => `Energy-Charge ${p.n}` },
+    draw: { label: "Draw", params: [["n", "num"], ...PER], text: (p) => `draw ${p.n}${per(p)}` },
+    CC: { label: "Counter-Charge", params: [["n", "num"], ...PER], text: (p) => `Counter-Charge ${p.n}${per(p)}` },
+    SC: { label: "Soul-Charge", params: [["n", "num"], ...PER], text: (p) => `Soul-Charge ${p.n}${per(p)}` },
+    EC: { label: "Energy-Charge", params: [["n", "num"], ...PER], text: (p) => `Energy-Charge ${p.n}${per(p)}` },
     heal: { label: "Heal damage", params: [["n", "num"]], text: (p) => `heal ${p.n} damage` },
+    move: { label: "★ Move cards (any zone → any zone: search, call from drop/soul, to hand/soul/deck/bind/damage, discard, mill…)", params: MOVE_PARAMS, text: (p) => moveText(p) },
+    chooseOpts: { label: "★ Choose N of the options (mark the option steps A, B, C…)", params: [["n", "num", "how many options"]], text: (p) => `choose ${p.n || 1} of the following` },
     shield: { label: "Shield + (while guarding)", params: [["amount", "num"]], text: (p) => `this guardian gets [Shield] +${p.amount}` },
     cantBeHit: { label: "Attacked unit cannot be hit", params: [], text: () => "the attacked unit cannot be hit this battle" },
     search: { label: "Search zone for card(s)", params: [["from", "from"], ["n", "num"], ["filter", "filter"], ["dest", "dest"]],
@@ -129,9 +142,44 @@ const SCHEMA = {
     from: { deck: "deck", drop: "drop", soul: "soul" },
     dest: { hand: "hand", RC: "RC (call)", soul: "soul" },
     restDest: { shuffle: "shuffle deck", bottom: "bottom of deck" },
-    ctype: { any: "any card", unit: "normal unit", trigger: "trigger unit", anyunit: "any unit", order: "order" },
+    ctype: { any: "any card", unit: "normal unit", trigger: "trigger unit", anyunit: "any unit", order: "order", g: "G unit" },
+    count: { myHand: "your hand", mySoul: "your soul", myDrop: "your drop", myDamage: "your damage zone", myDamageUp: "your face-up damage", myDamageDown: "your face-down damage",
+      myBind: "your bind zone", myDeck: "your deck", myGUp: "your face-up G cards", myOrderZone: "your order zone", myRC: "your rear-guards", myFrontRC: "your front row rear-guards",
+      myBackRC: "your back row rear-guards", myUnits: "your units", myRested: "your rested rear-guards", myEnergy: "your energy",
+      oppHand: "opponent's hand", oppSoul: "opponent's soul", oppDrop: "opponent's drop", oppDamage: "opponent's damage zone", oppBind: "opponent's bind zone",
+      oppRC: "opponent's rear-guards", oppUnits: "opponent's units", battleNo: "this turn's battles (this is the Nth)", lastCount: "cards the step before handled", lastMatch: "cards the step before handled (matching)" },
+    op: { ge: "≥ (or more)", le: "≤ (or less)", eq: "= (exactly)", gt: "> (more than)", lt: "< (less than)" },
+    who: { vc: "your vanguard", self: "this unit", oppVc: "opponent's vanguard", attacker: "the attacking unit", attacked: "the attacked unit" },
+    mfrom: { self: "this card itself", hand: "your hand", deck: "your deck (search)", deckTop: "the top of your deck (look at N)", drop: "your drop", soul: "your soul",
+      damage: "your damage zone", bind: "your bind zone", gzone: "your G zone (face up)", orderZone: "your order zone",
+      myRC: "your rear-guards", myFrontRC: "your front row rear-guards", myBackRC: "your back row rear-guards",
+      oppHand: "opponent's hand", oppDeckTop: "the top of opponent's deck", oppDrop: "opponent's drop", oppSoul: "opponent's soul", oppDamage: "opponent's damage zone",
+      oppRC: "opponent's rear-guards", oppFrontRC: "opponent's front row rear-guards" },
+    mto: { hand: "hand", RC: "RC (call)", soul: "soul", drop: "drop (discard / retire)", deckTop: "top of the deck", deckBottom: "bottom of the deck", bind: "bind zone",
+      damageUp: "damage zone (face up)", damageDown: "damage zone (face down)", removed: "removed from the game", orderZone: "order zone" },
+    chooser: { me: "you choose", opp: "your opponent chooses" },
+    lookRest: { shuffle: "shuffle the rest into the deck", bottom: "the rest on the bottom", top: "the rest back on top", drop: "the rest into the drop", soul: "the rest into the soul" },
+    trig: { "": "any", none: "not a trigger", any: "any trigger", crit: "critical", front: "front", draw: "draw", heal: "heal", over: "over", stand: "stand" },
+    gradeVC: { "": "any", lt: "lower than your vanguard", le: "≤ your vanguard", eq: "same as your vanguard", ge: "≥ your vanguard", gt: "higher than your vanguard", plus1: "your vanguard's grade + 1" },
+    onlyIf: { "": "always", did: "only if the step before did something (\"if you did\")", didNot: "only if the step before did nothing", match: "only if the step before's cards include…", noMatch: "only if they include none of…" },
+    opt: { "": "—", A: "option A", B: "option B", C: "option C", D: "option D" },
   },
 };
+const OPS = { ge: "≥", le: "≤", eq: "=", gt: ">", lt: "<" };
+const cnt = (w) => SCHEMA.paramOptions.count[w || "mySoul"] || w;
+const per = (p) => {
+  if (!p.per) return "";
+  const f = flt(p.perFilter, false).replace(/ ?card\(s\)$/, "");
+  return ` for each ${f ? f + " " : ""}card in ${cnt(p.per)}`;
+};
+function moveText(p) {
+  const O = SCHEMA.paramOptions;
+  const look = p.from === "deckTop" || p.from === "oppDeckTop" ? `look at the top ${p.look || p.n || 1} cards, ` : "";
+  const who = p.chooser === "opp" ? "your opponent chooses " : "choose ";
+  const how = p.all ? "all" : `${p.upTo ? "up to " : ""}${p.n || 1}`;
+  const rest = look ? `, ${O.lookRest[p.rest || "shuffle"]}` : "";
+  return `${look}${p.from === "self" ? "put this card" : `${p.random ? "" : who}${how} ${flt(p.filter)} from ${look ? "among them" : O.mfrom[p.from || "drop"]}${p.random ? " at random" : ""}`}${p.reveal ? ", reveal" : ""} → ${O.mto[p.to || "hand"]}${rest}`;
+}
 
 function tgt(p) {
   const t = TARGETS[p.target] || "this unit";
@@ -147,6 +195,13 @@ function flt(f, short) {
   if (f.gmax !== undefined && f.gmax !== "") bits.push(`grade ≤${f.gmax}`);
   if (f.name) bits.push(`"${f.name}"`);
   if (f.ctype && f.ctype !== "any") bits.push(SCHEMA.paramOptions.ctype[f.ctype]);
+  if (f.nameExact) bits.push(`named "${f.nameExact}"`);
+  if (f.clan) bits.push(`<${f.clan}>`);
+  if (f.trig) bits.push(f.trig === "none" ? "non-trigger" : f.trig === "any" ? "trigger" : f.trig + " trigger");
+  if (f.sentinel === "yes") bits.push("sentinel");
+  if (f.sameNameVC) bits.push("with your vanguard's name");
+  if (f.gradeVC) bits.push("grade " + SCHEMA.paramOptions.gradeVC[f.gradeVC]);
+  if (f.other) bits.push("other than this card");
   if (!bits.length) return short ? "" : "card(s)";
   return short ? ", " + bits.join(", ") : bits.join(" ") + " card(s)";
 }
@@ -165,6 +220,12 @@ function describeAbility(ab) {
   if (conds.length) s += "if " + conds.join(" and ") + ", ";
   const costs = (ab.costs || []).map((c) => SCHEMA.costs[c.type]?.text(c)).filter(Boolean);
   if (costs.length) s += `COST[${costs.join(" & ")}], `;
-  s += (ab.effects || []).map((e) => SCHEMA.effects[e.type]?.text(e)).filter(Boolean).join(", then ") || "(no effect)";
+  s += (ab.effects || []).map((e) => {
+    let t = SCHEMA.effects[e.type]?.text(e);
+    if (!t) return "";
+    if (ab.kind === "CONT") t = t.replace(/ until end of (turn|battle)$/, ""); // always-on: no duration
+    const pre = e.onlyIf === "did" ? "if you did, " : e.onlyIf === "didNot" ? "if you did not, " : e.onlyIf === "match" ? `if it was ${flt(e.onlyFilter)}, ` : e.onlyIf === "noMatch" ? `if none was ${flt(e.onlyFilter)}, ` : "";
+    return (e.opt ? `[${e.opt}] ` : "") + pre + t;
+  }).filter(Boolean).join(", then ") || "(no effect)";
   return s + ".";
 }

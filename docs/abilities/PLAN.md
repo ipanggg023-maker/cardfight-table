@@ -50,6 +50,8 @@ Done 2026-11-13: all of Phase 1 (1 status + per-set board, 2 text check, 3 test 
 
 ## Phase 2: Ability Language v2 (the engine)
 
+Done 2026-11-13: steps 1–3 (filters + counts, Move cards, results + choose-one). Census: 48.4% of cards fully covered (was 25.5%).
+
 Built in steps, each one tested on real cards in the test table and with a full game. Ordered by how many cards each step unlocks.
 
 1. **Filters + counts + targets.** One `filter` object (owner, zone, grade/range, name contains/exact, clan/nation, type,

@@ -7,7 +7,7 @@ Each row is one pattern that appears in card text: a kind of ability, where it w
 a cost, a condition, an effect or a keyword. "Cards" = how many unique cards use it at least once.
 "Engine" = whether the ability blocks in `js/schema.js` + `js/engine.js` can build it today.
 
-**Cards that only use ✅ patterns today: 3,796 (25.5%).**
+**Cards that only use ✅ patterns today: 7,220 (48.4%).**
 Everything else needs at least one 🟡/❌ pattern (or the ✋ Manual block). The plan to close the gap is in
 `docs/abilities/PLAN.md`.
 
@@ -46,7 +46,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | [1/Turn] or [N/Turn] | 1722 | 38 | 419 | 399 | 559 | 307 | ✅ yes |  | Harmonics Messiah; Quaking Heavenly Dragon, Astraios Dragon; Demon World Marquis, Amon |
 | Generation Break N | 1579 | 93 | 1265 | 107 | 82 | 32 | ✅ yes |  | Chrono Dran G; Supremacy Dragon, Claret Sword Dragon; Chronojet Dragon |
 | Limit Break N | 351 | 279 | 61 | 2 |  | 9 | ✅ yes |  | Beast Deity, Frog Master; Eradicator, Spark Horn Dragon; Goshawk Liberator, Cadeau |
-| If you went second / first | 151 | 7 |  |  | 112 | 32 | ❌ no |  | Sunrise Egg; Harmonics Messiah; Energy Generator |
+| If you went second / first | 151 | 7 |  |  | 112 | 32 | ✅ yes |  | Sunrise Egg; Harmonics Messiah; Energy Generator |
 | Only once a turn by a card with the same name | 64 | 1 |  | 50 | 13 |  | ❌ no | limit shared by every copy of the card | Pirate Swordsman, Colombard; Top Idol, Aqua; Skull Witch, Nemain |
 | Divine Skill / Unique / Dangerous | 62 |  |  |  | 2 | 60 | ✅ yes |  | Fated One of Time, Liael=Amorta; High Five!; Fated One of Unparalleled, Varga Dragres |
 | Ritual N (grade 1s in drop) | 60 | 4 | 35 | 5 | 15 | 1 | ❌ no |  | Dragheart, Luard; Journey to be a Dragon; Dragwizard, Cian |
@@ -96,18 +96,18 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Counter-Blast N | 4279 | 772 | 1073 | 806 | 1183 | 445 | ✅ yes |  | Harmonics Messiah; Progenitor Dragon of Lightning Flame, Gilgal; Dragonic Overlord the End |
 | Soul-Blast N | 2527 | 243 | 518 | 550 | 885 | 331 | ✅ yes |  | Dead Armor Dragon; Progenitor Dragon of Lightning Flame, Gilgal; Stealth Fiend, Kurobane Tengu |
 | Discard card(s) from hand | 1028 | 31 | 50 | 377 | 447 | 123 | ✅ yes |  | Harmonics Messiah; Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena |
-| Put this unit / a card into the soul | 883 | 140 | 265 | 146 | 243 | 89 | 🟡 partly | only this unit | Battle Sister, Panettone; Demon World Marquis, Amon; Chrono Dran G |
+| Put this unit / a card into the soul | 883 | 140 | 265 | 146 | 243 | 89 | ✅ yes | only this unit | Battle Sister, Panettone; Demon World Marquis, Amon; Chrono Dran G |
 | Energy-Blast N | 344 | 3 |  |  | 36 | 305 | ✅ yes |  | Energy Generator; Light Elemental, Popowa; Gear Goat of Aperture Leaping |
 | Retire this unit | 329 | 15 | 66 | 68 | 119 | 61 | ✅ yes |  | Dead Armor Dragon; Flower of Ruined Castle, Empousa; Knight of Occult, Golmark |
 | Turn a G zone card face up / face down G cost | 182 | 8 | 94 | 51 | 18 | 11 | ❌ no |  | Untainted Holy Damsel, Green Katrina; Heat Wave Beast, Geomaglass; Snow Element, Blizza |
-| Bind this card / unit | 160 | 7 | 38 | 15 | 66 | 34 | ❌ no |  | Protector of Memories, Gear Puppy; Pure Fragrance Maiden, Lexy; Mt. Osore Le Voile, Oh!Oni |
-| Discard a specific card (grade, trigger, name) | 138 | 5 |  | 13 | 92 | 28 | 🟡 partly | filter on discarded card | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Zeroth Dragon of Distant Sea, Megiddo |
+| Bind this card / unit | 160 | 7 | 38 | 15 | 66 | 34 | ✅ yes |  | Protector of Memories, Gear Puppy; Pure Fragrance Maiden, Lexy; Mt. Osore Le Voile, Oh!Oni |
+| Discard a specific card (grade, trigger, name) | 138 | 5 |  | 13 | 92 | 28 | ✅ yes | filter on discarded card | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Zeroth Dragon of Distant Sea, Megiddo |
 | Retire your other rear-guard(s) | 133 | 2 | 1 | 41 | 59 | 30 | ✅ yes |  | Autumn's Turning Maiden, Rosie; Dragheart, Luard; Resolute Pair of Eyes |
 | Opponent pays / both players pay | 118 | 11 | 107 |  |  |  | ❌ no |  | Heat Elemental, Magum; Snow Element, Blizza; Great Sage of Contradiction, Jirron |
-| Put this unit on top / bottom of deck | 103 | 5 | 47 | 17 | 22 | 12 | ❌ no |  | Inconspicuous Ambuscade, Museta; Spiral Cutie Angel; Gear Goat of Aperture Leaping |
+| Put this unit on top / bottom of deck | 103 | 5 | 47 | 17 | 22 | 12 | ✅ yes |  | Inconspicuous Ambuscade, Museta; Spiral Cutie Angel; Gear Goat of Aperture Leaping |
 | Return drop cards to the deck (Seek Mate) | 101 | 78 | 18 | 5 |  |  | ✅ yes |  | Cornered Stealth Rogue, Benijishi; Dragheart, Luard; Seeker, Light Saver Dragon |
 | [Rest] this unit | 95 | 9 | 29 | 24 | 25 | 8 | ✅ yes |  | Witch of White Revelation, Fertida; Maiden of Irradiate; Fide Gaon |
-| Reveal a card from hand | 88 | 6 |  | 13 | 45 | 24 | ❌ no |  | Harmonics Messiah; Masque of Hydragrum; Eternal Light Dragon, Regulastar Dragon |
+| Reveal a card from hand | 88 | 6 |  | 13 | 45 | 24 | ✅ yes |  | Harmonics Messiah; Masque of Hydragrum; Eternal Light Dragon, Regulastar Dragon |
 | Cost reduced / ignore cost | 59 | 8 | 11 | 10 | 20 | 10 | ❌ no |  | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Elementaria Sanctitude |
 | Choice of costs ('CB 1 or EB 2') | 13 |  |  |  |  | 13 | ❌ no |  | Dragritter, Falhart; Steam Gunner, Tizkar; Bullet of Creation, Pansmermia |
 | [Rest] other units | 10 |  |  | 5 | 3 | 2 | ❌ no |  | Brutal Jack; Coolbau; Sharp Split Dragon |
@@ -118,24 +118,24 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Pattern | Cards | Original | G | V | D | DZ | Engine | Notes | Examples |
 |---|---:|---:|---:|---:|---:|---:|---|---|---|
 | If your vanguard is / has a name | 1942 | 142 | 442 | 109 | 663 | 586 | ✅ yes |  | Knight of Grief, Grania; Blue Artillery Dragon, Inlet Pulse Dragon; Knight of Occult, Golmark |
-| If you did / if you put / if you revealed (result of the earlier part) | 1391 | 104 | 301 | 223 | 459 | 304 | ❌ no | branch on what the earlier step did | Steam Maiden, Elul; Dragontree of Ecliptic Decimation, Griphogila; Lady Battler of the White Dwarf |
+| If you did / if you put / if you revealed (result of the earlier part) | 1391 | 104 | 301 | 223 | 459 | 304 | ✅ yes | branch on what the earlier step did | Steam Maiden, Elul; Dragontree of Ecliptic Decimation, Griphogila; Lady Battler of the White Dwarf |
 | During your / your opponent's turn | 1231 | 121 | 225 | 230 | 456 | 199 | ✅ yes |  | Demon World Marquis, Amon; Steam Maiden, Elul; Dragontree of Ecliptic Decimation, Griphogila |
-| Counts: hand / soul / drop / damage / rear-guards ≥ N | 1088 | 190 | 254 | 116 | 389 | 139 | 🟡 partly | bind zone, face-up damage, opponent counts missing | Harmonics Messiah; Dragonic Overlord the End; Dueling Dragon King, ZANGEKI |
+| Counts: hand / soul / drop / damage / rear-guards ≥ N | 1088 | 190 | 254 | 116 | 389 | 139 | ✅ yes | bind zone, face-up damage, opponent counts missing | Harmonics Messiah; Dragonic Overlord the End; Dueling Dragon King, ZANGEKI |
 | If your opponent's vanguard is grade N+ | 662 | 81 | 13 | 153 | 242 | 173 | ✅ yes |  | Holy Great Sage of Black Shadows, Isabelle; Barcgal; Maiden of Irradiate |
 | Number of face-up G cards | 564 | 62 | 450 | 19 | 23 | 10 | ✅ yes |  | Untainted Holy Damsel, Green Katrina; Supremacy Dragon, Claret Sword Dragon; Chronojet Dragon |
 | Same column / column of this unit | 559 | 59 | 144 | 85 | 192 | 79 | ❌ no |  | Gunburst Linebacker; Aegir-roll Dragon; Maiden of Irradiate |
-| If you have a <clan>/<nation> vanguard or unit | 545 | 473 | 26 | 6 | 15 | 25 | ❌ no | clan/nation filters in conditions | Gear Goat of Aperture Leaping; Scale Dragon of the Magma Cave; Guardian of the Skies, Night Griffon |
-| Opponent's counts (their damage, hand, rear-guards) | 264 | 37 | 67 | 73 | 69 | 18 | 🟡 partly |  | Demon World Marquis, Amon; Dragon Knight, Barkil; Star-vader, Chaos Breaker Dragon |
+| If you have a <clan>/<nation> vanguard or unit | 545 | 473 | 26 | 6 | 15 | 25 | ✅ yes | clan/nation filters in conditions | Gear Goat of Aperture Leaping; Scale Dragon of the Magma Cave; Guardian of the Skies, Night Griffon |
+| Opponent's counts (their damage, hand, rear-guards) | 264 | 37 | 67 | 73 | 69 | 18 | ✅ yes |  | Demon World Marquis, Amon; Dragon Knight, Barkil; Star-vader, Chaos Breaker Dragon |
 | If your vanguard is in Legion | 208 | 161 | 44 | 1 |  | 2 | ✅ yes |  | Seeker, Light Saver Dragon; Holy Edge Celestial, Malchidael; Onmyo Stealth Rogue, Seimei |
 | If your vanguard is grade N+ | 182 | 4 | 3 | 73 | 59 | 43 | ✅ yes |  | Elementaria Sanctitude; Afflated Lemur; Curiophase Dragon |
 | If you have a heart card with … | 176 | 4 | 136 | 5 | 12 | 19 | ❌ no |  | Duo Absolute Sister, Meer; Rain Element, Madew; Snow Element, Valancher |
 | If your order zone has N+ / a set order | 155 | 1 |  |  | 80 | 74 | ✅ yes |  | Kanone Schnellkrieger; Butterfly Diagram Repeater; Result of the Experiment Henceforth |
 | If you persona rode this turn | 134 |  |  |  | 79 | 55 | ✅ yes |  | Spiral Cutie Angel; Everspring Hunter, Emerence; Stealth Fiend, Kawasohime |
 | If this unit's / your vanguard's power is N+ | 115 | 17 | 50 | 24 | 22 | 2 | ❌ no |  | Luster Impact Dragon; Dragon Undead, Malefic Dragon; Label Pangolin |
-| If it is the Nth battle | 86 | 35 | 21 | 23 | 7 |  | ❌ no |  | Couple Dagger Sailor; Light Elemental, Honoly; Light Signals Penguin Soldier |
+| If it is the Nth battle | 86 | 35 | 21 | 23 | 7 |  | ✅ yes |  | Couple Dagger Sailor; Light Elemental, Honoly; Light Signals Penguin Soldier |
 | If this unit is boosted / rested / in a state | 53 | 6 | 31 | 5 | 10 | 1 | ❌ no |  | Aegir-roll Dragon; Admired Sparkle, Spica; Brisk Medical, Iruel |
 | If you are in Dark Night / Abyssal Dark Night | 50 |  |  |  | 47 | 3 | ✅ yes |  | Cardinal Principle, Cagula; Eclipsed Moonlight; Cardinal Fang, Raphilogg |
-| If a trigger / grade N was revealed | 34 | 4 | 1 | 4 | 18 | 7 | ❌ no |  | Almajestar, Schwart=Sparda; Sheltered Girl of the Pharmacy, Mediell; Confident Aqua, Musette |
+| If a trigger / grade N was revealed | 34 | 4 | 1 | 4 | 18 | 7 | ✅ yes |  | Almajestar, Schwart=Sparda; Sheltered Girl of the Pharmacy, Mediell; Confident Aqua, Musette |
 | If the attacking unit is a vanguard / rear-guard | 7 |  | 1 |  | 6 |  | ❌ no |  | Prepared for the Heat, Siana; Second Snake's Opinion, Siana; Hidden in Darkness |
 
 ## Effect
@@ -146,19 +146,19 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Power +/− | 7042 | 1206 | 1495 | 1240 | 2090 | 1011 | ✅ yes |  | Harmonics Messiah; Progenitor Dragon of Lightning Flame, Gilgal; Dragonic Overlord the End |
 | Draw N | 2467 | 257 | 461 | 596 | 800 | 353 | ✅ yes |  | Stealth Fiend, Kurobane Tengu; Quaking Heavenly Dragon, Astraios Dragon; Protector of Memories, Gear Puppy |
 | Shuffle the deck | 2271 | 367 | 548 | 373 | 591 | 392 | ✅ yes |  | Harmonics Messiah; Chrono Dran G; Nightmare Doll, Tosca |
-| Put a card into the hand (from drop / soul / damage / field) | 1582 | 195 | 329 | 203 | 568 | 287 | 🟡 partly | only from deck/top | Flower of Ruined Castle, Empousa; Lady Battler of the White Dwarf; Cherishing Knight, Branwen |
+| Put a card into the hand (from drop / soul / damage / field) | 1582 | 195 | 329 | 203 | 568 | 287 | ✅ yes | only from deck/top | Flower of Ruined Castle, Empousa; Lady Battler of the White Dwarf; Cherishing Knight, Branwen |
 | Search your deck for a card | 1493 | 384 | 429 | 181 | 323 | 176 | ✅ yes |  | Harmonics Messiah; Chrono Dran G; Dragheart, Luard |
 | Look at the top N cards, take some | 1354 | 145 | 237 | 284 | 420 | 268 | ✅ yes |  | Battle Sister, Panettone; Nightmare Doll, Tosca; Knight of Thriving, Palsolo |
-| Reveal the top card / reveal from hand | 1275 | 156 | 217 | 203 | 452 | 247 | 🟡 partly |  | Dragontree of Ecliptic Decimation, Griphogila; Lady Battler of the White Dwarf; Blue Sky Knight, Altmile |
+| Reveal the top card / reveal from hand | 1275 | 156 | 217 | 203 | 452 | 247 | ✅ yes |  | Dragontree of Ecliptic Decimation, Griphogila; Lady Battler of the White Dwarf; Blue Sky Knight, Altmile |
 | G zone: turn face up/down, put into G zone, Stride from … | 965 | 87 | 708 | 81 | 58 | 31 | 🟡 partly |  | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Harmonics Messiah |
-| For each … (scaling bonus) | 910 | 81 | 275 | 162 | 288 | 104 | ❌ no |  | Demon World Marquis, Amon; Steam Maiden, Elul; Dragontree of Ecliptic Decimation, Griphogila |
-| Put a card on top / bottom of the deck | 904 | 122 | 280 | 153 | 234 | 115 | ❌ no |  | Battle Sister, Panettone; Mage of Entwined Roots, Amergin; Jewelry Light, Claseena |
+| For each … (scaling bonus) | 910 | 81 | 275 | 162 | 288 | 104 | ✅ yes |  | Demon World Marquis, Amon; Steam Maiden, Elul; Dragontree of Ecliptic Decimation, Griphogila |
+| Put a card on top / bottom of the deck | 904 | 122 | 280 | 153 | 234 | 115 | ✅ yes |  | Battle Sister, Panettone; Mage of Entwined Roots, Amergin; Jewelry Light, Claseena |
 | Shield + | 859 | 37 | 170 | 118 | 315 | 219 | ✅ yes |  | Heat Wave Beast, Geomaglass; Aurora Battle Princess, Agra Rouge; Demonic Lord of Hades Blaze, Baphormedes |
-| Put a card into the soul (from field / hand / drop / deck) | 804 | 72 | 182 | 128 | 251 | 171 | 🟡 partly |  | Nightmare Doll, Tosca; Stealth Dragon, Gengan; Witch of White Revelation, Fertida |
+| Put a card into the soul (from field / hand / drop / deck) | 804 | 72 | 182 | 128 | 251 | 171 | ✅ yes |  | Nightmare Doll, Tosca; Stealth Dragon, Gengan; Witch of White Revelation, Fertida |
 | Soul-Charge N | 800 | 119 | 209 | 139 | 255 | 78 | ✅ yes |  | King of Masks, Dantarian; Afflated Lemur; Knight of War Damage, Fosado |
 | Retire opponent's rear-guard(s) | 779 | 168 | 188 | 120 | 213 | 90 | ✅ yes |  | Chronojet Dragon; Dragheart, Luard; Balance Wiggler |
 | [Stand] a unit | 736 | 101 | 139 | 109 | 246 | 141 | ✅ yes |  | Dragonic Overlord the End; Blue Artillery Dragon, Inlet Pulse Dragon; Flower of Ruined Castle, Empousa |
-| Discard as an effect (you or opponent) | 707 | 63 | 187 | 146 | 225 | 86 | 🟡 partly |  | Stealth Fiend, Kurobane Tengu; Harmonics Messiah; Lady Battler of the White Dwarf |
+| Discard as an effect (you or opponent) | 707 | 63 | 187 | 146 | 225 | 86 | ✅ yes |  | Stealth Fiend, Kurobane Tengu; Harmonics Messiah; Lady Battler of the White Dwarf |
 | Gets an ability ("[AUTO]…") / gets all of the following | 668 | 51 | 292 | 27 | 124 | 174 | ❌ no | granted abilities | Untainted Holy Damsel, Green Katrina; Ancestral Dragon King of Zenith Colors, Founaherdio; Great Dragon Emperor of Distant Blaze, Gidoradevalt |
 | Counter-Charge N | 606 | 20 | 225 | 96 | 210 | 55 | ✅ yes |  | Progenitor Dragon of Lightning Flame, Gilgal; Steam Maiden, Elul; Trickmoon |
 | Critical + | 588 | 95 | 119 | 115 | 184 | 75 | ✅ yes |  | Demon World Marquis, Amon; Dragontree of Ecliptic Decimation, Griphogila; Vairina Exspecta |
@@ -167,23 +167,23 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Cannot be hit | 486 | 65 | 124 | 117 | 150 | 30 | ✅ yes |  | Elementaria Sanctitude; Maiden of Blossom Rain; Steam Guard, Kastilia |
 | Call from hand | 438 | 36 | 133 | 90 | 125 | 54 | ✅ yes |  | Dead Armor Dragon; Ancestral Dragon King of Zenith Colors, Founaherdio; Great Dragon Emperor of Distant Blaze, Gidoradevalt |
 | Replacement: instead / would … | 406 | 13 | 8 | 85 | 167 | 133 | ❌ no |  | Pile Deletor, Jaluel; Demon World Marquis, Amon; Steam Maiden, Elul |
-| Call from the deck | 400 | 78 | 135 | 72 | 83 | 32 | 🟡 partly |  | Chrono Dran G; Perfect Performance, Ange; Seeker, Thing Saver Dragon |
+| Call from the deck | 400 | 78 | 135 | 72 | 83 | 32 | ✅ yes |  | Chrono Dran G; Perfect Performance, Ange; Seeker, Thing Saver Dragon |
 | Restand the vanguard / units after battle | 392 | 47 | 65 | 74 | 131 | 75 | ✅ yes |  | Dragonic Overlord the End; Blue Artillery Dragon, Inlet Pulse Dragon; Flower of Ruined Castle, Empousa |
 | Grade +N / is regarded as | 348 | 45 | 102 | 19 | 123 | 59 | ❌ no |  | Protector of Memories, Gear Puppy; Pile Deletor, Jaluel; Steam Maiden, Elul |
-| Bind a card (from field / hand / deck / drop) | 331 | 19 | 115 | 76 | 77 | 44 | 🟡 partly |  | Goddess of the Sun, Amaterasu; Chronojet Dragon G; Refresh Time, Portia |
+| Bind a card (from field / hand / deck / drop) | 331 | 19 | 115 | 76 | 77 | 44 | ✅ yes |  | Goddess of the Sun, Amaterasu; Chronojet Dragon G; Refresh Time, Portia |
 | Drive +/− | 329 | 9 | 51 | 69 | 144 | 56 | ✅ yes |  | Dragonic Overlord the End; Demon World Marquis, Amon; Relation Weaver, Petralka |
-| Your opponent chooses (and retires/discards) | 312 | 30 | 128 | 64 | 76 | 14 | ❌ no | the other player makes the choice | Stealth Fiend, Kurobane Tengu; Demon World Marquis, Amon; Security Upgrader |
+| Your opponent chooses (and retires/discards) | 312 | 30 | 128 | 64 | 76 | 14 | ✅ yes | the other player makes the choice | Stealth Fiend, Kurobane Tengu; Demon World Marquis, Amon; Security Upgrader |
 | Opponent cannot call (grade N / sentinels) to GC / RC | 271 | 12 | 63 | 84 | 76 | 36 | ❌ no |  | Dead Armor Dragon; Chronojet Dragon; Fleet Swallower |
 | Markers (Protect, Force, Accel, crests, counters) | 265 | 12 | 1 | 88 | 118 | 46 | 🟡 partly |  | Quaking Heavenly Dragon, Astraios Dragon; Dragontree of Ecliptic Decimation, Griphogila; Energy Generator |
-| Put a card into the drop (mill / from soul) | 263 | 39 | 82 | 69 | 55 | 18 | 🟡 partly |  | Holy Great Sage of Black Shadows, Isabelle; Mage of Entwined Roots, Amergin; Giant Deity of Distant World, Valkerion |
+| Put a card into the drop (mill / from soul) | 263 | 39 | 82 | 69 | 55 | 18 | ✅ yes |  | Holy Great Sage of Black Shadows, Isabelle; Mage of Entwined Roots, Amergin; Giant Deity of Distant World, Valkerion |
 | Ride by an effect (from deck / drop / soul / hand) | 263 | 41 | 36 | 45 | 95 | 46 | ❌ no | Superior Ride | Chronojet Dragon; Seeker, Thing Saver Dragon; Dragheart, Luard |
 | Call tokens (Plant / Shadow Army / Hollow…) | 261 | 9 | 25 | 72 | 109 | 46 | ❌ no | tokens | Untainted Holy Damsel, Green Katrina; Sunlight Garden's Guide; Stealth Dragon, Gengan |
-| Call from the drop zone | 234 | 13 | 25 | 39 | 104 | 53 | ❌ no |  | Knight of Occult, Golmark; Pirate Swordsman, Colombard; Spiritual Body Condensation |
-| Call from the soul | 226 | 33 | 47 | 45 | 67 | 34 | ❌ no |  | King of Masks, Dantarian; Master of Gravity, Baromagnes; One Who Governs Chaos |
+| Call from the drop zone | 234 | 13 | 25 | 39 | 104 | 53 | ✅ yes |  | Knight of Occult, Golmark; Pirate Swordsman, Colombard; Spiritual Body Condensation |
+| Call from the soul | 226 | 33 | 47 | 45 | 67 | 34 | ✅ yes |  | King of Masks, Dantarian; Master of Gravity, Baromagnes; One Who Governs Chaos |
 | Lock / unlock | 223 | 59 | 83 | 27 | 38 | 16 | ✅ yes |  | Harmonics Messiah; Star-vader, Chaos Breaker Dragon; Prelude of Genesis |
-| Choose one / perform N of the following | 161 |  |  | 8 | 92 | 61 | ❌ no | modal choice | Master of Gravity, Baromagnes; Hulappoi Lilikkoi; Earnescorrect Follower, Ortiimo |
-| Power − to opponent's units | 157 | 53 | 34 | 24 | 35 | 11 | 🟡 partly |  | Explosive! Melting Heart!; Invasion Monster, Azuzuradon; Fleeting Shine That Lights Life |
-| Deal damage / put cards into the damage zone | 150 | 48 | 40 | 23 | 38 | 1 | ❌ no |  | Incise Angel; Knight of Instant Slash, Greete; Prescription Angel |
+| Choose one / perform N of the following | 161 |  |  | 8 | 92 | 61 | ✅ yes | modal choice | Master of Gravity, Baromagnes; Hulappoi Lilikkoi; Earnescorrect Follower, Ortiimo |
+| Power − to opponent's units | 157 | 53 | 34 | 24 | 35 | 11 | ✅ yes |  | Explosive! Melting Heart!; Invasion Monster, Azuzuradon; Fleeting Shine That Lights Life |
+| Deal damage / put cards into the damage zone | 150 | 48 | 40 | 23 | 38 | 1 | 🟡 partly |  | Incise Angel; Knight of Instant Slash, Greete; Prescription Angel |
 | Move a rear-guard to another circle / swap | 137 | 15 | 42 | 26 | 37 | 17 | ❌ no | move by effect | Zeroth Dragon of Distant Sea, Megiddo; Dragontree of Ecliptic Decimation, Griphogila; Empyrean Blue Dragon, Shelling Cannon Dragon |
 | Tickets / Quick Shield / crest-like markers | 133 | 3 |  | 93 | 25 | 12 | ❌ no | tickets | Barcgal; Harmonics Messiah; Persona Shield |
 | Cannot guard with … / guard restrictions | 120 | 10 | 55 | 17 | 34 | 4 | ❌ no |  | Chronojet Dragon; Evil Eye of Prohibition, Quen Lu; Thunder Elemental, Gororo |
@@ -193,7 +193,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Extra attacks / attack from the back row | 67 |  | 16 | 5 | 23 | 23 | ❌ no |  | Empyrean Blue Dragon, Shelling Cannon Dragon; Phantasmic Stealth Fiend, Megalonozuchi; Dragritter of Flame Blade, Grhy |
 | World (Dark Night) | 65 | 3 | 1 | 1 | 51 | 9 | ✅ yes |  | Cardinal Fang, Marizma; Cardinal Principle, Cagula; Eclipsed Moonlight |
 | Energy-Charge N | 62 | 3 |  |  | 11 | 48 | ✅ yes |  | Energy Generator; Construct Golem; Blitz Sales, Stil |
-| Call from the bind zone / damage zone | 62 | 6 | 25 | 12 | 14 | 5 | ❌ no |  | Steam Maiden, Elul; Prescription Angel; Medical Gunner, Hermieres |
+| Call from the bind zone / damage zone | 62 | 6 | 25 | 12 | 14 | 5 | ✅ yes |  | Steam Maiden, Elul; Prescription Angel; Medical Gunner, Hermieres |
 | [Rest] a unit | 57 | 11 | 28 | 9 | 9 |  | ✅ yes |  | Stealth Fiend, Gashadokuro; Slapstick Worker; Commander Laurel |
 | Delete | 51 | 8 | 31 | 10 | 2 |  | ✅ yes |  | Pile Deletor, Jaluel; Clipping Deletor, Evo; Waving Deletor, Greidhol |
 | Time Leap | 36 | 4 | 25 | 4 | 3 |  | ✅ yes |  | Chronojet Dragon G; Tick-away Dragon; Furyminute Dragon |
