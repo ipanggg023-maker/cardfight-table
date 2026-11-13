@@ -227,6 +227,8 @@ const Game = (() => {
     const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
+      case "oppOpenRC": return rcOf(1 - pi).filter((k) => !o.slots[k]).length;
+      case "myOpenRC": return rcOf(pi).filter((k) => !p.slots[k]).length;
       case "oppGZone": return m([...(o.gUp || []), ...(o.gDeck || [])]);
       case "myGZone": return m([...(p.gUp || []), ...(p.gDeck || [])]);
       case "mySoul": return m(p.soul);
@@ -471,6 +473,7 @@ const Game = (() => {
       case "byOpp": return ctx.by !== undefined && ctx.by !== null && ctx.by !== pi; // retired by the opponent's card
       case "byMe": return ctx.by === pi; // by your own card's ability
       case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
+      case "retiredThisTurn": { const r = S.retiredTurn && S.retiredTurn.turn === S.turn ? S.retiredTurn.n : [0, 0]; return r[c.who === "me" ? pi : 1 - pi] >= (+c.n || 1); }
       case "battlePhase": return S.active === pi && (S.phase === "battle" || !!S.battle);
       case "wentSecond": return S.first !== pi;
       default: return true;
@@ -754,9 +757,10 @@ const Game = (() => {
     collectAll(1 - pi, "oppPlacedRC", { from, subject: card });
     await settle();
   }
-  async function callAnywhere(pi, card, from = "") {
+  async function callAnywhere(pi, card, from = "", row = "") {
     if (card.cantBeCalled) { log(`${card.name} can't be called; it goes to the drop`); P(pi).drop.push(card); return; }
-    const opts = rcOf(pi).map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
+    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : rcOf(pi); // "call it to a back row (RC)"
+    const opts = keys.map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
     const [key] = await choose(pi, `Call ${card.name} to which circle?`, opts, 1, 1);
     await place(pi, card, key, from);
   }
@@ -768,6 +772,7 @@ const Game = (() => {
     const card = sl.card, wasLocked = sl.locked;
     retire(pi, key);
     if (wasLocked || key === "vc") return;
+    (S.retiredTurn = S.retiredTurn && S.retiredTurn.turn === S.turn ? S.retiredTurn : { turn: S.turn, n: [0, 0] }).n[pi]++; // "if your opponent's rear-guard was retired this turn"
     collect(pi, null, "retired", { card, zone: "RC", subject: card, by: byPi });
     collectAll(pi, "allyRetired", { subject: card, by: byPi });
     collectAll(1 - pi, "oppRetired", { subject: card, by: byPi });
@@ -903,6 +908,8 @@ const Game = (() => {
       case "automod": c.down = false; q.automod.push(c); log(`⚙ ${c.name} becomes an AutoMOD gauge`); break;
       case "prison": c.imprisoned = side; P(actor).orderZone.push(c); log(`⛓ ${c.name} is imprisoned`); break;
       case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from); break;
+      case "RCback": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "back"); break;
+      case "RCfront": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "front"); break;
       default: q.drop.push(c);
     }
   }
@@ -930,7 +937,10 @@ const Game = (() => {
       if (ctx.card && takeAnywhere(pi, ctx.card)) picked = [ctx.card];
     } else {
       const deckTop = e.from === "deckTop" || e.from === "oppDeckTop";
-      const look = deckTop ? q.deck.splice(Math.max(0, q.deck.length - Math.max(1, +e.look || n))) : null;
+      // "look at the same number of cards … as the number of your opponent's open (RC)": the look size is a count
+      const lookN = e.lookCount ? countOf(pi, e.lookCount.what, e.lookCount.filter, ctx) : +e.look || n;
+      if (e.lookCount && lookN <= 0) { log("Nothing to look at"); return { count: 0, cards: [] }; }
+      const look = deckTop ? q.deck.splice(Math.max(0, q.deck.length - Math.max(1, lookN))) : null;
       // several zones ("hand|drop"): one list to choose from; each card leaves its own zone
       const zonesOf = String(e.from).includes("|") ? String(e.from).split("|").map((z) => q[ZONE_OF[z] || z] || []) : null;
       const pool = look || (zonesOf ? zonesOf.flat() : q[ZONE_OF[e.from] || "drop"]);

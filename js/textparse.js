@@ -598,6 +598,19 @@ const TextParse = (() => {
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) (other )?(.*?)units?\\b`)))) add({ type: "count", what: "myUnits", op: CMP(m[0]), n: toNum(m[1]), filter: filt(m[4] + (m[3] ? " other" : "")) });
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) (other )?(.*?)rear-guards?`)))) add({ type: "count", what: "myRC", op: CMP(m[0]), n: toNum(m[1]), filter: filt(m[4] + (m[3] ? " other" : "")) });
     if ((m = t.match(rx(`if your opponent has ${N} or (more|less|fewer) rear-guards?`)))) add({ type: "count", what: "oppRC", op: CMP(m[0]), n: toNum(m[1]) });
+    if (/if (?:one or more of )?your opponent'?s rear-guards? (?:was|were|has been|have been) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "opp", n: 1 });
+    else if (/if (?:one or more of )?your rear-guards? (?:was|were) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "me", n: 1 });
+    // round 14: Prison, markers, World, opponent's G zone, order zone races ("if your Order Zone has a Base / three or more Bases")
+    if ((m = t.match(rx(`if ${N} or (more|less|fewer) of your opponent'?s cards are imprisoned in your prison`)))) add({ type: "count", what: "imprisoned", op: CMP(m[0]), n: toNum(m[1]) });
+    else if (/if (?:any|one) of your opponent'?s cards (?:is|are) imprisoned in your prison|if your prison has (?:a|an opponent'?s) card/i.test(t)) add({ type: "count", what: "imprisoned", op: "ge", n: 1 });
+    if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) ([A-Za-z ]+?) markers? on your (\\(RC\\)|\\(VC\\)|circles|units)`)))) add({ type: "markers", name: m[m.length - 2].trim().replace(/s$/, "").toLowerCase(), where: /\(VC\)/i.test(m[m.length - 1]) ? "vc" : /\(RC\)/i.test(m[m.length - 1]) ? "rc" : "all", op: CMP(m[0]), n: toNum(m[1]) });
+    if ((m = t.match(/^if it is ((?!your |the |an? |not )[A-Za-z' ]+?)$/i)) && !/(phase|turn|state|grade \d)$/i.test(m[1]) && !out.some((c) => c.type === "world")) add({ type: "world", text: m[1].trim() });
+    if (/if your g zone has no cards/i.test(t)) add({ type: "count", what: "myGZone", op: "eq", n: 0 });
+    else if (/if your g zone has (?:a|one or more) cards?/i.test(t)) add({ type: "count", what: "myGZone", op: "ge", n: 1 });
+    if (/if your opponent'?s g zone has (?:a|one or more) cards?/i.test(t)) add({ type: "count", what: "oppGZone", op: "ge", n: 1 });
+    else if (/if your opponent'?s g zone has no cards/i.test(t)) add({ type: "count", what: "oppGZone", op: "eq", n: 0 });
+    if ((m = t.match(rx(`[Ii]f your [Oo]rder [Zz]one has (an?|${N}(?: or more)?) ([A-Z][A-Za-z]+)$`, ""))) && !/^(Set|Normal|Card|Order)/.test(m[m.length - 1]))
+      add({ type: "count", what: "myOrderZone", op: "ge", n: /^an?$/i.test(m[1]) ? 1 : toNum(m[2] || m[1]), filter: { clan: m[m.length - 1].replace(/s$/, "") } });
     for (const [z, what] of COUNT_ZONES) {
       if ((m = t.match(rx(`if ${z} has ${N} or (more|less|fewer) (.*?)(cards?|units?)\\b`))) || (m = t.match(rx(`if the number of (.*?)cards? in ${z} is ${N} or (more|less|fewer)`)))) {
         const nIdx = m[0].startsWith("if the number") ? m.length - 2 : z.includes("(") ? 3 : 2;
@@ -750,6 +763,7 @@ const TextParse = (() => {
       else if ((m = p.match(rx(`^turn (${N}) (.*?)cards? (?:from|in) (?:your )?g zone (?:with .*? )?face up`)))) out.push({ type: "gFaceUp", n: toNum(m[1]), filter: filt(m[3] || "") });
       else if ((m = p.match(rx(`^choose (${N}) of your (other )?(.*?)rear-guards?,? and retire (it|them)`)))) out.push({ type: "retireRC", n: toNum(m[1]) });
       else if (/^\[?rest\]? this (unit|card)/i.test(p)) out.push({ type: "restSelf" });
+      else if ((m = p.match(rx(`^\\[?rest\\]? (${N}) (?:of your )?(other )?(.*?)rear-guards?$`)))) out.push({ type: "restRC", n: toNum(m[1]), filter: { ...(filt(m[m.length - 1] || "") || {}), ...(m[m.length - 2] ? { other: true } : {}) } });
       else if ((m = p.match(/^(counter|soul)-blast$/i))) out.push({ type: m[1].toLowerCase() === "counter" ? "CB" : "SB", n: 1 });
       else if (/^\[?rest\]?$/i.test(p)) out.push({ type: "restSelf" }); // "[COST][Rest]": rest this unit
       // round 8: costs from several zones: "remove a [Heal] from hand or drop", "put a card with "X" from your hand or soul into your drop"
@@ -943,24 +957,35 @@ const TextParse = (() => {
     // look at the top N … choose … put into hand / call / soul (+ rest)
     if ((m = t.match(rx(`^look at (the top )?${N} cards? (from the top )?of your deck`)))) { ctx.look = { n: toNum(m[2]) }; return []; }
     if (/^look at the top card of your deck$/i.test(t)) { ctx.look = { n: 1 }; return []; }
+    // "look at the same number of cards from the top of your deck as the number of your opponent's open (RC)"
+    if ((m = t.match(/^look at the same number of cards from the top of your deck as the number of (your opponent'?s open \(RC\)|your open \(RC\)|cards in (your (?:soul|drop|hand|damage zone|order zone|bind zone)))$/i))) {
+      const what = /opponent'?s open/i.test(m[1]) ? "oppOpenRC" : /your open/i.test(m[1]) ? "myOpenRC" : (COUNT_ZONES.find(([re]) => rx("^" + re + "$").test((m[2] || "").toLowerCase())) || [])[1] || "mySoul";
+      ctx.look = { n: 5, count: { what } }; return [];
+    }
+    if (ctx.look && (m = t.match(/^choose any number of (.*?)(?:cards?|units?)? from among them$/i))) { ctx.look.pick = 99; ctx.look.upTo = true; ctx.look.filter = filt(m[1] || ""); return []; }
     if ((m = t.match(rx(`^look at up to ${N} cards? from the top of your deck`)))) { ctx.look = { n: toNum(m[1]) }; return []; }
-    if (ctx.look && /^put (it|them) on the top or bottom of (your|the) deck/i.test(t)) { const L = ctx.look; ctx.look = null; return [{ type: "move", from: "deckTop", look: L.n, n: L.n, upTo: true, to: "deckBottom", rest: "top" }]; }
+    if (ctx.look && /^put (it|them) on the top or bottom of (your|the) deck/i.test(t)) { const L = ctx.look; ctx.look = null; return [{ type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.n, upTo: true, to: "deckBottom", rest: "top" }]; }
     if ((m = t.match(rx(`^reveal the top (${N} )?cards? of your deck`)))) { ctx.look = { n: m[2] ? toNum(m[2]) : 1, reveal: true }; return []; }
     // round 3: "call up to one card from among them to (RC)", "call it to a (RC) as [Rest]"
     if (ctx.look && (m = t.match(rx(`^call (up to )?${N} (.*?)(?:cards?|units?)? from among them to (?:an? |an open )?\\(rc\\)( as \\[rest\\])?`)))) {
-      const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: toNum(m[2]), upTo: !!m[1], to: "RC", filter: { ...(L.filter || {}), ...(filt(m[3] || "") || {}) }, rest: "shuffle", ...(m[4] ? { asRest: true } : {}) };
+      const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: toNum(m[2]), upTo: !!m[1], to: "RC", filter: { ...(L.filter || {}), ...(filt(m[3] || "") || {}) }, rest: "shuffle", ...(m[4] ? { asRest: true } : {}) };
       ctx.lookMove = e; return [e];
     }
+    if (ctx.look && /^(you may )?call (it|that card|them) to (?:a |an open )?(back|front) row \(rc\)$/i.test(t)) {
+      const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: L.upTo !== false, to: /back/i.test(t) ? "RCback" : "RCfront", filter: L.filter, rest: "shuffle" };
+      ctx.lookMove = e; return [e];
+    }
+    if (ctx.pick && /^call (it|them) to (?:a |an open )?(back|front) row \(rc\)$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: /back/i.test(t) ? "RCback" : "RCfront", n: P.n, upTo: P.upTo, filter: P.filter }]; }
     if (ctx.look && /^(you may )?call (it|that card|them) to (a |an open |an? )?\(rc\)( as \[rest\])?$/i.test(t)) {
-      const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: L.pick || 1, upTo: true, to: "RC", filter: L.filter, rest: "top", ...(/\[rest\]/i.test(t) ? { asRest: true } : {}) };
+      const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: true, to: "RC", filter: L.filter, rest: "top", ...(/\[rest\]/i.test(t) ? { asRest: true } : {}) };
       ctx.lookMove = e; return [e];
     }
-    if (ctx.look && /^(you may )?call (it|that card|them) to( an open)? \(rc\)$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: L.pick || 1, upTo: true, to: "RC", filter: L.filter, rest: "top" }; ctx.lookMove = e; return [e]; }
+    if (ctx.look && /^(you may )?call (it|that card|them) to( an open)? \(rc\)$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: true, to: "RC", filter: L.filter, rest: "top" }; ctx.lookMove = e; return [e]; }
     if (ctx.look && (m = t.match(rx(`^(?:choose|reveal|search for) (up to )?${N} (.*?)(?:cards?|units?|orders?)? from among (?:them|it)`)))) { ctx.look.pick = toNum(m[2]); ctx.look.upTo = !!m[1]; ctx.look.filter = filt(m[3]); return []; }
     if (ctx.look && /^(reveal (it|them),? and )?(put (it|them) into (your )?hand|call (it|them) to( an open)? \(rc\)|put (it|them) into (your )?soul|put (it|them) into (your )?drop|put (it|them) on the (top|bottom) of (your|the) deck)/i.test(t)) {
       const to = /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : /soul/i.test(t) ? "soul" : /drop/i.test(t) ? "drop" : /bottom/i.test(t) ? "deckBottom" : "deckTop";
       const L = ctx.look;
-      const e = { type: "move", from: "deckTop", look: L.n, n: L.pick || 1, upTo: L.upTo !== false, to, filter: L.filter, reveal: /reveal/i.test(t), rest: "shuffle" };
+      const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: L.upTo !== false, to, filter: L.filter, reveal: /reveal/i.test(t), rest: "shuffle" };
       ctx.lookMove = e;
       return [e];
     }
@@ -968,12 +993,12 @@ const TextParse = (() => {
     if (ctx.look && (m = t.match(rx(`^put (up to )?${N} (.*?)cards? from among them (into (your )?(hand|soul|drop)|on the (top|bottom) of (your|the) deck)`)))) {
       const L = ctx.look;
       const to = /hand/i.test(m[4]) ? "hand" : /soul/i.test(m[4]) ? "soul" : /drop/i.test(m[4]) ? "drop" : /bottom/i.test(m[4]) ? "deckBottom" : "deckTop";
-      const e = { type: "move", from: "deckTop", look: L.n, n: toNum(m[2]), upTo: !!m[1], to, filter: filt(m[3]), rest: "shuffle" };
+      const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: toNum(m[2]), upTo: !!m[1], to, filter: filt(m[3]), rest: "shuffle" };
       ctx.lookMove = e;
       return [e];
     }
     if (ctx.lookMove && /^discard the rest$/i.test(t)) { ctx.lookMove.rest = "drop"; return []; }
-    if (ctx.look && ctx.look.pick && /^discard (it|them)$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: L.pick, upTo: L.upTo !== false, to: "drop", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e]; }
+    if (ctx.look && ctx.look.pick && /^discard (it|them)$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick, upTo: L.upTo !== false, to: "drop", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e]; }
     if (ctx.look && (m = t.match(rx(`^search for (up to )?${N} (.*?)(?:cards?|units?)?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?$`)))) {
       ctx.look.pick = toNum(m[2]); ctx.look.upTo = !!m[1]; ctx.look.filter = filt(t.replace(/^search for (up to )?\S+ /i, "")); return [];
     }
@@ -1003,7 +1028,7 @@ const TextParse = (() => {
     // round 8: "choose a card from your hand or drop", "choose up to five cards in total from your hand and drop zone"
     if ((m = t.match(rx(`^choose (up to )?(?:a total of )?${N} (.*?)(?:cards?|units?)?(?: in total)? from your (${ZL})`)))) {
       let tail = t.slice(m[0].length);
-      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?)/i);
+      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?|with (?:a )?grade (?:less than or equal to|lower than|less than|equal to) (?:your|the) vanguard(?:'?s grade)?)/i);
       if (after) tail = tail.slice(after[0].length);
       ctx.pick = { from: zonesOf(m[4]), n: toNum(m[2]), upTo: !!m[1], filter: { ...(filt(m[3]) || {}), ...(after ? filt(after[1]) || {} : {}) } };
       if (!tail.trim()) return [];
@@ -1014,7 +1039,7 @@ const TextParse = (() => {
       const zone = m[5].toLowerCase() === "ride deck" ? "rideDeck" : m[5].toLowerCase().replace(" zone", "");
       let tail = t.slice(m[0].length);
       // the filter may come after the zone: "from your soul with "Silver Thorn" in its card name"
-      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?)/i);
+      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?|with (?:a )?grade (?:less than or equal to|lower than|less than|equal to) (?:your|the) vanguard(?:'?s grade)?)/i);
       if (after) tail = tail.slice(after[0].length);
       ctx.pick = { from: (/opponent/i.test(m[4]) ? "opp" + zone[0].toUpperCase() + zone.slice(1) : zone).replace(/^oppDrop$/, "oppDrop"), n: toNum(m[2]), upTo: !!m[1], filter: { ...(filt(m[3]) || {}), ...(after ? filt(after[1]) || {} : {}) } };
       if (!tail.trim()) return [];
@@ -1294,11 +1319,14 @@ const TextParse = (() => {
     }
     for (const o of optClauses) {
       const octx = {};
+      let oCond = null; // "・If it is your main phase, draw a card": a condition inside one option
       for (const c of o.cl) {
-        if (c === "§") continue;
+        if (c === "§") { oCond = null; continue; }
+        const cc = c.replace(/^(and then|and|then)\s+/i, "");
+        if (/^if\b/i.test(cc) && !/^if you (do|did)\b/i.test(cc)) { const r = condsIn(cc); if (r.conds.length === 1) { oCond = r.conds[0]; continue; } }
         const es = effectOf(c, octx);
-        if (es === null) ab.effects.push({ type: "manual", text: c, opt: o.letter });
-        else es.forEach((e) => ab.effects.push({ ...e, opt: o.letter }));
+        if (es === null) ab.effects.push({ type: "manual", text: c, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) });
+        else es.forEach((e) => ab.effects.push({ ...e, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) }));
       }
     }
     for (const tr of tiers) {
