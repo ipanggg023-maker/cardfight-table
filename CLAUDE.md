@@ -35,6 +35,7 @@ Field first; everything else sits on the edges so the table stays clear:
 - right edge `#rail`: phase rail (Ride/Main/Battle/End). Phase/turn changes play a short cut-in `#banner` (`showBanner()` in ui.js; respects reduced motion).
 - bottom-right `#actions.dock`: one-line hint + primary button (gold) + secondary (`ghost`).
 - `#info`: card detail panel (ui.js `showInfo` / `infoDock`). When the table leaves ≥ 200px on the left, it is docked there (body.info-dock, width --infoW ≤ 340px), always visible, keeps the last card pointed at. Right-click / long press pins a card (📌, ✕ or Esc unpins). Shows picture, stat line, number, the card's own text, rulings, and "How the game plays it" (the blocks) folded. Narrow screens: overlay while hovering / pinned.
+- Out of the way of the cards: phase / turn cut-in `#banner` is a small badge at the top right of the empty strip (slim strip in the middle on screens < 1100px); revealed drive / damage cards go to `#revealBox` (right strip, mini cards you can point at; inline in the middle row only when there is no side room)
 - Card faces v2 (style.css block): a card with a picture shows only small chips (grade / trigger / sentinel top-left, power ★crit pill at the bottom, gold when changed); the name is in the detail panel; shield only off the field
 - center row = ATTACK (left) · guardian circle `#gc` (middle, guardians shown inside) · DEFENSE + guard shield total (right). Fixed height so the field doesn't jump.
 - spacing scales with card size (`--cw`), see the v3.1 block in style.css.

@@ -403,7 +403,7 @@ function showBanner(text, sub) {
   $("#bannerText").innerHTML = `${esc(text)}${sub ? `<small>${esc(sub)}</small>` : ""}`;
   const b = $("#banner");
   b.hidden = false; b.classList.remove("go"); void b.offsetWidth; b.classList.add("go");
-  clearTimeout(bannerT); bannerT = setTimeout(() => (b.hidden = true), 1300);
+  clearTimeout(bannerT); bannerT = setTimeout(() => (b.hidden = true), 1150);
 }
 
 // Hand: keeps one element per card (by uid) and only adds/removes/reorders what changed
@@ -451,7 +451,14 @@ function render() {
   let mid = S.battle ? `<small>ATTACK</small><b>${fmt(Game.attackPower())}</b>` : "";
   const gsh = S.battle ? S.battle.guards.reduce((n, c) => n + (c.shield || 0), 0) : 0;
   setHTML($("#def"), S.battle ? `<small>DEFENSE</small><b>${fmt(Game.defensePower())}</b>${gsh ? `<span class="gsh">🛡 +${fmt(gsh)} guard</span>` : ""}${S.battle.perfect ? `<span class="perfect">🛡 Can't be hit</span>` : ""}` : "");
-  if (S.reveal.length) mid += `<span class="reveal">${S.reveal.map((r) => `<span class="rv ${r.card.trigger ? "rt" : ""}">${r.type}: ${esc(r.card.name)} ${r.card.trigger ? TRIG[r.card.trigger].icon : ""}</span>`).join("")}</span>`;
+  // revealed cards (drive / damage checks): beside the table, as small pictures you can point at; inline only when there's no side room
+  const rb = $("#revealBox");
+  const side = window.innerWidth - (document.querySelector(".mat") ? document.querySelector(".mat").getBoundingClientRect().right : window.innerWidth) >= 150;
+  if (rb) {
+    rb.hidden = !(S.reveal.length && side);
+    setHTML(rb, S.reveal.length && side ? `<small>REVEALED</small>${S.reveal.slice(-6).map((r) => `<div class="rvc${r.card.trigger ? " rt" : ""}">${cardHTML(r.card, {}, null, null, " mini")}<span>${r.type}${r.card.trigger && TRIG[r.card.trigger] ? " " + TRIG[r.card.trigger].icon : ""}</span></div>`).join("")}` : "");
+  }
+  if (S.reveal.length && !side) mid += `<span class="reveal">${S.reveal.map((r) => `<span class="rv ${r.card.trigger ? "rt" : ""}">${r.type}: ${esc(r.card.name)} ${r.card.trigger ? TRIG[r.card.trigger].icon : ""}</span>`).join("")}</span>`;
   setHTML($("#mid"), mid);
   document.querySelector(".center").classList.toggle("fighting", !!S.battle);
   document.body.classList.toggle("mats-classic", ui.mats ? ui.mats.every((m) => !m.img) : true);

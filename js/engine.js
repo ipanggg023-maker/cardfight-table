@@ -51,7 +51,7 @@ const Game = (() => {
     }
     const p = {
       name, deckName: deck.name, format: deck.format || "standard", hasRideDeck,
-      useEnergy: !!deck.energy, energy: 0,
+      useEnergy: !!deck.energy, energy: 0, egPlaced: false, // Energy Generator: in the crest zone after your first ride
       deck: shuffle(main), ride,
       hand: [], soul: [], damage: [], drop: [], bind: [], removed: [],
       gDeck: (deck.g || []).map(inst), gUp: [], vcGradeAtStart: 0, // G zone: face down / face up (CR 4.14)
@@ -84,7 +84,7 @@ const Game = (() => {
     log(`Game start! ${P(first).name} goes first (draws on turn 1 but can't attack)`);
     // Energy Generator: the player who went second Energy-Charges 3 when it is placed in the crest zone
     const second = P(1 - first);
-    if (second.useEnergy) { second.energy = 3; log(`${second.name} went second: Energy-Charge 3`); }
+    // (Energy Generator charges when it is put into the crest zone at your first ride, see placeEnergyGenerator)
     return S;
   }
 
@@ -1299,7 +1299,7 @@ const Game = (() => {
     S.phase = "ride";
     await gAssist(pi);
     // Energy Generator: Energy-Charge 3 at the beginning of your ride phase, max 10
-    if (p.useEnergy) p.energy = Math.min(10, p.energy + 3);
+    if (p.useEnergy && p.egPlaced) { p.energy = Math.min(10, p.energy + 3); log(`${p.name}: Energy Generator, Energy-Charge 3 (${p.energy})`); } // "At the beginning of your ride phase, [Energy-Charge 3]"
     collectAll(pi, "turnStart");
     collectAll(1 - pi, "oppTurnStart");
     await settle();
@@ -1446,6 +1446,12 @@ const Game = (() => {
     if (!opts.effect) S.rode = true;
     if (opts.effect) vs.rest = opts.stand ? false : vs.rest; // "ride it as [Stand]"
     log(`${p.name} rides ${card.name} (G${card.grade})${opts.effect ? " by an effect" : ""}`);
+    // Energy Generator: "When you ride, put this card into the crest zone, and if you went second, [Energy-Charge 3]"
+    if (p.useEnergy && !p.egPlaced) {
+      p.egPlaced = true;
+      if (S.first !== pi) { p.energy = Math.min(10, p.energy + 3); log(`${p.name}: Energy Generator goes to the crest zone; went second: Energy-Charge 3`); }
+      else log(`${p.name}: Energy Generator goes to the crest zone`);
+    }
     // Persona Ride (CR 6.3.8): a normal ride from hand onto a vanguard with the same name, both with the icon
     // card.personaFromKai: "the normal ride of this card from a grade 3 card with a Kai icon and a different card name also becomes a persona ride"
     const kaiPersona = card.personaFromKai && old.kai && +old.grade === 3 && old.name !== card.name;
@@ -1654,6 +1660,7 @@ const Game = (() => {
   const energyDraw = () => run(async () => {
     const pi = S.active, p = P(pi);
     if (!p.useEnergy) return err("No Energy Generator");
+    if (!p.egPlaced) return err("Energy Generator is not in your crest zone yet (it goes there when you ride)");
     if (S.phase !== "main" || S.battle) return err("Use it in your main phase");
     if (p.egTurn === S.turn) return err("Once per turn");
     if (p.energy < 7) return err("Needs 7 energy");
