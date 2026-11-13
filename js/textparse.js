@@ -48,7 +48,9 @@ const TextParse = (() => {
   const NUM = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\\/[A-Za-z0-9-]*?\\d+(?:S?EN|[ab]|[ABS])?(?:-[A-Z]{1,2})?";
   const FOOT = new RegExp(`^\\s*(${REG})?\\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\\/)(.+)$`);
   // the page shows some entities as typed, sometimes without the ";" ("&ltMurakumo&gt")
-  const decode = (s) => String(s).replace(/&lt;?/g, "<").replace(/&gt;?/g, ">").replace(/&quot;?/g, '"').replace(/&#0?39;?/g, "'").replace(/&nbsp;?/g, " ").replace(/&amp;?/g, "&");
+  // the site's text has a few entity forms: "&lt;", "&ltMurakumo&gt" (no ";"), "& ltShadow Paladin & gt" (spaced), "&#91;" (number)
+  const decode = (s) => String(s).replace(/&\s?lt;?\s?/g, "<").replace(/\s?&\s?gt;?/g, ">").replace(/&quot;?/g, '"').replace(/&#0?39;?/g, "'").replace(/&nbsp;?/g, " ")
+    .replace(/&#(\d+);?/g, (m, n) => String.fromCharCode(+n)).replace(/&amp;?/g, "&");
   // the rarity right after the number: the longest one ("RRkoji" = RR + "koji"). Most illustrator names start in lower case or
   // Japanese; one that starts with a rarity's capital letter ("RRRyo-ta.H") can't be told apart — check the Rarity field then.
   function rarityAt(s) {
@@ -315,7 +317,7 @@ const TextParse = (() => {
   }
 
   // ---------- normalising ----------
-  const norm = (s) => String(s || "").replace(/\r/g, "").replace(/［/g, "[").replace(/］/g, "]").replace(/（/g, "(").replace(/）/g, ")")
+  const norm = (s) => decode(String(s || "")).replace(/\r/g, "").replace(/［/g, "[").replace(/］/g, "]").replace(/（/g, "(").replace(/）/g, ")")
     .replace(/\[COST\]\s*\[([^\]]*)\]\s*&\s*((?:[^\[\]]|\[[^\]]*\])*)\]/gi, "[COST][$1 & $2]")
     .replace(/&\s*Rest\]\s*this (unit|card)\]/gi, "& [Rest] this $1]")
     .replace(/\[COST\]\s*\[([^\[\]]*)\]\s*&\s*\[([^\[\]]*)\]/gi, "[COST][$1 & $2]")
@@ -672,6 +674,8 @@ const TextParse = (() => {
     if ((m = t.match(rx(`if you have ${N} rear-guards$`)))) add({ type: "count", what: "myRC", op: "ge", n: toNum(m[1]) });
     if ((m = t.match(/if "([^"]+)" is in your (soul|drop|hand|damage zone|bind zone|order zone)/i))) add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if it is your battle phase/i.test(t)) add({ type: "battlePhase" });
+    if (/if this unit is (?:at )?\[rest\]/i.test(t)) add({ type: "unit", who: "self", filter: { restState: "rest" } });
+    if (/if this unit is (?:at )?\[stand\]/i.test(t)) add({ type: "unit", who: "self", filter: { restState: "stand" } });
     // "if this unit was placed by riding from "X" this turn", "if your vanguard was placed this turn by riding from a grade 3"
     if ((m = t.match(/if (?:this unit|your vanguard) was placed (?:this turn )?by riding from (?:a |an )?(.+?)(?: this turn)?(?=,|$)/i)))
       add({ type: "rodeFrom", filter: /^"[^"]+"$/.test(m[1].trim()) ? { nameExact: m[1].trim().replace(/"/g, "") } : filt(m[1]) || {} });
@@ -716,6 +720,18 @@ const TextParse = (() => {
       else if (/^\[?rest\]? this (unit|card)/i.test(p)) out.push({ type: "restSelf" });
       else if ((m = p.match(/^(counter|soul)-blast$/i))) out.push({ type: m[1].toLowerCase() === "counter" ? "CB" : "SB", n: 1 });
       else if (/^\[?rest\]?$/i.test(p)) out.push({ type: "restSelf" }); // "[COST][Rest]": rest this unit
+      // round 7: discards and moves from hand written other ways
+      else if ((m = p.match(rx(`^discard (?:${N} )?(.+?) from (?:your )?hand$`))) && !/this card/i.test(p))
+        out.push({ type: "discard", n: m[1] ? toNum(m[1]) : 1, filter: filt(m[2].replace(/^(a|an)\s+/i, "")) || {} });
+      else if ((m = p.match(rx(`^choose (?:${N} )?(.+?) from your hand[.,]? and discard (?:it|them)$`))))
+        out.push({ type: "discard", n: m[1] ? toNum(m[1]) : 1, filter: filt(m[2].replace(/^(a|an)\s+/i, "")) || {} });
+      else if ((m = p.match(rx(`^(?:choose (?:${N} )?(.+?) from your hand,? and put (?:it|them)|put (?:${N} )?(.+?) from (?:your )?hand) (?:on the (top|bottom) of (?:your |the )?deck|into (?:your )?(damage zone|soul|drop))$`)))) {
+        const to = m[5] ? (m[5].toLowerCase() === "top" ? "deckTop" : "deckBottom") : /damage/i.test(m[6]) ? "damageUp" : m[6].toLowerCase();
+        out.push({ type: "move", from: "hand", to, n: toNum(m[1] || m[3] || "1"), filter: filt((m[2] || m[4] || "").replace(/^(a|an)\s+/i, "")) || {} });
+      }
+      else if ((m = p.match(rx(`^reveal (?:${N} )?(.+?) from your hand,? and put (?:it|them) on the (top|bottom) of (?:your |the )?deck$`))))
+        out.push({ type: "move", from: "hand", to: m[3].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: m[1] ? toNum(m[1]) : 1, reveal: true, filter: filt(m[2].replace(/^(a|an)\s+/i, "")) || {} });
+      else if ((m = p.match(rx(`^call (?:${N} )?(.+?) from (?:your )?hand to \\(RC\\)$`)))) out.push({ type: "move", from: "hand", to: "RC", n: m[1] ? toNum(m[1]) : 1, filter: filt(m[2].replace(/^(a|an)\s+/i, "")) || {} });
       // "choose one or more cards from hand with the sum of their grades being 3 or greater, and discard them"
       else if ((m = p.match(/^choose one or more cards from (?:your )?hand with the sum of their grades being (\d+) or greater,? and discard them/i)) || (m = p.match(/^choose one or more cards with the sum of their grades being (\d+) or greater from your hand,? and discard them/i)))
         out.push({ type: "discardGrades", n: +m[1] });
@@ -791,6 +807,14 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
     if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
+    // round 7: [Stand] / [Rest] steps
+    if ((m = t.match(rx(`^\\[stand\\] (up to )?${N} of your (other )?(.*?)rear-guards?$`)))) return [{ type: "stand", target: "chooseMyRC", n: toNum(m[2]), ...(m[1] ? { upTo: true } : {}), filter: { ...(filt(m[4] || "") || {}), ...(m[3] ? { other: true } : {}) } }];
+    if ((m = t.match(/^(this unit|it|they|those units|that unit|all of your opponent'?s rear-guards) cannot \[stand\] during (?:the|your|your opponent'?s)?\s*(?:next )?stand phase$/i))) {
+      const who = /all of your opponent/i.test(m[1]) ? { target: "chooseOppRC", n: 99, all: true } : /this unit/i.test(m[1]) ? { target: "self" } : it();
+      return [{ type: "restrict", what: "cantStand", dur: /opponent/i.test(t) || who.target === "chooseOppRC" ? "oppTurn" : "nextTurn", ...who }];
+    }
+    if ((m = t.match(/^ride (?:a |an |one )?(.+?) from your (soul|drop|hand|bind zone|deck)(?: as \[(stand|rest)\])?$/i)))
+      return [{ type: "rideBy", from: { soul: "soul", drop: "drop", hand: "hand", "bind zone": "bind", deck: "deck" }[m[2].toLowerCase()], filter: /^"[^"]+"$/.test(m[1]) ? { nameExact: m[1].replace(/"/g, "") } : filt(m[1]) || {}, stand: /stand/i.test(m[3] || "") }];
     // "get an Imaginary Gift:Force, put that marker on your (VC)", "you get two Imaginary Gift:Accel"
     if ((m = t.match(/^(?:you )?get (an?|one|two|three) imaginary gifts*:?s*(force|accel|protect)/i))) return Array.from({ length: toNum(m[1]) }, () => ({ type: "gift", kind: m[2].toLowerCase() }));
     if (/^put (that|the) marker on your (VC)$/i.test(t)) return [];

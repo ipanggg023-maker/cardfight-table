@@ -18,7 +18,9 @@ const KIND = { 1: "Normal Unit", 2: "Trigger Unit", 3: "G Unit", 4: "Others", 5:
 const reg = (v) => { const r = String(v || ""), p = []; if (r.includes("D")) p.push("Standard"); if (r.includes("V")) p.push("V-Premium"); if (r === "G") p.push("G-Regulation"); return p.join("/"); };
 // innerText of the page: <br> → new line, the few allowed tags vanish, entities stay as typed in the data (the page shows "&lt;Royal Paladin&gt;")
 const text = (v) => String(v || "").replace(/\r?\n/g, "\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/?(i|em|b|strong|font|sskl)[^>]*>/gi, "");
-const decode = (s) => String(s).replace(/&lt;?/g, "<").replace(/&gt;?/g, ">").replace(/&quot;?/g, '"').replace(/&#0?39;?/g, "'").replace(/&nbsp;?/g, " ").replace(/&amp;?/g, "&");
+// same decoding as the reader (spaced "& lt", numeric "&#9829")
+const decode = (s) => String(s).replace(/&\s?lt;?\s?/g, "<").replace(/\s?&\s?gt;?/g, ">").replace(/&quot;?/g, '"').replace(/&#0?39;?/g, "'").replace(/&nbsp;?/g, " ")
+  .replace(/&#(\d+);?/g, (m, n) => String.fromCharCode(+n)).replace(/&amp;?/g, "&");
 function pageText(c) {
   const isD = String(c.regulation || "").includes("D");
   const kind = c.card_kind_name || KIND[c.card_kind] || "";
