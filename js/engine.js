@@ -227,6 +227,8 @@ const Game = (() => {
     const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
+      case "oppGZone": return m([...(o.gUp || []), ...(o.gDeck || [])]);
+      case "myGZone": return m([...(p.gUp || []), ...(p.gDeck || [])]);
       case "mySoul": return m(p.soul);
       case "myDrop": return m(p.drop);
       case "myDamage": return m(p.damage);
@@ -574,7 +576,7 @@ const Game = (() => {
         picked.forEach((x) => { p.drop.splice(p.drop.indexOf(x), 1); p.deck.push(x); });
         break;
       }
-      case "move": await moveCards(pi, { ...c, upTo: false }, ctx); break;
+      case "move": { const r = await moveCards(pi, { ...c, upTo: false }, ctx); if (r && r.cards && r.cards.length) ctx.revealed = r.cards; break; }
       case "gFaceUp": {
         const picked = await chooseCards(pi, `Turn ${n} face-down card(s) in your G zone face up`, p.gDeck.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
         picked.forEach((x) => { p.gDeck.splice(p.gDeck.indexOf(x), 1); p.gUp.push(x); });
@@ -1072,7 +1074,8 @@ const Game = (() => {
         let only = null;
         if (src === "revealed") { // "ride the card revealed for this cost": the card shown when paying, wherever it is (hand / ride deck)
           only = ctx.revealed || [];
-          src = only.length && p.ride.includes(only[0]) ? "rideDeck" : "hand";
+          const at = only[0];
+          src = !at ? "hand" : p.ride.includes(at) ? "rideDeck" : ["hand", "bind", "soul", "drop", "deck"].find((z) => p[z].includes(at)) || "hand";
         }
         const zone0 = src === "rideDeck" ? p.ride : src === "self" ? null : p[src];
         const zone = zone0;
@@ -1125,6 +1128,11 @@ const Game = (() => {
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
       // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
+      case "personaRide": { // "you activate persona ride" (CR 7.15.1.4): front row +10000 this turn, draw a card
+        p.personaFront = true; p.personaThisTurn = true; draw(pi, 1);
+        log(`✨ ${p.name} activates Persona Ride! Draw 1, front row +10000 this turn`);
+        return { count: 1 };
+      }
       case "gauge": {
         const sl = ctx.key && p.slots[ctx.key];
         if (!sl) return { count: 0, cards: [] };
