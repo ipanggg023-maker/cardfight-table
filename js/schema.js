@@ -114,6 +114,8 @@ const SCHEMA = {
     rcToDeck: "When this unit is put into your deck from (RC)",
     cardToOrderZone: "When a card is put into your order zone",
     sung: "When this Song is sung (order zone)",
+    operated: "When this card is operated (order zone)",
+    operatedAny: "When you operate a Product",
     chosenBy: "When this unit is chosen by an ability (by your vanguard / a named card)",
     drew: "When you draw a card",
     replacedBy: "When your other unit is placed on this unit's circle",
@@ -167,6 +169,7 @@ const SCHEMA = {
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
     markers: { label: "Markers: count markers on circles", params: [["name", "text", "marker name (blank = any)"], ["where", "mwhere2", "on"], ["op", "op", "is"], ["n", "num"]],
       text: (p) => `${({ self: "this unit's circle has", vc: "your (VC) has", rc: "your (RC) have", all: "you have" })[p.where || "all"]} ${OPS[p.op || "ge"]} ${p.n || 1} ${p.name || ""} marker(s)` },
+    operatedThisTurn: { label: "You operated a Product this turn", params: [["not", "bool", "did NOT"]], text: (p) => `you ${p.not ? "did not operate" : "operated"} a Product this turn` },
     sungThisTurn: { label: "Your vanguard sung a Song this turn", params: [], text: () => "you sung a Song this turn" },
     rodeFrom: { label: "Your vanguard was placed this turn by riding from …", params: [["filter", "filter", "the old vanguard"]], text: (p) => `your vanguard was placed this turn by riding from ${flt(p.filter)}` },
     onVC: { label: "This unit is on (VC)", params: [], text: () => "this unit is on (VC)" },
@@ -246,6 +249,7 @@ const SCHEMA = {
     marker: { label: "Put a marker on a circle (Dragontree, Treasure, Cradle…)", params: [["name", "text", "marker name"], ["where", "mwhere", "on"], ["without", "bool", "only circles without this marker"], ["n", "num", "how many circles"], ["target", "target", "or on the chosen unit(s)"]],
       text: (p) => `put a ${p.name || "marker"} marker on ${p.target ? TARGETS[p.target] || "the chosen unit" : ({ rc: "your (RC)", units: "your (VC) or (RC)", vc: "your (VC)", self: "this unit's circle" })[p.where || "rc"]}${p.without ? " without one" : ""}${+p.n > 1 ? " ×" + p.n : ""}` },
     sing: { label: "Sing a face up Song from your order zone (its \"when sung\" ability, then it turns face down)", params: [["filter", "filter"]], text: (p) => `sing a face up Song${p.filter && Object.keys(p.filter).length ? " (" + flt(p.filter) + ")" : ""}` },
+    operate: { label: "Operate a Product from your order zone (its Operate ability)", params: [["filter", "filter"]], text: () => "operate a Product" },
     flipOZ: { label: "Turn order zone card(s) face up / down", params: [["n", "num"], ["up", "bool", "face up (off = face down)"], ["upTo", "bool", "up to"]], text: (p) => `turn ${p.upTo ? "up to " : ""}${p.n || 1} card(s) in your order zone face ${p.up === false ? "down" : "up"}` },
     dealDamage: { label: "Deal damage (damage checks, triggers too)", params: [["n", "num"], ["who", "side", "to"]], text: (p) => `deal ${p.n || 1} damage to ${p.who === "me" ? "yourself" : "your opponent"}` },
     payCost: { label: "Pay a cost mid-ability (you may; next steps with “only if you did” need it)", params: [],
@@ -343,7 +347,7 @@ function flt(f, short) {
 }
 
 function describeAbility(ab) {
-  let s = `[${ab.kind}]`;
+  let s = `${ab.keyword ? ab.keyword + " - " : ""}[${ab.kind}]`;
   if (["AUTO", "ACT", "CONT", "REPL"].includes(ab.kind)) s += `(${ab.zone || "VC"})`;
   if (ab.once === "turn") s += "[1/Turn]";
   if (ab.once === "game") s += "[1/Game]";

@@ -74,6 +74,7 @@ const CardCheck = (() => {
     return null;
   }
   const kindOf = (l, c) => {
+    l = l.replace(/^([^\[・•\n]{2,40}?)\s*[-–－]\s*(?=\[(auto|act|cont)\])/i, ""); // "magia-[auto]…": the label isn't part of the kind
     const m = l.match(/^\[(auto|act|cont)\]/);
     if (m && m[1] === "cont" && /would be|instead/.test(l) && (c.abilities || []).some((ab) => ab.kind === "REPL")) return "REPL";
     if (m) return m[1].toUpperCase();

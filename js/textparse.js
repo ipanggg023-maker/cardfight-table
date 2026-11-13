@@ -399,6 +399,8 @@ const TextParse = (() => {
   // [regex, event, zone hint, extra {conds, whenFilter, whenFrom}]
   const EVENTS = [
     [/when this song is sung/i, "sung", "OZ"],
+    [/when this card is operated/i, "operated", "OZ"],
+    [/when you operate an? product/i, "operatedAny", null],
     // round 4: chosen by an ability, drawing, replaced on its circle, opponent's rear-guard into the deck
     [/when this unit is chosen by (?:the )?(?:ability|effect) of your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?)/i, "chosenBy", null, { byVCText: 1 }],
     [/when this unit is chosen by your vanguard'?s (?:ability|effect)/i, "chosenBy", null, { byVC: true }],
@@ -682,6 +684,8 @@ const TextParse = (() => {
     // AutoMOD / Song
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) automod gauges?`)))) add({ type: "count", what: "myAutoMOD", op: CMP(m[0]), n: toNum(m[1]) });
     if (/if your vanguard sung an? song this turn|if you sung an? song this turn/i.test(t)) add({ type: "sungThisTurn" });
+    if (/if you did not operate an? product this turn/i.test(t)) add({ type: "operatedThisTurn", not: true });
+    else if (/if you (?:operate|operated) an? product this turn/i.test(t)) add({ type: "operatedThisTurn" });
     if ((m = t.match(rx(`if you have ${N} or more face down cards in your order zone`)))) add({ type: "count", what: "myOrderZoneDown", op: "ge", n: toNum(m[1]) });
     if (/if your order zone has an? face up song/i.test(t)) add({ type: "count", what: "myOrderZoneUp", op: "ge", n: 1 });
     // Arms on your vanguard: "if your (VC) has two or more Arms", "if you have two or more Arms on your (VC)", "if your vanguard is Armed (with two or more cards)"
@@ -844,6 +848,9 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^choose (up to )?${N} (.*?)cards? from your automod gauges?$`)))) { ctx.pick = { from: "automod", n: toNum(m[2]), upTo: !!m[1], filter: filt(m[3] || "") }; return []; }
     // Song: "choose a face up Song from your Order Zone, and sing it", "choose a face down card in your Order Zone, and you may turn it face up"
     if (/^choose an? face up song from your order zone,? and sing it$|^sing an? (face up )?song$/i.test(t)) return [{ type: "sing" }];
+    if (/^choose an? product from your order zone,? and operate it$/i.test(t)) return [{ type: "operate" }];
+    if (/^choose an? product from your order zone$/i.test(t)) { ctx.product = true; return []; }
+    if (ctx.product && /^operate it$/i.test(t)) { ctx.product = false; return [{ type: "operate" }]; }
     if (/^choose an? face up song from your order zone$/i.test(t)) { ctx.song = true; return []; }
     if (ctx.song && /^sing it$/i.test(t)) { ctx.song = false; return [{ type: "sing" }]; }
     if ((m = t.match(rx(`^choose (up to )?${N} face (down|up) cards? in your order zone,? and (?:you may )?turn (?:it|them) face (up|down)$`)))) return [{ type: "flipOZ", n: toNum(m[2]), up: m[4].toLowerCase() === "up", ...(m[1] || /you may/i.test(t) ? { upTo: true } : {}) }];
@@ -1281,10 +1288,13 @@ const TextParse = (() => {
   const KEYWORD_LINE = /^(\(.*\)|sentinel\b.*|forerunner\b.*|lord\b.*|\[?resist\]?.*|harmony\b.*|boost|intercept|twin drive!*|triple drive!*|persona ride.*|imaginary gift.*|regalis piece.*|ace unit.*|\[?(x)?overdress\]?.*|\[stride\].*|\[g guardian\].*|\[ultimate stride\].*|-$|.*\(this card is a ticket card.*\))$/i;
   function abilities(text, isOrder) {
     text = norm(text);
-    const lines = [];
+    const lines = [], labelOf = new Map();
     for (const raw of text.split("\n")) {
-      const l = raw.trim();
+      let l = raw.trim();
       if (!l) continue;
+      // a keyword label in front of the ability: "Magia-[AUTO](VC)…", "Operate - [AUTO]Order Zone:…", "Powerful－[AUTO]…", "Time Leap-[ACT]…"
+      const lab = l.match(/^([^\[・•\n]{2,40}?)\s*[-–－]\s*(?=\[(AUTO|ACT|CONT)\])/i);
+      if (lab) { l = l.slice(lab[0].length); labelOf.set(l, lab[1].trim()); }
       if (/^[・•]/.test(l) && lines.length) lines[lines.length - 1] += " ・" + l.replace(/^[・•]\s*/, "");
       else lines.push(...splitAbilities(l));
     }
@@ -1333,6 +1343,7 @@ const TextParse = (() => {
       if (/^this card (cannot be ridden|can only be ridden from [^.]*)\.?$/i.test(body)) continue;
       if (/^(hand:\s*)?while (you are )?paying the cost (for|of) \[?stride\]?,? this card gets grade \+\d\.?$/i.test(body)) continue; // card field strideGrade // Legion mate name (the Seek Mate ability carries it) // a keyword label only (Engorge, Blaze, Success 20000…): its effect is in other lines
       const a = ability(l, undefined, extraAbs);
+      if (labelOf.has(l)) a.keyword = labelOf.get(l); // "Magia", "Operate", "Powerful"…
       out.push(a);
       if (a.siblings) { out.push(...a.siblings); delete a.siblings; }
       void before;

@@ -406,6 +406,7 @@ const Game = (() => {
       case "world": return String(c.text || "").toLowerCase().split("|").map((x) => x.trim()).includes((p.world || "").toLowerCase()); // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
       case "sungThisTurn": return p.sungTurn === S.turn; // "if your vanguard sung a Song this turn"
+      case "operatedThisTurn": return (p.operatedTurn === S.turn) === (c.not ? false : true); // "if you (did not) operate a Product this turn"
       case "markers": { // "if this unit is on a (RC) with a Dragontree marker", "if you have three or more Dragontree markers"
         const keys = c.where === "self" ? (ctx.key ? [ctx.key] : []) : c.where === "vc" ? ["vc"] : c.where === "rc" ? rcOf(pi) : null;
         return cmp(markerTotal(pi, c.name, keys), c.op || "ge", +c.n || 1);
@@ -1158,6 +1159,17 @@ const Game = (() => {
         await settle();
         song.faceDown = true;
         return { count: 1, cards: [song] };
+      }
+      case "operate": { // "choose a Product from your order zone, and operate it" (activate its Operate ability)
+        const products = (p.orderZone || []).filter((c) => !c.faceDown && (c.abilities || []).some((a) => a.when === "operated") && match(c, e.filter, { pi, ctx }));
+        const [pr] = await chooseCards(pi, "Operate which Product?", products, products.length ? 1 : 0, 1);
+        if (!pr) { log("No Product to operate"); return { count: 0, cards: [] }; }
+        log(`⚙ ${p.name} operates ${pr.name}`);
+        p.operatedTurn = S.turn;
+        collect(pi, null, "operated", { card: pr, zone: "OZ", subject: pr });
+        collectAll(pi, "operatedAny", { subject: pr }); // "When you operate a Product"
+        await settle();
+        return { count: 1, cards: [pr] };
       }
       case "flipOZ": { // "choose a face down card in your Order Zone, and you may turn it face up"
         const want = e.up !== false;
