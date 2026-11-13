@@ -818,6 +818,7 @@ const Game = (() => {
       case "hand": q.hand.push(c); break;
       case "deckTop": q.deck.push(c); break;
       case "deckBottom": q.deck.unshift(c); break;
+      case "deck": q.deck.push(c); shuffle(q.deck); break; // "return it to your deck" (then shuffled)
       case "soul": q.soul.push(c); break;
       case "bind": q.bind.push(c); break;
       case "removed": q.removed.push(c); break;
@@ -1093,6 +1094,7 @@ const Game = (() => {
         break;
       }
       case "manual": await manualEffect(pi, ctx, e.text); break;
+      case "dealDamage": await dealDamage(e.who === "me" ? pi : 1 - pi, n); break; // "choose one of your opponent's vanguards, and deal one damage"
       case "payCost": { // a second cost in the middle of an ability: "If X, [COST][…], Y" (the next steps need it paid)
         const costs = e.costs || [];
         if (!costs.length || !costs.every((c) => canPay(pi, c, ctx))) { log(`${ctx.card ? ctx.card.name + ": " : ""}can't pay ${SCHEMA.effects.payCost.text(e)}`); return { count: 0, cards: [] }; }
@@ -1867,18 +1869,7 @@ const Game = (() => {
     log(`${atk.toLocaleString()} vs ${def.toLocaleString()} → ${hit ? "HIT!" : "guarded"}`);
     if (hit) {
       if (b.tgt === "vc") {
-        const n = crit(ai, b.att);
-        for (let i = 0; i < n && !over(); i++) {
-          if (!d.deck.length) { lose(di, "deck is empty"); ruleActions(); break; }
-          const c = d.deck.pop();
-          S.reveal.push({ type: "Damage", card: c });
-          log(`Damage check: ${c.name}`);
-          collectAll(di, "damageReveal", { subject: c });
-          collect(di, null, "revealedDamage", { card: c, zone: "deck", subject: c });
-          await trigger(di, c, "damage");
-          if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); collectAll(di, "toDamage", { subject: c }); }
-          ruleActions(); // 6 damage is a rule action, checked after each damage check
-        }
+        await dealDamage(di, crit(ai, b.att));
       } else b.hitUid = d.slots[b.tgt].card.uid;
       if (!over()) {
         collect(ai, b.att, "attackHit");
@@ -1891,6 +1882,21 @@ const Game = (() => {
     } else if (!over() && P(ai).slots[b.att]) await fire(ai, b.att, "attackNoHit");
     await endBattle();
   });
+  // N damage checks for player di (from an attack, or "deal one damage" by an effect)
+  async function dealDamage(di, n) {
+    const d = P(di);
+    for (let i = 0; i < n && !over(); i++) {
+      if (!d.deck.length) { lose(di, "deck is empty"); ruleActions(); break; }
+      const c = d.deck.pop();
+      S.reveal.push({ type: "Damage", card: c });
+      log(`Damage check: ${c.name}`);
+      collectAll(di, "damageReveal", { subject: c });
+      collect(di, null, "revealedDamage", { card: c, zone: "deck", subject: c });
+      await trigger(di, c, "damage");
+      if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); collectAll(di, "toDamage", { subject: c }); }
+      ruleActions(); // 6 damage is a rule action, checked after each damage check
+    }
+  }
   async function endBattle() {
     const b = S.battle;
     if (!b) return;

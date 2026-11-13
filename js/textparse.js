@@ -579,7 +579,10 @@ const TextParse = (() => {
     if ((m = t.match(/if you have an? (vanguard )?(?:with|named) "([^"]+)"/i)) || (m = t.match(/if your vanguard is "([^"]+)"/i)) || (m = t.match(/vanguard with "([^"]+)" in its card name/i)))
       add({ type: "vcName", text: m[m.length - 1] });
     if ((m = t.match(/if (?:you have a |your vanguard is (?:an? )?)grade (\d)( or greater)?( vanguard)?/i))) add({ type: "vcGrade", n: +m[1] });
-    if ((m = t.match(/(?:if )?your opponent'?s vanguard is (?:an? )?grade (\d)( or greater)?/i))) add({ type: "oppVcGrade", n: +m[1] });
+    if ((m = t.match(/(?:if )?your opponent'?s vanguard is (?:an? )?grade (\d)( or greater)?/i)) || (m = t.match(/if your opponent has an? grade (\d) or greater vanguard/i))) add({ type: "oppVcGrade", n: +m[1] });
+    if ((m = t.match(rx(`if the number of rear-guards your opponent has is ${N} or (more|less|fewer)`)))) add({ type: "count", what: "oppRC", op: CMP(m[0]), n: toNum(m[1]) });
+    if ((m = t.match(rx(`if the number of your (other )?(.*?)units?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)? is ${N} or (more|less|fewer)`))))
+      add({ type: "count", what: "myUnits", op: CMP(m[0]), n: toNum(m[3]), filter: { ...(filt(m[0].replace(/ is .*$/i, "").replace(/^if the number of your (other )?/i, "")) || {}), ...(m[1] ? { other: true } : {}) } });
     if ((m = t.match(/if (you have an?|your vanguard is an?) <+([^>]+)>+ vanguard|if your vanguard is an? <+([^>]+)>+/i))) add({ type: "unit", who: "vc", filter: { clan: (m[2] || m[3]).trim() } });
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) (other )?(.*?)units?\\b`)))) add({ type: "count", what: "myUnits", op: CMP(m[0]), n: toNum(m[1]), filter: filt(m[4] + (m[3] ? " other" : "")) });
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) (other )?(.*?)rear-guards?`)))) add({ type: "count", what: "myRC", op: CMP(m[0]), n: toNum(m[1]), filter: filt(m[4] + (m[3] ? " other" : "")) });
@@ -785,13 +788,19 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
     if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
+    if ((m = t.match(/^deal (one|two|three|d+) damage(?: to (?:your opponent|that unit|it|the vanguard))?$/i))) return [{ type: "dealDamage", n: toNum(m[1]), who: "opp" }];
+    if (/^choose (one of )?your opponent'?s vanguards?$/i.test(t)) { ctx.last = { target: "oppVc" }; ctx.lastUsed = false; return []; }
+    if (/^return this (unit|card) to (your|the) deck$/i.test(t)) return [{ type: "move", from: "self", to: "deck" }];
+    if (/^return (it|that unit|them) to (your|the|his or her|its owner'?s) deck$/i.test(t))
+      return ctx.last ? [{ type: "move", from: /Opp/.test(ctx.last.target || "") ? "oppRC" : "myRC", to: "deck", n: ctx.last.n || 1, filter: ctx.last.filter }] : [{ type: "move", from: "self", to: "deck" }];
     if ((m = t.match(/^(this unit|it|they) cannot be retired by (?:card )?effects$/i))) return [{ type: "restrict", what: "cantBeRetired", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
     // "choose one of your opponent's rear-guards, your opponent puts that unit on the bottom of his or her deck": the chosen unit moves
     if (ctx.last && /^your opponent puts (that unit|those units|it|them) /i.test(t)) return effectOf(t.replace(/^your opponent puts/i, "put"), ctx);
     if (/^choose an? units? being attacked$/i.test(t)) { ctx.last = { target: "attacked" }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/(this unit|it|they) (?:gets? "boost",? and )?can intercept from the back row/i))) return [{ type: "restrict", what: "canInterceptBack", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }, ...(/"boost"/i.test(t) ? [{ type: "restrict", what: "canBoost", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }] : [])];
     if (/^can intercept from the back row$/i.test(t)) return [{ type: "restrict", what: "canInterceptBack", dur, ...(ctx.last ? { ...ctx.last } : { target: "self" }) }];
-    if (/your opponent cannot call sentinels from (his or her|their) hand/i.test(t)) return [{ type: "playerRule", who: "opp", what: "cantGuard", filter: { sentinel: "yes" }, dur }];
+    if (/your opponent cannot call sentinels(?: to \(GC\))? from (?:his or her |their )?hand/i.test(t))
+      return [{ type: "playerRule", who: "opp", what: "cantGuard", filter: { sentinel: "yes" }, dur: /for the battle|until end of (that|the) battle/i.test(t) ? "battle" : dur }];
     if ((m = t.match(rx(`^call (up to )?${N} (.*?)(?:cards? )?(?:with "([^"]+)" in (?:its|their) card names? )?(?:from your hand )?to \\(RC\\)(?: from your hand)?$`))) && /hand/i.test(t))
       return [{ type: "callFromHand", n: toNum(m[2]), filter: { ...(filt(m[3] || "") || {}), ...(m[4] ? { name: m[4] } : {}) } }];
     if ((m = t.match(/^soul-charge (\d+)/i))) return [{ type: "SC", n: +m[1], ...per }];
@@ -811,6 +820,7 @@ const TextParse = (() => {
     if (/^\[rest\] (this unit)$/i.test(t)) return [{ type: "rest", target: "self" }];
     if (/^\[rest\] (it|them|that unit|this unit)/i.test(t)) return [{ type: "rest", ...(/this unit/i.test(t) ? { target: "self" } : it()) }];
     if (/^retire (it|them|that unit|those units)$/i.test(t) && ctx.last) return [{ type: "retire", ...useLast() }];
+    if (/^retire that unit$/i.test(t)) return [{ type: "retire", target: "eventUnit" }]; // the unit the timing is about
     if (/^retire (this unit)$/i.test(t)) return [{ type: "retire", target: "self" }];
     if ((m = t.match(/^retire all of your opponent'?s (front row |back row )?rear-guards/i))) return [{ type: "move", from: m[1] && /front/i.test(m[1]) ? "oppFrontRC" : "oppRC", to: "drop", all: true }];
     if ((m = t.match(rx(`^retire (up to )?${N} of your opponent'?s (.*?)rear-guards?`)))) return [{ type: "retire", target: /front row/i.test(m[3]) ? "chooseOppFrontRC" : "chooseOppRC", n: toNum(m[2]), filter: filt(m[3]) }];
@@ -836,7 +846,7 @@ const TextParse = (() => {
       ctx.lookMove = e; return [e];
     }
     if (ctx.look && /^(you may )?call (it|that card|them) to( an open)? \(rc\)$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: L.pick || 1, upTo: true, to: "RC", filter: L.filter, rest: "top" }; ctx.lookMove = e; return [e]; }
-    if (ctx.look && (m = t.match(rx(`^(?:choose|reveal|search for) (up to )?${N} (.*?)(?:cards?|units?|orders?)? from among them`)))) { ctx.look.pick = toNum(m[2]); ctx.look.upTo = !!m[1]; ctx.look.filter = filt(m[3]); return []; }
+    if (ctx.look && (m = t.match(rx(`^(?:choose|reveal|search for) (up to )?${N} (.*?)(?:cards?|units?|orders?)? from among (?:them|it)`)))) { ctx.look.pick = toNum(m[2]); ctx.look.upTo = !!m[1]; ctx.look.filter = filt(m[3]); return []; }
     if (ctx.look && /^(reveal (it|them),? and )?(put (it|them) into (your )?hand|call (it|them) to( an open)? \(rc\)|put (it|them) into (your )?soul|put (it|them) into (your )?drop|put (it|them) on the (top|bottom) of (your|the) deck)/i.test(t)) {
       const to = /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : /soul/i.test(t) ? "soul" : /drop/i.test(t) ? "drop" : /bottom/i.test(t) ? "deckBottom" : "deckTop";
       const L = ctx.look;
@@ -852,6 +862,10 @@ const TextParse = (() => {
       ctx.lookMove = e;
       return [e];
     }
+    if (ctx.lookMove && /^discard the rest$/i.test(t)) { ctx.lookMove.rest = "drop"; return []; }
+    if (ctx.look && (m = t.match(rx(`^search for (up to )?${N} (.*?)(?:cards?|units?)?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?$`)))) {
+      ctx.look.pick = toNum(m[2]); ctx.look.upTo = !!m[1]; ctx.look.filter = filt(t.replace(/^search for (up to )?\S+ /i, "")); return [];
+    }
     if (ctx.lookMove && /^put the rest (on the (top or )?(bottom|top) of (your|the) deck|into (your )?(drop|soul))/i.test(t)) {
       ctx.lookMove.rest = /bottom/i.test(t) ? "bottom" : /top/i.test(t) ? "top" : /drop/i.test(t) ? "drop" : "soul";
       return [];
@@ -866,7 +880,7 @@ const TextParse = (() => {
     // search the deck
     if ((m = t.match(rx(`^search (?:your deck |your deck and drop |your deck or drop (?:zone )?|your deck and drop zone )for (up to )?${N} (.*?)(?:cards?|units?|orders?)?(?: from your deck)?(?:,|$)`)))) { ctx.search = { n: toNum(m[2]), upTo: !!m[1], filter: filt(m[3]) }; return []; }
     if (ctx.search && /^discard (it|them)$/i.test(t)) { const S2 = ctx.search; ctx.search = null; return [{ type: "move", from: "deck", to: "drop", n: S2.n, upTo: true, filter: S2.filter }]; }
-    if (ctx.search && /^(reveal (it|them)(,| and| to your opponent,? and)? )?(put (it|them) into (your )?hand|call (it|them) to( an open)? \(rc\)|put (it|them) into (your )?soul)/i.test(t)) {
+    if (ctx.search && /^(reveal (it|them)(,| and| to your opponent,? and)? )?(put (it|them) into (your )?hand|call (it|them) to( an open| separate| separate open| open)? \(rc\)|put (it|them) into (your )?soul)/i.test(t)) {
       const s = ctx.search; ctx.search = null;
       return [{ type: "move", from: "deck", to: /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : "soul", n: s.n, upTo: true, filter: s.filter, reveal: /reveal/i.test(t) }];
     }
