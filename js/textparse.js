@@ -1297,6 +1297,15 @@ const TextParse = (() => {
       const body = l.replace(/^\[(auto|act|cont)\]\s*(\([^)]*\))?\s*(\[[^\]]*\])*\s*:?\s*/i, "");
       if (/^(sentinel|forerunner|lord|boost|intercept|resist|harmony|restraint)\b\s*\.?\s*$/i.test(body)) continue; // a keyword: card field
       if (/^[A-Z][A-Za-z!'‐-]{2,20}( \d+)?\s*$/.test(body)) continue;
+      // Revelation-(VC/RC) (G era), from the cards' own reminder text: "When this unit is placed on the specified circle, look at the top card of your deck,
+      // and you may put that card into your soul. If you do, [Rest] one of your rear-guards"
+      const rv = body.match(/^revelation\s*[-–－]\s*\((VC\/RC|VC|RC)\)/i);
+      if (rv) {
+        const z = rv[1].toUpperCase();
+        out.push({ kind: "AUTO", zone: z, when: z === "VC" ? "placedVC" : z === "RC" ? "placedRC" : "placed", once: "", conds: [], costs: [], keyword: "Revelation",
+          effects: [{ type: "move", from: "deckTop", look: 1, n: 1, upTo: true, to: "soul", rest: "top" }, { type: "rest", target: "chooseMyRC", n: 1, onlyIf: "did" }] });
+        continue;
+      }
       // Legion (G era): "[ACT](VC):[Legion 20000]"Seeker, Light Blaze Dragon"" = if your opponent's vanguard is grade 3 or greater, return four
       // cards from your drop to the deck, search for the named mate and Legion (CR 6.4); the mate's name is the Seek Mate text
       const lg = body.match(/^\[legion (\d+)\]\s*"([^"]+)"\s*$/i);
