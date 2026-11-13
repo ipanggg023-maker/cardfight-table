@@ -489,3 +489,30 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 
 /* card detail: the official stat line */
 .statline { font-size: 12px; line-height: 1.45; color: var(--fg); }
+
+/* ===== Card faces v2 (2026-11-13): a card with a picture shows the picture; only small chips sit on it =====
+   name → card detail panel; grade / trigger / sentinel → top-left chips; power ★critical → one pill at the bottom */
+.card.img { padding: 3px; position: relative; justify-content: flex-start; }
+.card.img .cn { display: none; }
+.card.img .ab { display: none; }
+.card.img .ctop { justify-content: flex-start; gap: 2px; flex-wrap: wrap; }
+.card.img .cg, .card.img .ct { font: 700 .58rem/1 var(--display); padding: 2px 4px; border-radius: 4px; background: #000c; color: var(--fg); }
+.card.img .cs { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); background: #000d; border-radius: 999px;
+  padding: 1px 7px; font-size: .66rem; gap: 4px; white-space: nowrap; flex-wrap: nowrap; text-shadow: none; line-height: 1.3; }
+.card.img .heart { position: absolute; left: 3px; right: 3px; bottom: 21px; background: #000b; border-radius: 4px; padding: 0 3px; font-size: .52rem; }
+.card.img .heart.mate { bottom: 33px; }
+
+/* ===== Card detail panel (2026-11-13): docked on the left when there is room, pinned with right-click / long press ===== */
+.info .info-pin { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 700 .72rem var(--display); color: var(--gold);
+  margin: -2px 0 6px; pointer-events: auto; }
+.info .info-pin button { padding: 2px 8px; font-size: .8rem; }
+.info.pinned { pointer-events: auto; border-color: var(--gold); }
+body.game.info-dock .info { width: var(--infoW, 260px); pointer-events: auto; top: 54px; bottom: 12px; max-height: none; box-shadow: none;
+  background: #0b1424e6; }
+body.game.info-dock .info img { max-height: 40vh; width: auto; max-width: 100%; display: block; margin: 0 auto 6px; }
+.info .abl { font-size: .8rem; line-height: 1.35; padding: 4px 6px; background: #ffffff0a; border-radius: 6px; }
+.info .pre { white-space: pre-wrap; font-size: .78rem; line-height: 1.4; }
+@media (max-width: 760px) { .info.pinned { pointer-events: auto; } }
+.info .howplay summary { cursor: pointer; font-size: .75rem; color: var(--muted); margin-top: 6px; }
+#info.info { display: block; text-align: left; justify-content: initial; }
+#info.info h3 { font-size: 1rem; }

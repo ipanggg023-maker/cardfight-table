@@ -227,7 +227,7 @@ const view = () => (ui.online ? ui.online.seat : ui.hotseat ? ui.shown : Game.st
 // A card is drawn in three parts so an existing card element can be updated in place
 // (no flicker, picture stays decoded): class, background picture, inner text.
 const cardClass = (src, s = {}, extra = "") => `card${src ? " img" : ""}${s.rest ? " rest" : ""}${extra}`;
-const cardBg = (src) => (src ? `linear-gradient(#0000 45%,#000c),url("${src.replace(/"/g, "%22")}")` : "");
+const cardBg = (src) => (src ? `linear-gradient(#0000 78%,#0007),url("${src.replace(/"/g, "%22")}")` : "");
 function cardInner(c, pi = null, key = null) {
   if (c.type === "locked") return `<div class="cn facedown">🔒 Locked</div>`;
   if (c.type === "deleted") return `<div class="cn facedown">⛔ Deleted</div><div class="cs"><span class="cp">${fmt(pi !== null && key ? Game.power(pi, key) : 0)}</span></div>`;
@@ -238,7 +238,7 @@ function cardInner(c, pi = null, key = null) {
     <div class="cn">${esc(c.name)}</div>
     ${pi !== null && key === "vc" && Game.state().players[pi].slots.vc && Game.state().players[pi].slots.vc.heart ? `<div class="heart">♥ ${esc(Game.state().players[pi].slots.vc.heart.name)}</div>` : ""}
     ${pi !== null && key === "vc" && Game.state().players[pi].slots.vc && Game.state().players[pi].slots.vc.mate ? `<div class="heart mate">⚭ ${esc(Game.state().players[pi].slots.vc.mate.name)}</div>` : ""}
-    <div class="cs">${c.type === "order" ? "" : `<span class="cp${pw !== c.power ? " buffed" : ""}">${fmt(pw)}</span>`}${cr > 1 ? `<span class="cc">★${cr}</span>` : ""}${c.shield ? `<span class="csh">🛡${c.shield / 1000}k</span>` : ""}</div>`;
+    <div class="cs">${c.type === "order" ? "" : `<span class="cp${pw !== c.power ? " buffed" : ""}">${fmt(pw)}</span>`}${cr > 1 ? `<span class="cc">★${cr}</span>` : ""}${c.shield && key === null ? `<span class="csh">🛡${c.shield / 1000}k</span>` : ""}</div>`; // shield only off the field (hand, guardians)
 }
 function cardHTML(c, s = {}, pi = null, key = null, extra = "") {
   seen.set(c.uid, c);
@@ -277,8 +277,9 @@ function infoPanel(c) {
     ${cardNoLine(c) ? `<p class="muted">${esc(cardNoLine(c))}</p>` : ""}
     ${c.trigger && TRIG[c.trigger] ? `<p>${TRIG[c.trigger].icon} ${TRIG[c.trigger].name}: ${TRIG[c.trigger].desc}</p>` : ""}
     ${c.sentinel ? "<p>◆ Sentinel: discard 1 to make the attacked unit unhittable</p>" : ""}
-    ${(c.abilities || []).map((a) => `<p class="abl">${esc(describeAbility(a))}</p>`).join("")}
-    ${c.text ? `<p class="muted pre">${esc(c.text)}</p>` : ""}${c.notes ? `<p class="pre rnotes"><b>Rulings:</b> ${esc(c.notes)}</p>` : ""}`;
+    ${c.text ? `<p class="pre">${esc(c.text)}</p>` : (c.abilities || []).length ? "" : `<p class="muted">No abilities.</p>`}
+    ${c.notes ? `<p class="pre rnotes"><b>Rulings:</b> ${esc(c.notes)}</p>` : ""}
+    ${(c.abilities || []).length ? `<details class="howplay" ${c.text ? "" : "open"}><summary>How the game plays it (${c.abilities.length})</summary>${c.abilities.map((a) => `<p class="abl">${esc(describeAbility(a))}</p>`).join("")}</details>` : ""}`;
 }
 
 const SLOT_LABEL = { vc: "VC", fl: "RC", fr: "RC", bl: "RC", bc: "RC", br: "RC" };
@@ -697,16 +698,58 @@ document.addEventListener("click", (e) => {
   const hand = t.closest("[data-hand]"); if (hand) return onHand(+hand.dataset.hand);
   const slot = t.closest("[data-key]"); if (slot) return onSlot(slot.dataset.side, slot.dataset.key);
 });
+// ---------- card detail panel: read any card's abilities at any time ----------
+// Wide screens: docked on the left (the empty strip beside the table), always visible, shows the last card you pointed at.
+// Right-click (long press on touch) pins a card so it stays while you act; ✕ / Esc unpins. Narrow screens: an overlay while hovering or pinned.
 let infoT;
-let infoUid = null;
+let infoUid = null, infoPinned = null;
+const infoEl = () => $("#info");
+function infoDock() {
+  const board = document.querySelector(".table .mat, .mat");
+  const free = board ? board.getBoundingClientRect().left - 24 : 0;
+  const dock = document.body.classList.contains("game") && free >= 200;
+  document.body.classList.toggle("info-dock", dock);
+  if (dock) document.body.style.setProperty("--infoW", Math.min(340, Math.floor(free)) + "px");
+  return dock;
+}
+function showInfo(uid, pinned = false) {
+  const c = seen.get(+uid);
+  if (!c) return;
+  infoDock();
+  if (pinned) infoPinned = String(uid);
+  infoUid = String(uid);
+  const head = infoPinned ? `<div class="info-pin">📌 Pinned <button type="button" data-unpin title="Unpin (Esc)">✕</button></div>` : "";
+  infoEl().innerHTML = head + infoPanel(c);
+  infoEl().hidden = false;
+  infoEl().classList.toggle("pinned", !!infoPinned);
+}
+function unpinInfo() {
+  infoPinned = null;
+  infoEl().classList.remove("pinned");
+  if (infoDock() && infoUid) showInfo(infoUid); else infoEl().hidden = true;
+}
 document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-uid]");
   clearTimeout(infoT);
-  if (el && seen.has(+el.dataset.uid)) {
-    if (infoUid !== el.dataset.uid || $("#info").hidden) { infoUid = el.dataset.uid; $("#info").innerHTML = infoPanel(seen.get(+el.dataset.uid)); }
-    $("#info").hidden = false;
-  } else infoT = setTimeout(() => ($("#info").hidden = true), 250);
+  if (infoPinned) return; // a pinned card stays until you unpin it
+  if (el && seen.has(+el.dataset.uid)) { if (infoUid !== el.dataset.uid || infoEl().hidden) showInfo(el.dataset.uid); }
+  else if (!infoDock()) infoT = setTimeout(() => (infoEl().hidden = true), 250); // docked: keep the last card
 });
+document.addEventListener("contextmenu", (e) => {
+  const el = e.target.closest("[data-uid]");
+  if (!el || !seen.has(+el.dataset.uid)) return;
+  e.preventDefault();
+  if (infoPinned === el.dataset.uid) unpinInfo(); else showInfo(el.dataset.uid, true);
+});
+let pressT = null;
+document.addEventListener("touchstart", (e) => {
+  const el = e.target.closest("[data-uid]");
+  if (!el || !seen.has(+el.dataset.uid)) return;
+  pressT = setTimeout(() => { showInfo(el.dataset.uid, true); pressT = null; }, 500); // long press = pin
+}, { passive: true });
+["touchend", "touchmove", "touchcancel"].forEach((ev) => document.addEventListener(ev, () => { clearTimeout(pressT); pressT = null; }, { passive: true }));
+document.addEventListener("click", (e) => { if (e.target.closest("[data-unpin]")) { e.stopPropagation(); unpinInfo(); } }, true);
+window.addEventListener("resize", () => { if (infoDock() && infoEl().hidden && infoUid) showInfo(infoUid); });
 // ---------- Judge panel: do card text by hand (Manual blocks), or fix a mistake in hot-seat ----------
 // Online it only works while a Manual effect is open (both players see what was done in the log).
 const J = { pi: null, uid: null };
@@ -759,7 +802,7 @@ $("#judgeBtn").addEventListener("click", () => { $("#judge").hidden = !$("#judge
 $("#judgeClose").addEventListener("click", () => { $("#judge").hidden = true; });
 $("#logBtn").addEventListener("click", () => { $("#logDrawer").hidden = !$("#logDrawer").hidden; render(); });
 $("#logClose").addEventListener("click", () => ($("#logDrawer").hidden = true));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; $("#info").hidden = true; } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; if (infoPinned) unpinInfo(); else if (!document.body.classList.contains("info-dock")) $("#info").hidden = true; } });
 $("#choiceOk").addEventListener("click", () => {
   act(Promise.resolve(Game.answer([...ui.pick].map(parseId))));
   ui.pick.clear();
