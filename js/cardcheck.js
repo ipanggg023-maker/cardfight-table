@@ -47,6 +47,12 @@ const CardCheck = (() => {
   // keyword lines that card fields (not blocks) cover
   function flagLine(l, c) {
     if (/^\(.*\)$/.test(l)) return { note: "reminder text" };
+    // more card fields (not blocks)
+    if (/^while (you are )?paying the cost for \[stride\],? this card gets grade \+\d/.test(l)) return +c.strideGrade ? { ok: "Stride cost grade + field" } : { warn: "Fill “Stride cost grade +”" };
+    if (/^you may (only )?have (up to )?[^.]* in (a|your) deck\.?$/.test(l)) return +c.deckMax ? { ok: "deck limit field (" + c.deckMax + ")" } : { note: "deck-building rule (copies per deck)" };
+    if (/^you may have up to (ten|\d+) energy\.?$/.test(l)) return { note: "Energy Generator (built into the game)" };
+    if (/^this card cannot be ridden\.?$/.test(l)) return c.cantBeRidden ? { ok: "Can't be ridden" } : { warn: "Paste the text again to set “cannot be ridden”" };
+    if (/^this card can only be ridden from /.test(l)) return c.rideFrom ? { ok: "Ride only from (field)" } : { warn: "Paste the text again to set “can only be ridden from”" };
     if (/^sentinel\b/.test(l)) return c.sentinel ? { ok: "Sentinel box" } : { warn: "Tick “Sentinel”" };
     if (/normal ride of this card from a grade 3 card with a kai icon/.test(l)) return c.personaFromKai ? { ok: "“Persona Ride from a Kai grade 3” box" } : { warn: "Tick “Persona Ride from a Kai grade 3”" };
     if (/^persona ride/.test(l)) return c.persona ? { ok: "Persona Ride box" } : { warn: "Tick “Persona Ride”" };
@@ -115,18 +121,29 @@ const CardCheck = (() => {
     const abs = c.abilities || [];
     const items = [];
     const used = new Set();
-    let next = 0;
+    let next = 0, lastOrder = null;
     for (const raw of textLines(c.text)) {
       const l = lower(raw);
-      const f = flagLine(l, c);
+      // keyword lines are card fields; they may come with their header: "[CONT]:Sentinel", "[CONT](VC/RC):Lord", "[AUTO]:Forerunner"
+      const body = l.replace(/^\[(auto|act|cont)\]\s*(\([^)]*\)|[a-z ]+zone(?=:)|hand(?=:))?\s*(\[[^\]]*\])*\s*:?\s*/i, "");
+      // a keyword label only ("[AUTO](VC/RC):Engorge", "Success 20000(…)", "Afterimage (…)"): its effect is written in other lines
+      const rawBody = raw.replace(/^\s*\[(AUTO|ACT|CONT)\]\s*(\([^)]*\))?\s*(\[[^\]]*\])*\s*:?\s*/i, "").replace(/\s*\([^()]*\)\s*\.?$/, "").trim();
+      if (rawBody !== raw.trim() && /^[A-Z][A-Za-z!'‐-]{2,20}( \d+)?\.?$/.test(rawBody) && !/^(Sentinel|Lord|Forerunner|Resist|Harmony|Boost|Intercept)$/i.test(rawBody)) {
+        items.push({ text: raw, kind: null, ab: null, state: "note", notes: [`keyword “${rawBody}”: its effect is in the other lines`] }); continue;
+      }
+      const f = flagLine(l, c) || (body !== l ? flagLine(body, c) : null);
       if (f) { items.push({ text: raw, kind: null, ab: null, state: f.note ? "note" : f.ok ? "flag" : "warn", notes: [f.ok || f.warn || f.note] }); continue; }
       const kind = kindOf(l, c);
       if (!kind) { items.push({ text: raw, kind: null, ab: null, state: "note", notes: ["no [AUTO]/[ACT]/[CONT] mark: check it by eye"] }); continue; }
       // pair with the next block of the same kind (orders: any order block)
       let i = abs.findIndex((ab, k) => k >= next && !used.has(k) && !ab.granted && !ab.part && (ab.kind === kind || (kind === "ORDER" && ab.kind === "BLITZ") || (kind === "BLITZ" && ab.kind === "ORDER")));
       if (i < 0) i = abs.findIndex((ab, k) => !used.has(k) && !ab.granted && !ab.part && ab.kind === kind);
+      if (i < 0 && kind === "AUTO") i = abs.findIndex((ab, k) => !used.has(k) && !ab.granted && !ab.part && ab.kind === "ACT" && (ab.effects || []).some((e) => e.type === "manual" && /^Timing not read/.test(e.text || "")));
+      // orders: one ORDER block holds all of the order's untagged lines
+      if (i < 0 && (kind === "ORDER" || kind === "BLITZ") && lastOrder !== null) { items.push({ text: raw, kind, ab: lastOrder, state: "ok", manual: usesManual(abs[lastOrder]), notes: ["part of the order's text above"] }); continue; }
       if (i < 0) { items.push({ text: raw, kind, ab: null, state: "missing", notes: ["No block for this ability yet", ...gapsIn(l).map((g) => "Needs: " + g)] }); continue; }
       used.add(i); next = i + 1;
+      if (abs[i].kind === "ORDER" || abs[i].kind === "BLITZ") lastOrder = i;
       // blocks marked "part" right after it belong to the same text line (effects written before a mid-sentence cost)
       const parts = [];
       for (let k = i + 1; k < abs.length && abs[k].part; k++) { parts.push(abs[k]); used.add(k); next = k + 1; }

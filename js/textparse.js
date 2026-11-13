@@ -1192,7 +1192,10 @@ const TextParse = (() => {
       const body = l.replace(/^\[(auto|act|cont)\]\s*(\([^)]*\))?\s*(\[[^\]]*\])*\s*:?\s*/i, "");
       if (/^(sentinel|forerunner|lord|boost|intercept|resist|harmony|restraint)\b\s*\.?\s*$/i.test(body)) continue; // a keyword: card field
       if (/^[A-Z][A-Za-z!'‐-]{2,20}( \d+)?\s*$/.test(body)) continue;
-      if (/^\[legion \d+\]\s*"[^"]+"\s*$/i.test(body)) continue;
+      // Legion (G era): "[ACT](VC):[Legion 20000]"Seeker, Light Blaze Dragon"" = if your opponent's vanguard is grade 3 or greater, return four
+      // cards from your drop to the deck, search for the named mate and Legion (CR 6.4); the mate's name is the Seek Mate text
+      const lg = body.match(/^\[legion (\d+)\]\s*"([^"]+)"\s*$/i);
+      if (lg) { out.push({ kind: "ACT", zone: "VC", once: "", conds: [{ type: "oppVcGrade", n: 3 }], costs: [{ type: "dropToTop", n: 4 }], effects: [{ type: "seekMate", text: lg[2] }], legionPower: +lg[1] }); continue; }
       if (/^the normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride\.?$/i.test(body)) continue; // card field personaFromKai
       // deck-building rules and card fields, not abilities: "You may only have one … in a deck", "You may have up to ten energy",
       // "This card cannot be ridden", "This card can only be ridden from a grade 3 with "X" in its card name"
