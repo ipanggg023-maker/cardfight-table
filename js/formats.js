@@ -75,7 +75,7 @@ function cardStatLine(c) {
   const num = (n) => (n == null || n === "" ? "" : String(n));
   const type = c.type === "order" ? (c.ticket ? "Ticket" : c.setOrder ? "Set Order" : (c.abilities || []).some((a) => a.kind === "BLITZ") ? "Blitz Order" : "Normal Order")
     : c.type === "trigger" ? "Trigger Unit" : c.type === "g" ? "G Unit" : c.type === "crest" ? "Crest" : c.token ? "Token Unit" : "Normal Unit";
-  const parts = [type, c.nation, c.race, c.clan && c.clan !== c.nation ? c.clan : ""].filter((x) => x && x !== "-");
+  const parts = [type, c.nation, c.nation2, c.race, c.clan && c.clan !== c.nation ? c.clan : ""].filter((x) => x && x !== "-");
   if (c.type === "crest") return parts.join(" | ");
   parts.push(`Grade ${num(c.grade)}`);
   if (c.type !== "order") {
@@ -194,8 +194,10 @@ function validateDeck(deck, byId) {
   // one nation / one clan
   const pool = all.filter((c) => !isNeutral(c));
   if (F.identity === "nation") {
-    const ns = [...new Set(pool.map(cardNation).filter(Boolean))];
-    if (ns.length > 1) errs.push(`One nation only: ${ns.join(", ")}`);
+    // a card with two nations (card.nation2) fits a deck of either one: the deck's nation is the one every card has
+    const sets = pool.map((c) => [cardNation(c), c.nation2 && isNationName(c.nation2) ? c.nation2 : ""].filter(Boolean)).filter((s) => s.length);
+    const shared = sets.length ? sets.reduce((acc, s) => acc.filter((n) => s.includes(n)), sets[0]) : [];
+    if (sets.length && !shared.length) errs.push(`One nation only: ${[...new Set(sets.map((s) => s.join(" / ")))].join(", ")}`);
   } else if (F.identity === "clan") {
     const cs = [...new Set(pool.map(cardClan).filter(Boolean))];
     if (cs.length > 1) errs.push(`One clan only: ${cs.join(", ")}`);

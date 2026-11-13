@@ -170,6 +170,7 @@ function renderCard() {
       <label>Boost ${sel("boost", { "": `Auto (${c.grade <= 1 ? "yes" : "no"})`, 1: "Yes", 0: "No" }, c.boost === true ? "1" : c.boost === false ? "0" : c.boost ?? "")}</label>
       <label>Intercept ${sel("intercept", { "": `Auto (${c.grade === 2 ? "yes" : "no"})`, 1: "Yes", 0: "No" }, c.intercept === true ? "1" : c.intercept === false ? "0" : c.intercept ?? "")}</label>
       <label>Nation ${txt("nation", c.nation, "Dragon Empire")}</label>
+      <label title="Cards with two nations (they fit a deck of either one)">Second nation ${txt("nation2", c.nation2, "only for dual-nation cards")}</label>
       <label>Clan (older cards) ${txt("clan", c.clan, "e.g. Kagero")}</label>
       <label>Race ${txt("race", c.race)}</label>
       <label title="“This card is also regarded as …”: extra names, separated by |">Also named ${txt("aliasText", (c.alias || []).join(" | "), "e.g. Name A | Name B")}</label>
@@ -440,7 +441,7 @@ $("#cardForm").addEventListener("click", async (e) => {
       const { abilities, ...statsFound } = r;
       abilities.forEach((a) => delete a.unread);
       // re-reading text of an imported card keeps its printed stats; only flags and abilities are taken
-      const keep = b.dataset.do === "reread" ? Object.fromEntries(Object.entries(statsFound).filter(([k]) => !["grade", "power", "shield", "crit", "type", "trigger", "nation", "race", "clan", "name", "number", "rarity"].includes(k))) : statsFound;
+      const keep = b.dataset.do === "reread" ? Object.fromEntries(Object.entries(statsFound).filter(([k]) => !["grade", "power", "shield", "crit", "type", "trigger", "nation", "nation2", "race", "clan", "name", "number", "rarity", "icon"].includes(k))) : statsFound;
       if (keep.number) { cur.source = { ...(cur.source || {}), number: keep.number }; delete keep.number; }
       Object.assign(cur, keep, abText ? { text: abText, abilities } : {});
       if (cur.type !== "trigger") cur.trigger = cur.trigger || null;

@@ -15,4 +15,5 @@ desktop.ini
 
 # card-census: downloaded card data and its results
 tools/card-census/data/
+tools/card-census/official/
 tools/card-census/tags.json

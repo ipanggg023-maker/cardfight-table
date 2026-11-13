@@ -9,83 +9,169 @@ const TextParse = (() => {
   const N = "(\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)";
   const rx = (s, f = "i") => new RegExp(s, f);
 
-  // ---------- the official card list's stat line ----------
-  // "Normal Unit | Dragon Empire | Flame Dragon | Kagero | Grade 3 | Power 13000 | Critical 1 | Shield | Twin Drive!!, Persona Ride |"
-  // (copied from en.cf-vanguard.com; it may wrap over several lines). Words between the card type and Grade are the
-  // nation (known names), the clan (known names) and the race (anything else).
-  const NATION_NAMES = ["dragon empire", "dark states", "brandt gate", "keter sanctuary", "stoicheia", "lyrical monasterio", "cray elemental",
-    "touken ranbu", "shaman king", "bang dream!", "record of ragnarok", "corocoro", "united sanctuary", "star gate", "dark zone", "magallanica", "zoo"];
-  const CLAN_NAMES = ["royal paladin", "oracle think tank", "angel feather", "shadow paladin", "gold paladin", "genesis", "kagero", "tachikaze",
-    "murakumo", "narukami", "nubatama", "gear chronicle", "nova grappler", "dimension police", "link joker", "dark irregulars", "spike brothers",
-    "pale moon", "megacolony", "great nature", "neo nectar", "granblue", "aqua force", "bermuda triangle", "etranger"];
-  const RARITY = /^(?:rarity\s*[:\-]?\s*)?(C|R|RR|RRR|VR|SVR|SP|SEC|SSR|TD|PR|H|FR|ORR|DSR|LSR|MSR|SR|ZR|GR|XR|EXRRR|EXRR|EXR|EXC|FFR|LR|SNR|RE|FIR|DR|SCR|ZXR)$/i;
-  // Copying from the card page often loses the separators: "Normal UnitDragon EmpireFlame DragonKageroGrade 3Power 13000Critical 1Shield Twin Drive!!, Persona Ride".
-  // Put the "|" back before/after every known word (types, nations, clans, Grade/Power/Critical/Shield, skills, triggers); what's left between is the race.
+  // ---------- a card page pasted from the official card list (en.cf-vanguard.com/cardlist/?cardno=…) ----------
+  // Copying the page gives (fields glued together, no separators — the " | " are drawn by CSS only):
+  //   [VGE-…] product name                      (only if copied too)
+  //   Dragonic Overlord                         name (maybe "（kana）")
+  //   Normal UnitDragon EmpireFlame DragonKageroGrade 3Power 13000Critical 1Shield Twin Drive!!, Persona Ride
+  //     D cards (Standard):     type · nation · [nation 2] · race · [clan] · Grade · Power · Critical · Shield · skills · trigger
+  //     older cards:            type · clan · race · nation · Grade · Power · Critical · Shield · skills · trigger   ("-" = none)
+  //   [AUTO](VC):…              ability text, one line each; clan names show as &lt;Royal Paladin&gt;
+  //   flavor text
+  //   StandardDZ-SS14/001ENTDillust/伊藤彰    format ("Standard", "V-Premium", "Standard/V-Premium", "G-Regulation" or nothing),
+  //                                             card number, rarity, illustrator
+  //   Prev / Next …             page buttons and anything after the last line are ignored
+  // The " | " form ("Normal Unit | Dragon Empire | … | Grade 3 | …") and separate "Card No.: …" / "Rarity: …" lines work too.
+  // The names below are the site's own nation and clan lists (cardlist search form).
+  const NATIONS_D = ["Dragon Empire", "Dark States", "Brandt Gate", "Keter Sanctuary", "Stoicheia", "Lyrical Monasterio", "Touken Ranbu",
+    "Record of Ragnarok", "SHAMAN KING", "BanG Dream!", "CoroCoro", "Buddyfight", "Cray Elemental"];
+  const NATIONS_OLD = ["United Sanctuary", "Dragon Empire", "Dark Zone", "Star Gate", "Magallanica", "Zoo", "Cray Elemental", "BanG Dream! FILM LIVE"];
+  const CLANS = ["Royal Paladin", "Oracle Think Tank", "Angel Feather", "Shadow Paladin", "Gold Paladin", "Genesis", "Kagero", "Nubatama", "Tachikaze",
+    "Murakumo", "Narukami", "Nova Grappler", "Dimension Police", "Link Joker", "Spike Brothers", "Dark Irregulars", "Pale Moon", "Gear Chronicle",
+    "Granblue", "Bermuda Triangle", "Aqua Force", "Megacolony", "Great Nature", "Neo Nectar", "Cray Elemental", "Etranger", "Touken Ranbu", "BanG Dream!",
+    "Dragon Empire", "Magallanica", "Zoo", "Star Gate", "United Sanctuary", "Dark Zone"];
+  const KNOWN = [...new Set([...NATIONS_D, ...NATIONS_OLD, ...CLANS])];
+  const isKnown = (t, list) => list.some((n) => n.toLowerCase() === String(t).toLowerCase());
   const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const KNOWN_RE = new RegExp(`(${[...NATION_NAMES, ...CLAN_NAMES].sort((a, b) => b.length - a.length).map(reEsc).join("|")})`, "gi");
-  const GLUE_START = /^\s*((?:normal|trigger|g|token) unit|(?:normal|blitz|set|trigger) order|ride deck crest)/i;
-  function unglue(l) {
-    if (/\|/.test(l) || !GLUE_START.test(l) || !/grade\s*\d|power|shield/i.test(l) || /\[(auto|act|cont)\]/i.test(l)) return l;
-    return l.replace(GLUE_START, "$1|")
-      .replace(KNOWN_RE, "|$1|")
-      .replace(/(grade\s*\d+|power\s*\+?[\d,]*|critical\s*\d+|shield\s*[\d,]*)/gi, "|$1|")
-      .replace(/((?:critical|front|draw|heal|over|stand) trigger)\s*(\+\s*[\d,]+)?/gi, (m, t, p) => `|${t}|${p || ""}|`)
-      .replace(/(twin drive!*|triple drive!*|persona ride|imaginary gift\s*[:\-]?\s*(?:force|accel|protect)|\bboost\b|\bintercept\b)/gi, "|$1|")
-      .replace(/\|\s*(,\s*)?\|/g, "|").replace(/\|{2,}/g, "|");
+  // printed exactly like this on the site (case-sensitive, so "Zoo" never splits a race like "Zoological")
+  // glued fields never have a space at the seam, so a name with a space next to it is part of a longer word ("CoroCoro Comic" is a race)
+  const KNOWN_RE = new RegExp(`(?<! )(${KNOWN.sort((a, b) => b.length - a.length).map(reEsc).join("|")})(?! )(?!ers?(?:[A-Z|]|$))`, "g"); // …"Buddyfighter" is a race, "Lyrical Monasteriohololive" is two fields
+  // every rarity the official card list uses (all 25,927 cards, 2026-11-13)
+  const RARITIES = ["PR", "-", "RRR", "RR", "R", "C", "SP", "Ｒ", "Ｃ", "ЯЯЯ", "LR", "ORR", "DSR", "H", "T", "SSR", "WO", "10thRRR", "10thSEC", "10thSP", "SEC",
+    "FFR", "FR", "Re", "SNR", "EX", "SECP", "SECV", "BSR", "LSP", "LSR", "MSP", "TD", "SR", "SD", "TDR", "ORRR", "Re+", "SIR", "TRR", "RGR", "SSP", "SKR", "VSR",
+    "EXRRR", "EXC", "EXS", "R+", "EXP", "SER", "SER+", "15thSP", "RGGR", "TGR", "TGR+", "CR", "GCR", "LGRRR", "LGRR", "LGR", "LGTR", "PGS", "BR", "KR", "SFR",
+    "GBPR", "GBPR+", "PGSP", "GR", "SCR", "SGR", "ZR", "WSP", "RE", "LD", "VR", "IMR", "OR", "SVR", "DR", "VDR", "XVR", "RLR", "ASR", "URR", "LIR", "OCR", "IGR", "SDS"];
+  const RARITIES_BY_LEN = RARITIES.slice().sort((a, b) => b.length - a.length);
+  const RAR_RE = RARITIES_BY_LEN.map(reEsc).join("|");
+  const REG = "Standard\\/V-Premium|Standard|V-Premium|G-Regulation";
+  const NUM = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\\/[A-Za-z0-9-]*?\\d+(?:S?EN|[ab]|[ABS])?(?:-[A-Z]{1,2})?";
+  const FOOT = new RegExp(`^\\s*(${REG})?\\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\\/)(.+)$`);
+  // the page shows some entities as typed, sometimes without the ";" ("&ltMurakumo&gt")
+  const decode = (s) => String(s).replace(/&lt;?/g, "<").replace(/&gt;?/g, ">").replace(/&quot;?/g, '"').replace(/&#0?39;?/g, "'").replace(/&nbsp;?/g, " ").replace(/&amp;?/g, "&");
+  // the rarity right after the number: the longest one ("RRkoji" = RR + "koji"). Most illustrator names start in lower case or
+  // Japanese; one that starts with a rarity's capital letter ("RRRyo-ta.H") can't be told apart — check the Rarity field then.
+  function rarityAt(s) {
+    return RARITIES_BY_LEN.find((r) => s.startsWith(r)) || "";
   }
-  // the page's last line, also glued: "StandardDZ-SS14/001ENTDillust/伊藤彰 icon:MAMEX" → format, card number, rarity (illustrators dropped)
-  const RARITY_ALT = "EXRRR|RRR|SVR|SEC|SSR|ORR|DSR|LSR|MSR|FFR|SNR|FIR|SCR|ZXR|EXRR|EXR|EXC|RR|VR|SP|TD|PR|FR|SR|ZR|GR|XR|LR|RE|DR|C|R|H";
-  const FOOTER = new RegExp(`^\\s*(standard|v premium|premium|extreme)?\\s*([A-Z0-9]+(?:-[A-Z0-9]+)*\\/[A-Z]*\\d+[A-Z]*?(?:EN)?)(${RARITY_ALT})?\\s*(?:illust.*|icon.*)?$`, "i");
-  function unfoot(l) {
-    if (/\|/.test(l)) return l;
-    const m = l.match(FOOTER);
-    if (!m || (!m[1] && !m[3] && !/illust/i.test(l))) return l;
-    return [m[2], m[3] || "", m[1] ? "Format " + m[1] : ""].filter(Boolean).join(" | ");
-  }
-  const isStatLine = (l) => (/^\s*(card\s*no\.?|rarity)\s*[:\-]/i.test(l) || /^\s*[A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Z0-9-]+\s*(\||$)/i.test(l)) ||
-    (/\|/.test(l) && !/\[(auto|act|cont)\]/i.test(l) &&
-    /(^|\|)\s*((normal|trigger|g|token)\s+unit|(normal|blitz|set|trigger)\s+order|grade\s*\d|power\s*\+?\d|critical\s*\d|shield\b|twin drive|triple drive|persona ride)/i.test(l));
-  // → {stats, rest}: the fields read from the stat line(s) and the text without them
-  function splitStats(text) {
-    const lines = String(text || "").replace(/\r/g, "").split("\n").map((l) => unfoot(unglue(l)));
-    const statLines = [], rest = [];
-    for (const l of lines) (isStatLine(l) ? statLines : rest).push(l);
-    const out = {};
-    if (!statLines.length) return { stats: out, rest: String(text || "").trim() };
-    // a whole card page pasted: the first line is the name; illustrator and flavor text (a fully quoted line) aren't abilities
-    for (let i = rest.length - 1; i >= 0; i--) {
-      const l = rest[i].trim();
-      if (/^illust(rator|ration)?\s*[:：/]?/i.test(l) || /^["“].*["”]$/.test(l)) rest.splice(i, 1);
-    }
-    // units: unquoted flavor text at the end (a line with no [AUTO]/[CONT]/… tag, not an option bullet) isn't an ability
-    if (statLines.some((l) => /(^|\|)\s*(normal|trigger|g|token) unit\s*(\||$)/i.test(l))) {
-      for (let i = rest.length - 1; i >= 0; i--) {
-        const l = rest[i].trim();
-        if (!l) continue;
-        if (/\[/.test(l) || /^[・(（\-–]/.test(l) || i === rest.findIndex((x) => x.trim())) break;
-        rest.splice(i, 1);
+  const okAfter = (s) => !s || !!rarityAt(s) || !/^[A-Za-z0-9]/.test(s);
+  // the card number's part after "/": English numbers end in "EN" ("001EN", "T01EN", "10thSEC01EN", "VGP01SEN"), maybe "-R";
+  // the others end at their digits ("VGP01", "VGS01a", "99A")
+  function numberTail(s) {
+    const en = s.match(/^[A-Za-z0-9＋+:-]*?\d+[A-Za-z-]*?EN/);
+    if (en) {
+      let num = en[0], rem = s.slice(num.length);
+      const lab = rem.match(/^ (PR|SGR|[A-Z]{2,4})(?=\S)/); // special printings: "G-BT07/001EN SGR" (then the rarity)
+      if (lab && okAfter(rem.slice(lab[0].length))) { num += lab[0]; rem = rem.slice(lab[0].length); }
+      const us = rem.match(/^_\d+/); // trial deck copies: "DZ-TD01/001EN_16"
+      if (us) { num += us[0]; rem = rem.slice(us[0].length); }
+      for (const sx of (rem.match(/^-[A-Z]{1,2}/) || [""]).flatMap((x) => (x.length === 3 ? [x.slice(0, 2), x] : x ? [x] : []))) { // "-S" + "PR" before "-SP" + "R"
+        if (okAfter(rem.slice(sx.length))) { num += sx; rem = rem.slice(sx.length); break; }
       }
+      return [num, rem];
     }
-    const firstAt = rest.findIndex((l) => l.trim());
-    if (firstAt >= 0 && lines.indexOf(rest[firstAt]) < lines.indexOf(statLines[0])) {
-      const l = rest[firstAt].trim();
-      if (l.length <= 80 && !/^[\[(（【]/.test(l) && !/[.!:]$/.test(l) && !/\b(you|your|this card|this unit)\b/i.test(l)) { out.name = l; rest.splice(firstAt, 1); }
+    const x = s.match(/^[A-Za-z0-9＋+-]*?\d+(?!\d)([ab]|[ABS])?/);
+    if (!x) return null;
+    let num = x[0], rem = s.slice(num.length);
+    if (x[1] && !okAfter(rem) && okAfter(x[1] + rem)) { num = num.slice(0, -1); rem = x[1] + rem; }
+    const sx = rem.match(/^-[A-Z]/); // "D-TD03/003-T"
+    if (sx && (okAfter(rem.slice(2)) || /^[a-z]/.test(rem.slice(2)))) { num += sx[0]; rem = rem.slice(2); }
+    return [num, rem];
+  }
+  // the last line: format + number + rarity + illustrator
+  function footer(l) {
+    if (/\|/.test(l) || /\[(auto|act|cont)\]/i.test(l)) return null;
+    const f = l.match(FOOT);
+    if (!f) return null;
+    const t = numberTail(f[3]);
+    if (!t) return null;
+    const m = [l, f[1], f[2] + t[0], t[1]];
+    const rar = rarityAt(m[3]);
+    const rest = m[3].slice(rar.length).trim();
+    // a line that only starts with something number-like isn't the footer: it needs a format label, a rarity, or nothing but an illustrator after
+    if (!m[1] && !rar && rest && / /.test(rest) && /[.!?]$/.test(rest)) return null;
+    const reg = m[1] || "";
+    return { number: m[2], rarity: rar.replace("Ｃ", "C").replace("Ｒ", "R"), illustrator: rest, icon: /Standard/.test(reg) ? "D" : /V-Premium/.test(reg) ? "V" : reg ? "-" : "" };
+  }
+  const TYPE_RE = /^\s*((?:normal|trigger|g|token) unit|(?:normal|blitz|set|trigger) order|ride deck crest|others)/i;
+  // a few cards have no card type: the Grade…Power…Critical…Shield run is enough to know the stat line
+  // (values may be "-" or empty; a few new set orders print "Critical 無", Japanese for "none")
+  const STATS_RUN = /Grade\s*(?:\d+|-)?\s*Power\s*(?:\+?[\d,]+\+?|-)?\s*Critical\s*(?:\d+|-|無)?\s*Shield/;
+  // the stat line, glued: put "|" between the fields again
+  function unglue(l) {
+    if (/\|/.test(l) || /\[(auto|act|cont)\]/i.test(l) || !(TYPE_RE.test(l) ? /grade|power|shield/i.test(l) : STATS_RUN.test(l))) return l;
+    // type | middle (nation / race / clan) | Grade … Shield | tail (skills, trigger)
+    const m = l.match(/^\s*(.*?)(Grade\s*(?:\d+|-)?)\s*(Power\s*(?:\+?[\d,]+\+?|-)?)\s*(Critical\s*(?:\d+|-|無)?)\s*(Shield\s*(?:[\d,]+|-)?)(.*)$/);
+    if (!m) return l;
+    const head = TYPE_RE.test(m[1]) ? m[1].replace(TYPE_RE, "$1|") : "|" + m[1];
+    const [type, ...midParts] = head.split("|");
+    const mid = midParts.join("").replace(KNOWN_RE, "|$1|");
+    // skills and the trigger are glued without spaces ("Twin Drive!!-", "BoostFront +10000"): no word boundaries here
+    const tail = m[6]
+      .replace(/((?:Critical|Front|Draw|Heal|Over|Stand)(?: Trigger)?)\s*(\+\s*[\d,]+)/g, (x, t, p) => `|${/trigger/i.test(t) ? t : t + " Trigger"}|${p}|`)
+      .replace(/((?:Critical|Front|Draw|Heal|Over|Stand) Trigger)(?!\|)/g, "|$1|")
+      .replace(/(Twin Drive!*|Triple Drive!*|Persona Ride|Imaginary Gift\s*[:\-]?\s*(?:Force|Accel|Protect)|Regalis Piece|Boost|Intercept|Force|Accel|Protect|Kai|Sentinel)/g, "|$1|");
+    return [type, mid, m[2], m[3], m[4], m[5], tail].join("|")
+      .replace(/\|\s*[,、]\s*/g, "|").replace(/(^|\|)\s*-\s*(?=\||$)/g, "$1").replace(/\|\s*\|/g, "|").replace(/\|{2,}/g, "|");
+  }
+  const isPiped = (l) => /\|/.test(l) && !/\[(auto|act|cont)\]/i.test(l) &&
+    /(^|\|)\s*((normal|trigger|g|token) unit|(normal|blitz|set|trigger) order|others|ride deck crest|grade\s*[\d-]|power\s*\+?\d|critical\s*\d|shield\b|twin drive|triple drive|persona ride)/i.test(l);
+  const isNoLine = (l) => /^\s*(card\s*no\.?|number|rarity)\s*[:：\-]/i.test(l);
+  const JUNK = /^(prev|next|return to search results|found in the following products|card list|product page|q&a containing.*|.*is used in the follow(ing)? deck recipes)$/i;
+
+  // → {stats, rest}: the fields read from the pasted page and the ability text (the rest)
+  function splitStats(text) {
+    const raw = decode(String(text || "")).replace(/\r/g, "").split("\n");
+    const lines = raw.map((l) => unglue(l.replace(/[\t ]+$/, "")));
+    const statAt = lines.findIndex(isPiped);
+    const out = {};
+    // card number / rarity written on their own lines
+    const noLines = [];
+    lines.forEach((l, i) => { if (isNoLine(l)) noLines.push(i); });
+    let footAt = -1, foot = null;
+    if (statAt >= 0) {
+      for (let i = lines.length - 1; i > statAt; i--) { const f = footer(lines[i].trim()); if (f) { footAt = i; foot = f; break; } }
+    } else {
+      // only a footer line (number + rarity) pasted, e.g. "DZ-SS03/018EN | RRR"
+      const i = lines.findIndex((l) => /^\s*[A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Za-z0-9-]+\s*(\||$)/.test(l));
+      if (i < 0 && !noLines.length) return { stats: out, rest: raw.join("\n").trim() };
+      if (i >= 0) { const parts = lines[i].split("|").map((x) => x.trim()).filter(Boolean); out.number = parts[0]; for (const p of parts.slice(1)) if (isKnown(p, RARITIES)) out.rarity = p; lines[i] = ""; }
     }
-    const tokens = statLines.join("|").split("|").flatMap((t) => (/drive|persona|boost|intercept|gift/i.test(t) ? t.split(",") : [t])).map((t) => t.trim()).filter(Boolean);
-    let seenGrade = false;
-    const races = [];
-    for (const t of tokens) {
+    for (const i of noLines) {
+      const m = lines[i].match(/^\s*(card\s*no\.?|number|rarity)\s*[:：\-]\s*(.+)$/i);
+      if (m) { if (/rarity/i.test(m[1])) out.rarity = m[2].trim(); else out.number = m[2].trim(); }
+      lines[i] = "";
+    }
+    if (foot) { out.number = foot.number; if (foot.rarity && foot.rarity !== "-") out.rarity = foot.rarity; if (foot.icon) out.icon = foot.icon; }
+    if (statAt < 0) return { stats: out, rest: lines.filter((l) => l.trim()).join("\n").trim() };
+    // the name: the line just before the stat line (not a product header "[VGE-…] …")
+    for (let i = statAt - 1; i >= 0; i--) {
+      const l = lines[i].trim();
+      if (!l) continue;
+      if (/^\[[^\]]+\]\s*\S/.test(l) && /cardfight|booster|deck|pack|series|set|collection|promo|pr card/i.test(l)) break;
+      out.name = l.replace(/\s*（[^）]*）\s*$/, "").trim();
+      break;
+    }
+    // what's between the stat line and the footer: ability text, then flavor text
+    let body = lines.slice(statAt + 1, footAt >= 0 ? footAt : lines.length).map((l) => l.trim()).filter((l) => l && l !== "-" && !JUNK.test(l));
+    // stat lines that wrapped onto the next lines (" | " form)
+    let statText = lines[statAt];
+    while (body.length && isPiped(body[0]) && !/\[(auto|act|cont)\]/i.test(body[0])) statText += "|" + body.shift();
+    // fields
+    const tokens = statText.split("|").flatMap((t) => (/drive|persona|boost|intercept|gift|force|accel|protect|kai/i.test(t) ? t.split(/[,、]/) : [t])).map((t) => t.trim().replace(/^-+(?=[A-Z])|(?<=[a-z!])-+$/g, "")).filter((t) => t && t !== "-" && t !== "無"); // "-" / "無" = none
+    const gAt = tokens.findIndex((t) => /^grade\b/i.test(t));
+    const mids = [];
+    for (const [i, t] of tokens.entries()) {
       const low = t.toLowerCase().replace(/\s+/g, " ");
       let m;
       if ((m = low.match(/^(normal|trigger|g|token) unit$/))) { out.type = m[1] === "trigger" ? "trigger" : m[1] === "g" ? "g" : "unit"; if (m[1] === "token") out.token = true; }
-      else if ((m = low.match(/^(normal|blitz|set|trigger) order$/))) { out.type = "order"; if (m[1] === "set") out.setOrder = true; }
-      else if (/^(ride deck )?crest$/.test(low)) out.type = "crest";
-      else if ((m = low.match(/^format (standard|v premium|premium|extreme)$/))) out.icon = m[1] === "standard" ? "D" : m[1] === "v premium" ? "V" : "-";
-      else if ((m = low.match(/^(critical|front|draw|heal|over|stand) trigger$/))) { out.trigger = m[1] === "critical" ? "crit" : m[1]; out.type = "trigger"; }
-      else if ((m = low.match(/^grade\s*[:\-]?\s*(\d+)$/))) { out.grade = +m[1]; seenGrade = true; }
-      else if ((m = low.match(/^power\s*[:\-]?\s*(\+)?\s*([\d,]+)$/))) { out.power = +m[2].replace(/,/g, ""); if (m[1]) out.powerPlus = true; }
-      else if ((m = low.match(/^critical\s*[:\-]?\s*(\d+)$/))) out.crit = +m[1];
-      else if ((m = low.match(/^shield\s*[:\-]?\s*([\d,]*)$/))) out.shield = m[1] ? +m[1].replace(/,/g, "") : 0;
+      else if ((m = low.match(/^(normal|blitz|set|trigger) order$/))) { out.type = "order"; if (m[1] === "set") out.setOrder = true; if (m[1] === "trigger") out.triggerOrder = true; if (m[1] === "blitz") out.blitz = true; }
+      else if (low === "ride deck crest" || (low === "crest" && i === 0)) out.type = "crest";
+      else if (low === "others") out.others = true;
+      else if ((m = low.match(/^(critical|front|draw|heal|over|stand) trigger$/))) { out.trigger = m[1] === "critical" ? "crit" : m[1]; out.type = out.type || "trigger"; }
+      else if ((m = low.match(/^grade\s*[:\-]?\s*(\d+)?$/))) { if (m[1] != null) out.grade = +m[1]; }
+      else if ((m = low.match(/^power\s*[:\-]?\s*(\+)?\s*([\d,]+)?(\+)?$/))) { if (m[2]) out.power = +m[2].replace(/,/g, ""); if (m[1] || m[3]) out.powerPlus = true; }
+      else if ((m = low.match(/^critical\s*[:\-]?\s*(\d+)?$/))) { if (m[1]) out.crit = +m[1]; }
+      else if ((m = low.match(/^shield\s*[:\-]?\s*([\d,]*|-)$/))) { if (m[1] !== "-") out.shield = m[1] ? +m[1].replace(/,/g, "") : 0; }
       else if ((m = low.match(/^\+\s*([\d,]+)$/))) out.trigPower = +m[1].replace(/,/g, "");
       else if (/^twin drive/.test(low)) out.drive = 2;
       else if (/^triple drive/.test(low)) out.drive = 3;
@@ -94,24 +180,80 @@ const TextParse = (() => {
       else if (low === "persona ride") out.persona = true;
       else if (low === "kai" || low === "kai icon") out.kai = true;
       else if (low === "sentinel") out.sentinel = true;
-      else if ((m = low.match(/^imaginary gift\s*[:\-]?\s*(force|accel|protect)/))) out.gift = m[1];
-      else if ((m = t.match(/^(?:card\s*no\.?|number)?\s*[:\-]?\s*([A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Z0-9-]+)$/i))) out.number = m[1];
-      else if ((m = t.match(RARITY))) out.rarity = m[1].toUpperCase();
-      else if (NATION_NAMES.includes(low)) out.nation = t;
-      else if (CLAN_NAMES.includes(low)) out.clan = t;
-      else if (low === "-") continue;
-      else if (!seenGrade) races.push(t);
+      else if (low === "regalis piece") out.regalis = true;
+      else if ((m = low.match(/^(?:imaginary gift\s*[:\-]?\s*)?(force|accel|protect)$/))) out.gift = m[1];
+      else if (gAt < 0 || i < gAt) mids.push(t); // between the card type and Grade: nation / race / clan
     }
-    if (races.length) out.race = races.join(" / ");
+    // nation / clan / race by position (the site's order differs between D cards and older cards)
+    let D;
+    if (foot && foot.icon) D = foot.icon === "D";
+    else { // no format label: a D nation first means a D card, unless that name is also an old clan and the line ends with an old nation
+      const f = mids[0], l = mids[mids.length - 1];
+      D = isKnown(f, NATIONS_D) && (!isKnown(f, CLANS) || !(mids.length > 1 && isKnown(l, NATIONS_OLD) && !isKnown(l, NATIONS_D)));
+    }
+    const races = [];
+    const clean = (t) => t.replace(/^[-\s]+|[-\s]+$/g, "");
+    if (D) {
+      let k = 0;
+      if (k < mids.length && isKnown(mids[k], [...NATIONS_D, ...NATIONS_OLD])) out.nation = mids[k++];
+      if (k < mids.length && isKnown(mids[k], [...NATIONS_D, ...NATIONS_OLD]) && !(k === mids.length - 1 && isKnown(mids[k], CLANS))) out.nation2 = mids[k++];
+      let end = mids.length;
+      if (end - 1 >= k && isKnown(mids[end - 1], CLANS)) out.clan = mids[--end];
+      for (let j = k; j < end; j++) races.push(clean(mids[j]));
+    } else {
+      let k = 0, end = mids.length;
+      if (end > 0 && isKnown(mids[0], CLANS)) out.clan = mids[k++];
+      if (end - 1 >= k && isKnown(mids[end - 1], [...NATIONS_OLD, ...NATIONS_D])) out.nation = mids[--end];
+      else if (end - 1 >= k && !out.clan && isKnown(mids[end - 1], CLANS)) out.clan = mids[--end]; // a clan printed in the nation slot
+      for (let j = k; j < end; j++) races.push(clean(mids[j]));
+    }
+    const race = races.filter(Boolean).join(" / ");
+    if (race) out.race = race;
+    // flavor text: the lines after the abilities that aren't rules text. Rules text is tagged ([AUTO]…, (…) reminders, ・ options)
+    // or uses rules words in lower case ("rear-guard", "your", "until end of turn"…); flavor is story text ("Ride the Vanguard!").
+    // rules-only words (story text says "hand" or "your" too, but not "rear-guard", "grade" or "until end of turn")
+    const RULES_ANY = /\[[A-Za-z-]+\]|\((VC|RC|GC)\)|\b(draw (a|one|two|three|four) cards?|choose (one|two|three|up to|a|an|any)|retire|search your|look at|reveal|until end of (turn|that battle)|counter-blast|soul-blast|energy-blast|grade \d|additional effect)\b/i;
+    const RULES_LOW = /\b(rear-guards?|vanguards?|your opponent|deck|drop zone|your drop|damage zone|this (card|unit)|cards? (from|in|with)|guardians?|triggers?|you may)\b/;
+    const RULES = { test: (l) => RULES_ANY.test(l) || RULES_LOW.test(l) };
+    const tagged = (l) => /^[\[(（・•【-]/.test(l) || /\]:/.test(l) || /\[(AUTO|ACT|CONT)\]/i.test(l) || /^(AUTO|ACT|CONT)\s*[:(]/.test(l) || /^additional effect/i.test(l);
+    const isUnit = ["unit", "trigger", "g", "crest"].includes(out.type) || (!out.type && !out.others);
+    // the site stores some quotation marks as line breaks: "…choose a card named" / "Covert Demonic Dragon, Mandala Lord" / "from your hand…"
+    // → one line with the name in quotes again
+    for (let i = 0; i + 2 < body.length; i++) {
+      if (!/[.!?」)\]:]$/.test(body[i]) && body[i + 1].length <= 90 && !tagged(body[i + 1]) && /^[a-z,.)\]'’]/.test(body[i + 2])) {
+        body.splice(i, 3, `${body[i]} "${body[i + 1]}"${/^[,.)\]'’]/.test(body[i + 2]) ? "" : " "}${body[i + 2]}`);
+        i--;
+      }
+    }
+    // a line that starts in lower case (or with , . ) ]) carries on the line before ("…cards with [Heal] Heal" / "in a deck.)")
+    for (let i = 1; i < body.length; i++) {
+      if (/^[a-z,.)\]]/.test(body[i]) && !/[.!?」]$/.test(body[i - 1])) { body.splice(i - 1, 2, body[i - 1] + (/^[,.)\]]/.test(body[i]) ? "" : " ") + body[i]); i--; }
+    }
+    // units: every rules line is tagged, so any untagged line at the end is flavor; orders' rules text is untagged, so it needs rules words
+    const isFlavor = (l) => !tagged(l) && (isUnit || !RULES.test(l));
+    for (let i = body.length - 1; i >= 0; i--) {
+      if (i === 0 && !isUnit) break; // an order's only line is its effect
+      if (isFlavor(body[i])) { body.splice(i, 1); continue; }
+      break;
+    }
+    // "Others": ticket / token / crest / marker, from its text
+    const restText = body.join("\n").trim();
+    if (out.others) {
+      if (/ticket card/i.test(restText) || /^quick shield$/i.test(out.name || "")) Object.assign(out, { type: "order", ticket: true, blitz: true });
+      else if (/represents an? .*?token|this card is a token/i.test(restText) || out.power != null) Object.assign(out, { type: "unit", token: true });
+      else if (/^\[CONT\]/i.test(restText) && out.grade == null) out.type = "crest";
+      else out.marker = true;
+      delete out.others;
+    }
     // the printed skills list everything a unit has: no Boost / Intercept / drive / Persona Ride on the line means it has none
-    if (out.grade != null && (out.type === "unit" || out.type === "trigger")) {
+    if (out.grade != null && (out.type === "unit" || out.type === "trigger") && !out.token) {
       if (out.boost === undefined) out.boost = false;
       if (out.intercept === undefined) out.intercept = false;
       if (out.drive === undefined) out.drive = 1;
       if (out.persona === undefined) out.persona = false;
     }
     if (out.trigger === "over" && !out.trigPower) out.trigPower = 100000000;
-    return { stats: out, rest: rest.join("\n").trim() };
+    return { stats: out, rest: restText };
   }
 
   // ---------- stats ----------
@@ -485,7 +627,7 @@ const TextParse = (() => {
     const per = (() => {
       const pm = t.match(/for each (.*?)(card|unit)s? in (your (?:opponent'?s )?(soul|drop|hand|damage zone|bind zone|g zone|order zone))|for each of your (.*?)(rear-guards|units)/i);
       if (!pm) return {};
-      if (pm[6]) return { per: pm[7] === "units" ? "myUnits" : "myRC", perFilter: filt(pm[6]) };
+      if (pm[6]) return { per: /units/i.test(pm[6]) ? "myUnits" : "myRC", perFilter: filt(pm[5] || "") };
       const z = pm[3].toLowerCase();
       const what = (COUNT_ZONES.find(([re]) => rx(`^${re}$`).test(z)) || [])[1] || "mySoul";
       return { per: what, perFilter: filt(pm[1]) };
@@ -864,8 +1006,18 @@ const TextParse = (() => {
     }
     const extraAbs = [];
     const out = [];
+    // over triggers: "Additional Effect - …" happens when revealed in a drive check (event overDrive)
+    const ADD_EFF = /^additional effect\s*(?:\([^)]*\))?\s*[-–－]\s*/i;
+    for (const l of lines) {
+      if (!ADD_EFF.test(l)) continue;
+      const a = ability(l.replace(ADD_EFF, ""), "ORDER", extraAbs);
+      Object.assign(a, { kind: "AUTO", when: "overDrive", zone: "trigger", mandatory: !/\byou may\b/i.test(l) });
+      out.push(a);
+    }
     if (isOrder) {
-      const body = lines.filter((l) => !KEYWORD_LINE.test(l) && !/^\[(auto|act|cont)\]/i.test(l)).join(" ");
+      // trigger orders: "Play Effect (…) - …" is the order's own text
+      const body = lines.filter((l) => !KEYWORD_LINE.test(l) && !/^\[(auto|act|cont)\]/i.test(l) && !ADD_EFF.test(l))
+        .map((l) => l.replace(/^play effect\s*(?:\([^)]*\))?\s*[-–－]\s*/i, "")).join(" ");
       const blitz = /blitz order/i.test(text);
       if (body) out.push(ability(body, blitz ? "BLITZ" : "ORDER", extraAbs));
     }
@@ -891,11 +1043,18 @@ const TextParse = (() => {
   }
 
   function parse(text, hint = {}) {
-    const s = stats(norm(text));
+    // the pasted page is read from the original text (norm() trims long reminder text such as "(This card is a ticket card…)")
+    const sp = splitStats(text);
+    const s = Object.assign(stats(norm(sp.rest)), sp.stats);
     const isOrder = s.type === "order" || /order/i.test(hint.type || "");
     if (isOrder) s.type = "order";
-    const rest = splitStats(text).rest;
-    return { ...s, abilities: rest ? abilities(rest, isOrder) : [] };
+    const rest = sp.rest;
+    if (s.type === "g" && !s.gKind) s.gKind = /\[G Guardian\]|Generation Guard|-?Guard Step-/i.test(rest) ? "guardian" : "stride";
+    const abs = rest ? abilities(rest, isOrder) : [];
+    // a blitz order / ticket: its text is played while guarding (the stat line said so; the ability text doesn't)
+    if (s.blitz || /blitz/i.test(hint.type || "")) abs.forEach((a) => { if (a.kind === "ORDER") a.kind = "BLITZ"; });
+    delete s.blitz;
+    return { ...s, abilities: abs };
   }
   return { parse, stats, splitStats, abilities, filt, condsIn, costsIn };
 })();
