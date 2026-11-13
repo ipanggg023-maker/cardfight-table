@@ -179,6 +179,7 @@ const SCHEMA = {
     retireSelf: { label: "Retire this unit", params: [], text: () => "retire this unit" },
     selfToSoul: { label: "Put this unit into soul", params: [], text: () => "put this unit into soul" },
     retireRC: { label: "Retire your rear-guards", params: [["n", "num"], ["filter", "filter"]], text: (p) => `retire ${p.n} of your ${p.filter && Object.keys(p.filter).length ? flt(p.filter) + " " : ""}rear-guards` },
+    discardGrades: { label: "Discard cards whose grades total N or more", params: [["n", "num", "total grade"]], text: (p) => `discard cards from hand whose grades total ${p.n || 3} or more` },
     restRC: { label: "[Rest] your rear-guards", params: [["n", "num"], ["filter", "filter"]], text: (p) => `[Rest] ${p.n || 1} of your ${p.filter && Object.keys(p.filter).length ? flt(p.filter) + " " : ""}rear-guards` },
     gFaceUp: { label: "Turn face-down G zone card(s) face up", params: [["n", "num"], ["filter", "filter"]], text: (p) => `turn ${p.n || 1} ${flt(p.filter)} in your G zone face up` },
     dropToTop: { label: "Return drop cards to the top of the deck (Seek Mate)", params: [["n", "num"], ["maxTrig", "num", "max trigger units (D-Seek Mate: 2)"]],

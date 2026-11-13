@@ -4,9 +4,10 @@
 // Always check the result in the editor (Text check panel) before saving.
 
 const TextParse = (() => {
-  const numWord = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, any: 99 };
+  const numWord = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+    fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, any: 99 };
   const toNum = (s) => (s == null ? 1 : numWord[String(s).toLowerCase()] ?? (parseInt(String(s).replace(/,/g, ""), 10) || 1));
-  const N = "(\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)";
+  const N = "(\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)";
   const rx = (s, f = "i") => new RegExp(s, f);
 
   // ---------- a card page pasted from the official card list (en.cf-vanguard.com/cardlist/?cardno=…) ----------
@@ -699,7 +700,10 @@ const TextParse = (() => {
       else if (/^\[?rest\]? this (unit|card)/i.test(p)) out.push({ type: "restSelf" });
       else if ((m = p.match(/^(counter|soul)-blast$/i))) out.push({ type: m[1].toLowerCase() === "counter" ? "CB" : "SB", n: 1 });
       else if (/^\[?rest\]?$/i.test(p)) out.push({ type: "restSelf" }); // "[COST][Rest]": rest this unit
-      else if ((m = p.match(rx(`^reveal (${N} |a |an )?(.*?)cards? from (?:your )?hand`)))) out.push({ type: "move", from: "hand", to: "hand", n: m[1] && /\d|two|three|four|five/i.test(m[1]) ? toNum(m[1].trim()) : 1, reveal: true, filter: filt(m[2] || "") });
+      // "choose one or more cards from hand with the sum of their grades being 3 or greater, and discard them"
+      else if ((m = p.match(/^choose one or more cards from (?:your )?hand with the sum of their grades being (\d+) or greater,? and discard them/i)) || (m = p.match(/^choose one or more cards with the sum of their grades being (\d+) or greater from your hand,? and discard them/i)))
+        out.push({ type: "discardGrades", n: +m[1] });
+      else if ((m = p.match(rx(`^reveal (${N} |a |an )?(.*?cards?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?) from (?:your )?hand`)))) out.push({ type: "move", from: "hand", to: "hand", n: m[1] && /\d|two|three|four|five/i.test(m[1]) ? toNum(m[1].trim()) : 1, reveal: true, filter: filt(m[m.length - 1] || "") });
       // "choose one of your (other) rear-guards (with "X" in its card name), and put it into your soul / retire it / [Rest] it"
       else if ((m = p.match(rx(`^choose ${N} of your (other )?(.*?)rear-guards?(?: (?:with|named) [^,]*)?,? and (put (?:it|them) into (?:your )?soul|retire (?:it|them)|put (?:it|them) on the bottom of (?:your |the )?deck|return (?:it|them) to (?:your )?hand|\\[rest\\] (?:it|them))`)))) {
         const f = filt(p.replace(/,? and .*$/i, "").replace(/^choose \S+ of your /i, "")) || {};
@@ -770,6 +774,10 @@ const TextParse = (() => {
     if (/^turn (it|them) face up$/i.test(t) && ctx.lastDamage) return [{ type: "CC", n: ctx.lastDamage }];
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
+    if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
+    if ((m = t.match(/^(this unit|it|they) cannot be retired by (?:card )?effects$/i))) return [{ type: "restrict", what: "cantBeRetired", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
+    // "choose one of your opponent's rear-guards, your opponent puts that unit on the bottom of his or her deck": the chosen unit moves
+    if (ctx.last && /^your opponent puts (that unit|those units|it|them) /i.test(t)) return effectOf(t.replace(/^your opponent puts/i, "put"), ctx);
     if (/^choose an? units? being attacked$/i.test(t)) { ctx.last = { target: "attacked" }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/(this unit|it|they) (?:gets? "boost",? and )?can intercept from the back row/i))) return [{ type: "restrict", what: "canInterceptBack", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }, ...(/"boost"/i.test(t) ? [{ type: "restrict", what: "canBoost", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }] : [])];
     if (/^can intercept from the back row$/i.test(t)) return [{ type: "restrict", what: "canInterceptBack", dur, ...(ctx.last ? { ...ctx.last } : { target: "self" }) }];
@@ -1043,7 +1051,7 @@ const TextParse = (() => {
       let t = c.replace(/^(and then|and|then|also)\s+/i, "");
       if (/^(and|then|and then|also)$/i.test(c)) continue;
       // "at the end of that battle / turn, …": the following steps happen then
-      const lt = t.match(/^at the end of (that|this|the) (battle|turn)$/i);
+      const lt = t.match(/^at the end of (that|this|the) (battle|turn)$/i) || t.match(/^at the (?:beginning|start) of the end phase of (that|this) (turn)$/i);
       if (lt) { later = lt[2].toLowerCase(); continue; }
       // "If the revealed card is a <Royal Paladin>, …": the following steps need the revealed card to match
       const rvl = t.match(/^if (?:the revealed card|the card revealed(?: by this effect)?|that card) is (?:an? )?(.+?)$/i);

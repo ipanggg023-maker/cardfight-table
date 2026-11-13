@@ -449,6 +449,7 @@ const Game = (() => {
       case "restSelf": return selfThere(pi, ctx) && !P(pi).slots[ctx.key].rest;
       case "retireSelf": case "selfToSoul": return selfThere(pi, ctx) && ctx.key !== "vc";
       case "retireRC": return rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key && match(p.slots[k].card, c.filter, { pi, ctx })).length >= n;
+      case "discardGrades": return handGrades(p.hand) >= n; // discard cards whose grades total N or more
       case "dropToTop": { const max = c.maxTrig === "" || c.maxTrig === undefined ? n : +c.maxTrig; return p.drop.length >= n && p.drop.filter((x) => !x.trigger).length + Math.min(max, p.drop.filter((x) => x.trigger).length) >= n; }
       default: return true;
     }
@@ -460,6 +461,15 @@ const Game = (() => {
         const up = p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx }));
         const picked = c.filter && up.length > n ? await chooseCards(pi, `Counter-Blast ${n}: choose face-up damage cards`, up, n, n) : up.slice(0, n);
         picked.forEach((d) => (d.down = true));
+        break;
+      }
+      case "discardGrades": {
+        for (let tries = 0; tries < 5; tries++) {
+          const picked = await chooseCards(pi, `Discard cards from your hand whose grades total ${n} or more`, p.hand, 1, p.hand.length);
+          if (handGrades(picked) < n) { log(`Those cards total grade ${handGrades(picked)}; you need ${n} or more. Choose again.`); continue; }
+          picked.forEach((x) => { p.hand.splice(p.hand.indexOf(x), 1); p.drop.push(x); discarded(pi, x); });
+          break;
+        }
         break;
       }
       case "restRC": {
