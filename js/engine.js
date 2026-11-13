@@ -800,6 +800,7 @@ const Game = (() => {
       return unitsAt(side, keys, e.filter, env).filter((u) => !(e.filter && e.filter.other && ctx.key === u.key && side === pi));
     }
     if (e.from === "deckTop" || e.from === "oppDeckTop") return q.deck.slice(-Math.max(1, +e.look || +e.n || 1)).filter((c) => match(c, e.filter, env));
+    if (String(e.from).includes("|")) return String(e.from).split("|").flatMap((z) => q[ZONE_OF[z] || z] || []).filter((c) => match(c, e.filter, env)); // "from your hand or drop"
     return (q[ZONE_OF[e.from] || "drop"] || []).filter((c) => match(c, e.filter, env));
   }
   // take a card off wherever it is (zones or a circle). Returns false for G units (they go to the G zone instead)
@@ -846,7 +847,8 @@ const Game = (() => {
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     const chooser = e.chooser === "opp" ? 1 - pi : pi;
     const n = Math.max(1, +e.n || 1);
-    const zn = (z) => ZONE_NAME[String(z).replace(/^opp/, "").replace(/^[A-Z]/, (m) => m.toLowerCase())] || ZONE_NAME[z] || z;
+    const zn1 = (z) => ZONE_NAME[String(z).replace(/^opp/, "").replace(/^[A-Z]/, (m) => m.toLowerCase())] || ZONE_NAME[z] || z;
+    const zn = (z) => String(z).split("|").map(zn1).join(" or ");
     let picked = [];
     // from the field: choose units, then they leave their circles
     if (FIELD_FROM[e.from]) {
@@ -863,14 +865,16 @@ const Game = (() => {
     } else {
       const deckTop = e.from === "deckTop" || e.from === "oppDeckTop";
       const look = deckTop ? q.deck.splice(Math.max(0, q.deck.length - Math.max(1, +e.look || n))) : null;
-      const pool = look || q[ZONE_OF[e.from] || "drop"];
+      // several zones ("hand|drop"): one list to choose from; each card leaves its own zone
+      const zonesOf = String(e.from).includes("|") ? String(e.from).split("|").map((z) => q[ZONE_OF[z] || z] || []) : null;
+      const pool = look || (zonesOf ? zonesOf.flat() : q[ZONE_OF[e.from] || "drop"]);
       const cands = pool.filter((c) => match(c, e.filter, env));
       if (look && e.reveal) log(`${q.name} reveals ${look.map((c) => c.name).join(", ") || "nothing"}`);
       if (e.all) picked = cands.slice();
       else if (e.random) { const tmp = cands.slice(); shuffle(tmp); picked = tmp.slice(0, n); }
       else if (deckTop && !e.look) picked = cands.slice(-n); // "put the top N cards into …": no choice
       else picked = await chooseCards(chooser, `${look ? `Top ${look.length} cards` : `${chooser !== side ? "Opponent's " : ""}${zn(e.from)}`}: choose ${e.upTo ? "up to " : ""}${n} → ${zn(e.to)}`, cands, e.upTo ? 0 : Math.min(n, cands.length), Math.min(n, cands.length));
-      for (const c of picked) pool.splice(pool.indexOf(c), 1);
+      for (const c of picked) { if (zonesOf) { const z = zonesOf.find((arr) => arr.includes(c)); if (z) z.splice(z.indexOf(c), 1); } else pool.splice(pool.indexOf(c), 1); }
       if (look) {
         const rest = look.filter((c) => !picked.includes(c));
         const r = e.rest || "shuffle";

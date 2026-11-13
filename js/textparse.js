@@ -693,6 +693,10 @@ const TextParse = (() => {
     return { conds: out, read };
   }
 
+  // several zones at once: "hand or drop", "hand, soul, or drop", "hand and drop zone" → "hand|soul|drop" (the engine picks from all of them)
+  const ZL = "(?:hand|soul|drop(?: zone)?|bind zone)(?:,? (?:or |and )?(?:your )?(?:hand|soul|drop(?: zone)?|bind zone))+";
+  const zonesOf = (s) => [...new Set(String(s).toLowerCase().match(/hand|soul|drop|bind/g) || [])].map((z) => (z === "bind" ? "bind" : z)).join("|");
+
   // ---------- costs ("[COST][Counter-Blast 1 & discard a card from your hand]") ----------
   function costsIn(s) {
     const out = [], unread = [];
@@ -720,6 +724,11 @@ const TextParse = (() => {
       else if (/^\[?rest\]? this (unit|card)/i.test(p)) out.push({ type: "restSelf" });
       else if ((m = p.match(/^(counter|soul)-blast$/i))) out.push({ type: m[1].toLowerCase() === "counter" ? "CB" : "SB", n: 1 });
       else if (/^\[?rest\]?$/i.test(p)) out.push({ type: "restSelf" }); // "[COST][Rest]": rest this unit
+      // round 8: costs from several zones: "remove a [Heal] from hand or drop", "put a card with "X" from your hand or soul into your drop"
+      else if ((m = p.match(rx(`^(remove|bind|put) (?:${N} )?(.+?) from (?:your )?(${ZL})(?: into (?:your )?(drop|soul)| on the (top|bottom) of (?:your |the )?deck)?$`)))) {
+        const to = /^remove/i.test(m[1]) ? "removed" : /^bind/i.test(m[1]) ? "bind" : m[5] ? m[5].toLowerCase() : m[6] ? (m[6].toLowerCase() === "top" ? "deckTop" : "deckBottom") : "drop";
+        out.push({ type: "move", from: zonesOf(m[4]), to, n: m[2] ? toNum(m[2]) : 1, filter: filt(m[3].replace(/^(a|an)\s+/i, "")) || {} });
+      }
       // round 7: discards and moves from hand written other ways
       else if ((m = p.match(rx(`^discard (?:${N} )?(.+?) from (?:your )?hand$`))) && !/this card/i.test(p))
         out.push({ type: "discard", n: m[1] ? toNum(m[1]) : 1, filter: filt(m[2].replace(/^(a|an)\s+/i, "")) || {} });
@@ -914,6 +923,15 @@ const TextParse = (() => {
       const s = ctx.search; ctx.search = null;
       return [{ type: "move", from: "deck", to: /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : "soul", n: s.n, upTo: true, filter: s.filter, reveal: /reveal/i.test(t) }];
     }
+    // round 8: "choose a card from your hand or drop", "choose up to five cards in total from your hand and drop zone"
+    if ((m = t.match(rx(`^choose (up to )?(?:a total of )?${N} (.*?)(?:cards?|units?)?(?: in total)? from your (${ZL})`)))) {
+      let tail = t.slice(m[0].length);
+      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+")/i);
+      if (after) tail = tail.slice(after[0].length);
+      ctx.pick = { from: zonesOf(m[4]), n: toNum(m[2]), upTo: !!m[1], filter: { ...(filt(m[3]) || {}), ...(after ? filt(after[1]) || {} : {}) } };
+      if (!tail.trim()) return [];
+      return effectOf(tail.replace(/^,?\s*(and )?/, ""), ctx);
+    }
     // choose … from your drop / soul / damage zone / hand → hand / RC / soul / deck
     if ((m = t.match(rx(`^choose (up to )?${N} (.*?)(?:cards?|units?)? from (your |your opponent'?s |)(drop( zone)?|soul|damage zone|hand|bind zone|ride deck)`)))) {
       const zone = m[5].toLowerCase() === "ride deck" ? "rideDeck" : m[5].toLowerCase().replace(" zone", "");
@@ -925,7 +943,7 @@ const TextParse = (() => {
       if (!tail.trim()) return [];
       return effectOf(tail.replace(/^,?\s*(and )?/, ""), ctx);
     }
-    if (ctx.pick && /^(reveal it,? and )?(put (it|them) into (your )?(hand|soul|drop)|call (it|them) to( an open| separate open| separate| open| an?)? \(rc\)|put (it|them) on the (top|bottom) of (your|the) deck|bind (it|them)|put (it|them) into (your |the )?damage zone|put (it|them) into (your |the )?order zone)/i.test(t)) {
+    if (ctx.pick && /^(reveal it,? and )?(put (it|them) into (your |the )?(hand|soul|drop)|call (it|them) to( an open| separate open| separate| open| an?)? \(rc\)|put (it|them) on the (top|bottom) of (your|the) deck|bind (it|them)|put (it|them) into (your |the )?damage zone|put (it|them) into (your |the )?order zone)/i.test(t)) {
       const P = ctx.pick; ctx.pick = null;
       const to = /order zone/i.test(t) ? "orderZone" : /hand/i.test(t) ? "hand" : /\(rc\)/i.test(t) ? "RC" : /soul/i.test(t) ? "soul" : /bottom/i.test(t) ? "deckBottom" : /top/i.test(t) ? "deckTop" : /bind/i.test(t) ? "bind" : /damage/i.test(t) ? "damageUp" : "drop";
       return [{ type: "move", from: P.from, to, n: P.n, upTo: P.upTo, filter: P.filter }];
