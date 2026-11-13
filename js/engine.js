@@ -863,6 +863,7 @@ const Game = (() => {
     const fromName = { deckTop: "deck", oppDeckTop: "deck", gzone: "G zone" }[e.from] || String(e.from || "").replace(/^opp/, "").toLowerCase();
     for (const c of picked) {
       await putCard(side, c, e.to, pi, fromName);
+      if (e.to === "RC" && e.asRest) for (const k of rcOf(side)) if (P(side).slots[k] && P(side).slots[k].card.uid === c.uid) P(side).slots[k].rest = true; // "call it as [Rest]"
       if (e.to === "soul") collect(side, null, "toSoul", { card: c, zone: "soul", subject: c });
       const fromRC = e.from === "self" ? !!(ctx.key && ctx.key !== "vc" && rcOf(side).includes(ctx.key)) : /^(my|opp)?(front|back)?RC$/i.test(String(e.from || ""));
       if (fromRC && e.to === "soul") collect(side, null, "rcToSoul", { card: c, zone: "RC", subject: c });

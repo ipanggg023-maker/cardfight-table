@@ -29,7 +29,7 @@ const CONT_TARGETS = ["self", "vc", "allFront", "allFrontRC", "allMyRC", "allMyU
 
 // Move cards (effect and cost) share these settings
 const MOVE_PARAMS = [["from", "mfrom", "from"], ["to", "mto", "to"], ["n", "num", "how many"], ["upTo", "bool", "up to (may choose fewer)"], ["all", "bool", "all matching cards"],
-  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["filter", "filter"]];
+  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["asRest", "bool", "call as [Rest]"], ["filter", "filter"]];
 const PER = [["per", "count", "× for each card in (optional)"], ["perFilter", "filter", "counting only"]];
 const SCHEMA = {
   kinds: {
