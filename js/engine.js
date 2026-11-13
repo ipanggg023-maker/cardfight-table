@@ -16,6 +16,10 @@ const Game = (() => {
 
   let S = null, uidN = 0, resume = null;
   let onChange = () => {};
+  // Optional pause for the screen (ui.js): drive / damage checks and battle results wait a moment so players can see them.
+  // No pace = no waiting (headless tests, Node).
+  let pace = null;
+  async function beat(kind) { if (!pace) return; onChange(); try { await pace(kind); } catch { /* never block the game */ } }
 
   const OK = { ok: true };
   const err = (msg) => ({ ok: false, msg });
@@ -32,7 +36,7 @@ const Game = (() => {
   const canInterceptIcon = (c) => c.type !== "order" && flag(c.intercept, c.grade === 2);
   // Trigger power is the number printed on the icon (CR 11.10.5): 10000 on V/D cards, 5000 on old ones
   const trigPower = (c) => +c.trigPower || (c.trigger === "over" ? 100000000 : 10000);
-  const log = (m) => { S.log.unshift(m); if (S.log.length > 120) S.log.pop(); };
+  const log = (m) => { S.log.unshift(m); S.logN = (S.logN || 0) + 1; if (S.log.length > 120) S.log.pop(); }; // logN: lines written so far (the screen plays effects for new lines)
 
   // ---------- setup ----------
   // deck: {name, format, energy, ride:[G0..G3 cards] (ride-deck formats), starter (other formats), main:[50]}
@@ -153,6 +157,11 @@ const Game = (() => {
     S.players.forEach((p, pi) => { if (p.damage.length >= 6 && !S.loss[pi]) S.loss[pi] = "6 damage"; });
     const [a, b] = S.loss;
     if (!a && !b) return;
+    if (S.battle) { // the game ends mid-battle: guardians still go to the drop (G guardians to the G zone) so the final table shows every card
+      const d = P(1 - S.active);
+      for (const c of S.battle.guards || []) { if (c.type === "g") d.gUp.push(c); else if (!c.protect) d.drop.push(c); }
+      S.battle.guards = [];
+    }
     S.battle = null;
     S.queue = [];
     if (a && b) { S.winner = -1; log(`🤝 Draw game! (${P(0).name}: ${a} · ${P(1).name}: ${b})`); return; }
@@ -1954,18 +1963,22 @@ const Game = (() => {
       for (let i = 0; i < n && !over(); i++) {
         if (!p.deck.length) { lose(ai, "deck is empty"); ruleActions(); return; }
         const c = p.deck.pop();
-        S.reveal.push({ type: "Drive", card: c });
+        S.reveal.push({ type: "Drive", card: c, pi: ai });
+        S.checking = { pi: ai, card: c, type: "Drive" }; // the card in the trigger check zone
         log(`Drive check: ${c.name}`);
+        await beat("check");
         collectAll(ai, "driveReveal", { subject: c });
         collect(ai, null, "revealedDrive", { card: c, zone: "deck", subject: c });
         await trigger(ai, c, "drive");
         if (c.trigger === "over") { p.removed.push(c); log(`${c.name} is removed from the game`); } else p.hand.push(c);
+        S.checking = null;
       }
     }
     if (over()) return;
     const atk = attackPower(), def = defensePower();
     const hit = !b.perfect && atk >= def;
     log(`${atk.toLocaleString()} vs ${def.toLocaleString()} → ${hit ? "HIT!" : "guarded"}`);
+    await beat(hit ? "hit" : "guard");
     if (hit) {
       if (b.tgt === "vc") {
         await dealDamage(di, crit(ai, b.att));
@@ -1987,11 +2000,14 @@ const Game = (() => {
     for (let i = 0; i < n && !over(); i++) {
       if (!d.deck.length) { lose(di, "deck is empty"); ruleActions(); break; }
       const c = d.deck.pop();
-      S.reveal.push({ type: "Damage", card: c });
+      S.reveal.push({ type: "Damage", card: c, pi: di });
+      S.checking = { pi: di, card: c, type: "Damage" };
       log(`Damage check: ${c.name}`);
+      await beat("check");
       collectAll(di, "damageReveal", { subject: c });
       collect(di, null, "revealedDamage", { card: c, zone: "deck", subject: c });
       await trigger(di, c, "damage");
+      S.checking = null;
       if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); collectAll(di, "toDamage", { subject: c }); }
       ruleActions(); // 6 damage is a rule action, checked after each damage check
     }
@@ -2067,7 +2083,7 @@ const Game = (() => {
 
   return {
     FRONT, RC, UNITS, BACK_OF, frontOf, rcOf, unitsOf,
-    newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
+    newGame, state: () => S, setOnChange: (f) => (onChange = f), setPace: (f) => (pace = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
     toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, judgeOp, testOp, zoneActs, activateZone, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,

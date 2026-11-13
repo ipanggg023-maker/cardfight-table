@@ -270,7 +270,7 @@ function setHTML(el, html) {
   el._h = html;
 }
 function infoPanel(c) {
-  if (!c) return `<p class="muted">Hover a card to see its details.</p>`;
+  if (!c) return `<div class="info-guide"><h3>Card detail</h3><p>Point at any card (field, hand, drop, damage, guardians) to read it here: picture, stats and its full text.</p><p><b>Right-click</b> (long press on touch) pins a card so it stays while you play. <b>Esc</b> unpins.</p><p class="muted">Click Drop, Soul, Bind or the ride deck to see every card in it.</p></div>`;
   return `${Pics.url(c) ? `<img src="${esc(Pics.url(c))}" alt="" decoding="async">` : ""}
     <h3>${esc(c.name)}</h3>
     <p class="statline">${esc(cardStatLine(c))}</p>
@@ -288,8 +288,17 @@ const boxCSS = (r, opp) => {
   const [l, t, rr, b] = opp ? [100 - r[2], 100 - r[3], 100 - r[0], 100 - r[1]] : r;
   return `left:${l}%;top:${t}%;width:${rr - l}%;height:${b - t}%`;
 };
-// Draws one player's half of the table into root (#me or #opp). The mat and its zones are built once;
-// later calls only touch what changed, so the mat picture and card pictures are never re-created.
+// Damage box i (0–5) inside the damage zone, as top/height % of the zone (mirrored on the opponent's mat)
+function dmgBox(i, opp) {
+  const D = MAT_LAYOUT.damage, h = D[3] - D[1], [t, b] = MAT_LAYOUT.dmgSlots[i];
+  const top = ((t - D[1]) / h) * 100, bot = ((b - D[1]) / h) * 100;
+  return `top:${opp ? 100 - bot : top}%;height:${bot - top}%`;
+}
+const backHTML = (cls = "") => `<span class="cback${cls}"></span>`;
+// a small picture of a card for the zones (order zone, drop top, trigger zone): hover / right-click works like any card
+const zoneCard = (c, extra = "") => cardHTML(c, {}, null, null, " zc" + extra);
+// Draws one player's half of the table into root (#me or #opp): the Standard mat with every zone on its printed spot.
+// The mat and its zone boxes are built once; later calls only patch what changed (pictures are never re-created).
 function renderSide(root, pi, side) {
   const S = Game.state(), p = S.players[pi], v = view(), opp = side === "opp";
   const mat = (ui.mats && ui.mats[pi]) || { key: "classic", img: "" };
@@ -298,20 +307,24 @@ function renderSide(root, pi, side) {
   if (root._skey !== skey) {
     root._skey = skey;
     root.innerHTML = `<div class="mat ${mat.img ? "img" : "classic"} ${side}" style="${mat.img ? `--matimg:url('${esc(mat.img)}')` : ""}">
-      <div class="mz info" style="${boxCSS(L.order, opp)}"></div>
-      <div class="mz damage" style="${boxCSS(L.damage, opp)}"></div>
-      <div class="mz deck" style="${boxCSS(L.deck, opp)}"></div>
-      <button class="mz drop" style="${boxCSS(L.drop, opp)}" data-zone="${pi}:drop"></button>
-      <div class="mz ride" style="${boxCSS(L.ride, opp)};display:none"></div>
+      <div class="mz order" style="${boxCSS(L.order, opp)}" title="Order zone"><small class="zl">Order</small><div class="ozc"></div></div>
+      <div class="mz damage" style="${boxCSS(L.damage, opp)}" title="Damage zone">${L.dmgSlots.map((_, i) => `<div class="dslot" style="${dmgBox(i, opp)}"><i>${i + 1}</i></div>`).join("")}</div>
+      <div class="mz trig" style="${boxCSS(L.trigger, opp)}" title="Trigger check zone"><small class="zl">Trigger check</small><div class="tzc"></div></div>
+      <div class="mz deck" style="${boxCSS(L.deck, opp)}" title="Deck"></div>
+      <button class="mz drop" style="${boxCSS(L.drop, opp)}" data-zone="${pi}:drop" title="Drop zone (click to see every card)"></button>
+      <button class="mz ride" style="${boxCSS(L.ride, opp)}" title="Ride deck"></button>
+      <div class="mz crest" style="${boxCSS(L.crest, opp)}" title="Crest zone"></div>
+      <div class="plate" style="${boxCSS(L.plate, opp)}"></div>
       ${Object.keys(L.slots).map((key) => {
         const [x, y] = L.slots[key];
         const pos = opp ? `left:${100 - x}%;top:${100 - y}%` : `left:${x}%;top:${y}%`;
         return `<div class="slot" style="${pos}" data-side="${side}" data-key="${key}"><span class="sl">${SLOT_LABEL[key]}</span></div>`;
       }).join("")}
     </div>`;
+    const q = (s) => root.querySelector(s);
     root._parts = {
-      info: root.querySelector(".mz.info"), damage: root.querySelector(".mz.damage"), deck: root.querySelector(".mz.deck"),
-      drop: root.querySelector(".mz.drop"), ride: root.querySelector(".mz.ride"),
+      plate: q(".plate"), order: q(".mz.order .ozc"), damage: [...root.querySelectorAll(".dslot")], trig: q(".mz.trig"), tzc: q(".mz.trig .tzc"),
+      deck: q(".mz.deck"), drop: q(".mz.drop"), ride: q(".mz.ride"), crest: q(".mz.crest"),
       slots: Object.fromEntries([...root.querySelectorAll(".slot")].map((el) => [el.dataset.key, el])),
     };
   }
@@ -334,12 +347,16 @@ function renderSide(root, pi, side) {
     const c = [];
     if (S.battle) {
       if (pi === S.active && key === S.battle.att) c.push("attacking");
+      if (pi === S.active && key === S.battle.boostKey) c.push("boosting");
       if (pi !== S.active && key === S.battle.tgt) c.push("targeted");
     }
+    const fp = fieldPickIds(S, v);
+    if (fp && fp.has(`${pi}:${key}`)) c.push(ui.pick.has(`${pi}:${key}`) ? "chosen" : "can-choose");
     if (side === "me" && (ui.attacker === key || ui.unitSel === key)) c.push("picked");
     if (opp && ui.attacker && Game.frontOf(pi).includes(key) && p.slots[key]) c.push("can-target");
     if (side === "me" && ui.sel && S.phase === "main" && v === S.active && key !== "vc") c.push("can-drop");
     if (side === "me" && ui.sel && S.phase === "ride" && key === "vc") c.push("can-drop");
+    if (side === "me" && !ui.attacker && !ui.sel && S.phase === "battle" && !S.battle && v === S.active && !S.pending && Game.canAttack(key)) c.push("can-attack");
     return c.join(" ");
   };
   for (const key of [...Object.keys(L.slots), ...(p.accel || []).map((a) => a.key)]) {
@@ -359,43 +376,75 @@ function renderSide(root, pi, side) {
     let mk = el.querySelector(":scope > .mk");
     if (badge && !mk) { mk = document.createElement("span"); mk.className = "mk"; el.appendChild(mk); }
     if (mk) { if (mk.textContent !== badge) mk.textContent = badge; mk.hidden = !badge; }
+    // the soul sits under the vanguard: a small counter on the circle (click to see the cards)
+    if (key === "vc") {
+      let sb = el.querySelector(":scope > .soulb");
+      if (!sb) { sb = document.createElement("button"); sb.className = "soulb"; sb.dataset.zone = `${pi}:soul`; sb.title = "Soul (click to see the cards)"; el.appendChild(sb); }
+      const txt = `◎ ${p.soul.length}`;
+      if (sb.textContent !== txt) sb.textContent = txt;
+      sb.hidden = !p.soul.length;
+    }
   }
-  p.damage.forEach((c) => seen.set(c.uid, c));
-  setHTML(P.damage, Array.from({ length: 6 }, (_, i) => {
+  // ---- damage zone: one card per printed box, picture side up (face down = card back) ----
+  P.damage.forEach((box, i) => {
     const c = p.damage[i];
-    return c ? `<div class="dmgc${c.down ? " down" : ""}" data-uid="${c.uid}"><b>${i + 1}</b><span>${c.down ? "Face down" : esc(c.name)}</span></div>`
-      : `<div class="dmgc empty"><b>${i + 1}</b></div>`;
-  }).join(""));
-  P.damage.title = `Damage ${p.damage.length}/6`;
-  const chip = (label, val, cls = "", zone = "") => zone
-    ? `<button class="chip ${cls}" data-zone="${pi}:${zone}"><small>${label}</small><b>${val}</b></button>`
-    : `<span class="chip ${cls}"><small>${label}</small><b>${val}</b></span>`;
-  setHTML(P.info, `<div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}</div>
-    <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb")}
-      ${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.orderZone || []).length ? chip("Orders", p.orderZone.length + (p.orderZone.some((c) => c.faceDown) ? ` (${p.orderZone.filter((c) => c.faceDown).length}↓)` : ""), "oz", "orderZone") : ""}${(p.automod || []).length ? chip("AutoMOD", p.automod.length, "am", "automod") : ""}${p.world ? chip("World", esc(p.world), "world") : ""}${(p.crest || []).length ? chip("Crest", p.crest.length, "crest", "crest") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}${opp ? chip("Hand", p.hand.length) : ""}</div>`);
-  setHTML(P.deck, `<small>Deck</small><b>${p.deck.length}</b>`);
+    if (c) seen.set(c.uid, c);
+    const src = c && !c.down ? Pics.url(c) : "";
+    setHTML(box, `<i>${i + 1}</i>${c ? `<div class="dmgc${c.down ? " down" : ""}${i === 0 ? " big" : ""}" data-uid="${c.uid}" title="${esc(c.name)}${c.down ? " (face down)" : ""}"
+      style="${src ? `background-image:url('${esc(src.replace(/'/g, "%27"))}')` : ""}">${c.down ? backHTML(" side") : ""}<span>${esc(c.name)}</span></div>` : ""}`);
+    box.classList.toggle("on", !!c);
+  });
+  // extra damage beyond 6 (rare: a draw game check) still shows as a count
+  P.damage[5].dataset.more = p.damage.length > 6 ? `+${p.damage.length - 6}` : "";
+  // ---- order zone: set orders and Songs (face down) ----
+  const oz = p.orderZone || [];
+  setHTML(P.order, oz.map((c) => (c.faceDown && pi !== v ? `<div class="zc-back">${backHTML()}</div>` : zoneCard(c, c.faceDown ? " fdown" : ""))).join(""));
+  P.order.parentElement.classList.toggle("has", !!oz.length);
+  // ---- trigger check zone: the card being checked right now ----
+  const chk = S.checking && S.checking.pi === pi ? S.checking : null;
+  setHTML(P.tzc, chk ? `<span class="tzt">${chk.type} check</span>${zoneCard(chk.card, chk.card.trigger ? " trig" : "")}` : "");
+  P.trig.classList.toggle("on", !!chk);
+  // ---- deck, drop, ride deck, crest ----
+  setHTML(P.deck, `${p.deck.length ? backHTML() : ""}<small>Deck</small><b>${p.deck.length}</b>`);
+  P.deck.classList.toggle("low", p.deck.length > 0 && p.deck.length <= 5);
   const topDrop = p.drop[p.drop.length - 1];
-  if (topDrop) seen.set(topDrop.uid, topDrop);
-  setHTML(P.drop, `${topDrop ? `<span class="top" data-uid="${topDrop.uid}">${esc(topDrop.name)}</span>` : ""}<small>Drop</small><b>${p.drop.length}</b>`);
-  P.ride.style.display = p.ride.length ? "" : "none";
-  setHTML(P.ride, `<b>${p.ride.length}</b>`);
+  setHTML(P.drop, `${topDrop ? zoneCard(topDrop) : ""}<small>Drop</small><b>${p.drop.length}</b>`);
+  const rideMine = pi === v;
+  if (rideMine) P.ride.dataset.zone = `${pi}:ride`; else delete P.ride.dataset.zone;
+  P.ride.hidden = !p.hasRideDeck && !p.ride.length;
+  setHTML(P.ride, `${p.ride.length ? backHTML() : ""}<small>Ride</small><b>${p.ride.length}</b>`);
+  const crest = p.crest || [];
+  P.crest.hidden = !p.useEnergy && !crest.length;
+  setHTML(P.crest, `${p.useEnergy ? `<div class="eg${p.egPlaced ? " on" : ""}" title="Energy Generator${p.egPlaced ? " (in the crest zone)" : " (goes to the crest zone at your first ride)"}"><small>Energy</small><b>${p.energy}</b><span class="enbar">${Array.from({ length: 10 }, (_, i) => `<i class="${i < p.energy ? "f" : ""}"></i>`).join("")}</span></div>` : ""}${crest.length ? `<button class="crestb" data-zone="${pi}:crest">Crest ${crest.length}</button>` : ""}`);
+  // ---- player plate (screen corner: opponent top-right, you bottom-left): badge, name, damage / deck / hand, then the counts ----
+  const chip = (label, val, cls = "", zone = "", tip = "") => zone
+    ? `<button class="chip ${cls}" data-zone="${pi}:${zone}" title="${tip || label}"><small>${label}</small><b>${val}</b></button>`
+    : `<span class="chip ${cls}" title="${tip || label}"><small>${label}</small><b>${val}</b></span>`;
+  const acts = S.controller === pi && S.winner === null;
+  setHTML(P.plate, `<div class="cp-av" style="--h:${hue(p.name)}">${esc((p.name || "?").trim().charAt(0).toUpperCase())}</div>
+    <div class="cp-main">
+      <div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}${acts ? '<span class="actmark" title="This player acts now">● acting</span>' : ""}</div>
+      <div class="cp-stats"><span class="st dmg${p.damage.length >= 5 ? " hot" : ""}" title="Damage"><small>Damage</small><b>${p.damage.length}/6</b></span><span class="st" title="Cards in deck"><small>Deck</small><b>${p.deck.length}</b></span><span class="st" title="Cards in hand"><small>Hand</small><b>${p.hand.length}</b></span></div>
+      <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb", "", "Face-up damage you can Counter-Blast")}${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.orderZone || []).length ? chip("Orders", p.orderZone.length, "oz", "orderZone") : ""}${(p.automod || []).length ? chip("AutoMOD", p.automod.length, "am", "automod") : ""}${p.world ? chip("World", esc(p.world), "world") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}</div>
+    </div>`);
+  P.plate.classList.toggle("acting", acts);
 }
-// ---------- phase rail + cut-in banner ----------
-const PHASES = [["ride", "Ride"], ["main", "Main"], ["battle", "Battle"], ["end", "End"]];
+// ---------- phase list (top-left): whose turn, every phase of the turn, the current one big with what to do ----------
+const PHASES = [["stand", "Stand"], ["draw", "Draw"], ["ride", "Ride"], ["main", "Main"], ["battle", "Battle"], ["end", "End"]];
 let lastBeat = "";
 function renderRail(S) {
-  $("#turnTag").textContent = S.phase === "mulligan" ? "Mulligan" : `Turn ${S.turn} · ${S.players[S.active].name}`;
-  $("#rail").innerHTML = S.phase === "mulligan" ? "" : PHASES.map(([k, l]) => {
-    const ph = S.phase === "stride" ? "ride" : S.phase;
-    const i = PHASES.findIndex(([x]) => x === ph), j = PHASES.findIndex(([x]) => x === k);
-    return `<span class="${k === (S.phase === "stride" ? "ride" : S.phase) ? "on" : j < i ? "done" : ""}">${l}</span>`;
-  }).join("");
-  const beat = S.winner !== null ? "" : S.phase === "mulligan" ? "mulligan" : `${S.turn}:${S.phase}`;
-  if (beat && beat !== lastBeat) {
-    const newTurn = !lastBeat.startsWith(S.turn + ":");
+  const v = view();
+  $("#turnTag").textContent = "";
+  const ph = S.phase === "stride" ? "ride" : S.phase;
+  const i = PHASES.findIndex(([k]) => k === ph);
+  const mine = S.active === v;
+  const head = S.phase === "mulligan" ? "Mulligan" : ui.online || !ui.hotseat ? `${mine ? "Your" : "Opponent's"} turn <b>${S.turn}</b>` : `Turn <b>${S.turn}</b> · ${esc(S.players[S.active].name)}`;
+  setHTML($("#rail"), `<div class="ph-head${mine ? " mine" : ""}">${head}</div>${S.phase === "mulligan" ? "" : PHASES.map(([k, l], j) =>
+    `<div class="ph${j === i ? " on" : j < i ? " done" : ""}"><span>${S.phase === "stride" && k === "ride" ? "Stride" : l}</span>${j === i ? `<small class="ph-hint"></small>` : ""}</div>`).join("")}`);
+  const beat = S.winner !== null ? "" : S.phase === "mulligan" ? "mulligan" : `${S.turn}`;
+  if (beat && beat !== lastBeat) { // a new turn: a quick strip across the middle
     lastBeat = beat;
-    const txt = S.phase === "mulligan" ? "Mulligan" : newTurn ? `Turn ${S.turn} · ${S.players[S.active].name}` : `${S.phase} phase`;
-    showBanner(txt, newTurn && S.phase !== "mulligan" ? "Stand & Draw → " + S.phase + " phase" : "");
+    showBanner(S.phase === "mulligan" ? "Mulligan" : ui.online || !ui.hotseat ? `${mine ? "Your" : "Opponent's"} turn ${S.turn}` : `Turn ${S.turn} · ${S.players[S.active].name}`, S.phase === "mulligan" ? "" : "Stand & Draw");
   }
 }
 let bannerT;
@@ -436,6 +485,206 @@ function scheduleRender() {
 }
 Pics.onRedraw(scheduleRender);
 
+// ---------- animations (2026-11-13) ----------
+// Every card on the table keeps its element (data-uid). Before a redraw we note where each card is; after it we slide
+// cards that moved from the old spot to the new one, and fly cards that left the table into the zone they went to.
+// Battle moments (attack, hit, guard, triggers, ride) are read from new log lines. Only transform / opacity animate.
+// Players who prefer reduced motion get no animations.
+const FX = (() => {
+  const reduced = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const EASE = "cubic-bezier(.2,.8,.2,1)";
+  let layer = null, svg = null, prev = null, prevWhere = new Map(), lastN = 0, lastView = null, lastBattle = "", pow = new Map();
+  function ensure() {
+    if (layer) return;
+    layer = document.createElement("div"); layer.id = "fx"; layer.setAttribute("aria-hidden", "true");
+    document.body.appendChild(layer);
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.id = "fxsvg"; svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = `<defs><marker id="fxah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs><path class="atkline" marker-end="url(#fxah)"/>`;
+    document.body.appendChild(svg);
+  }
+  const tracked = () => document.querySelectorAll(".table [data-uid]");
+  const center = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+  // where every card is (by uid): "pi:zone" or "pi:slot:key"; used to find where an unseen card came from / went to
+  function whereMap(S) {
+    const m = new Map();
+    S.players.forEach((p, pi) => {
+      for (const z of ["deck", "hand", "soul", "drop", "damage", "bind", "removed", "ride", "orderZone", "gDeck", "gUp", "automod", "crest"])
+        for (const c of p[z] || []) m.set(String(c.uid), `${pi}:${z}`);
+      for (const [k, s] of Object.entries(p.slots)) if (s && s.card) {
+        m.set(String(s.card.uid), `${pi}:slot:${k}`);
+        if (s.heart) m.set(String(s.heart.uid), `${pi}:slot:${k}`);
+      }
+    });
+    if (S.battle) for (const c of S.battle.guards) m.set(String(c.uid), `${1 - S.active}:gc`);
+    if (S.checking) m.set(String(S.checking.card.uid), `${S.checking.pi}:trig`);
+    return m;
+  }
+  // the element that stands for a zone on the screen
+  function zoneEl(w) {
+    if (!w) return null;
+    const [pi, z, key] = w.split(":");
+    const root = +pi === view() ? $("#me") : $("#opp"), P = root && root._parts;
+    if (!P) return null;
+    switch (z) {
+      case "slot": return P.slots[key] || null;
+      case "deck": return P.deck;
+      case "ride": return P.ride.hidden ? P.deck : P.ride;
+      case "drop": return P.drop;
+      case "soul": return P.slots.vc;
+      case "damage": return P.damage[0].parentElement;
+      case "orderZone": return P.order.parentElement;
+      case "trig": return P.trig;
+      case "gc": return $("#gc");
+      case "hand": return +pi === view() ? $("#hand") : P.plate;
+      default: return P.plate; // bind, removed, G zone, AutoMOD, crest
+    }
+  }
+  // screen delta → the element's own (maybe rotated) coordinates, so a rested card slides straight
+  function local(el, dx, dy) {
+    const t = getComputedStyle(el).transform;
+    if (!t || t === "none") return [dx, dy];
+    const m = t.match(/matrix\(([^)]+)\)/);
+    if (!m) return [dx, dy];
+    const [a, b, c, d] = m[1].split(",").map(Number), det = a * d - b * c || 1;
+    return [(d * dx - c * dy) / det, (-b * dx + a * dy) / det];
+  }
+  function fly(el, from, to, ms = 420) {
+    const [fx, fy] = center(from), [tx, ty] = center(to);
+    const s = Math.max(0.25, Math.min(3, from.width / (to.width || 1)));
+    const [lx, ly] = local(el, fx - tx, fy - ty);
+    try { el.animate([{ transform: `translate(${lx}px,${ly}px) scale(${s})` }, { transform: "translate(0,0) scale(1)" }], { duration: ms, easing: EASE, composite: "add" }); } catch { /* old browser */ }
+  }
+  function ghost(o, to) {
+    const g = o.el;
+    if (!g || g.isConnected) return;
+    const r = o.r, [fx, fy] = center(r), [tx, ty] = center(to);
+    g.style.position = "fixed"; g.style.left = r.left + "px"; g.style.top = r.top + "px"; g.style.width = r.width + "px"; g.style.height = r.height + "px";
+    g.style.margin = "0"; g.classList.remove("rest"); g.classList.add("ghost");
+    layer.appendChild(g);
+    const s = Math.max(0.2, Math.min(1, (to.width || r.width) / r.width));
+    const a = g.animate([{ transform: "none", opacity: 1 }, { transform: `translate(${tx - fx}px,${ty - fy}px) scale(${s})`, opacity: 0.15 }], { duration: 520, easing: EASE });
+    a.onfinish = a.oncancel = () => g.remove();
+  }
+  // a word that pops over a spot ("HIT!", "★ CRITICAL TRIGGER"…)
+  function burst(text, el, color, big) {
+    if (!el) return;
+    const [x, y] = center(el.getBoundingClientRect());
+    const b = document.createElement("div");
+    b.className = "fxb" + (big ? " big" : "");
+    b.textContent = text;
+    b.style.left = x + "px"; b.style.top = y + "px"; b.style.setProperty("--c", color);
+    layer.appendChild(b);
+    setTimeout(() => b.remove(), 1100);
+  }
+  function ring(el, color) {
+    if (!el) return;
+    const r = el.getBoundingClientRect(), [x, y] = center(r);
+    const d = document.createElement("div");
+    d.className = "fxring"; d.style.left = x + "px"; d.style.top = y + "px";
+    d.style.width = d.style.height = Math.max(r.width, r.height) * 1.2 + "px"; d.style.setProperty("--c", color);
+    layer.appendChild(d);
+    setTimeout(() => d.remove(), 800);
+  }
+  function shake(el) {
+    if (!el) return;
+    try { el.animate([{ transform: "translateX(0)" }, { transform: "translateX(-7px)" }, { transform: "translateX(7px)" }, { transform: "translateX(-4px)" }, { transform: "translateX(0)" }], { duration: 380, composite: "add" }); } catch { /* */ }
+  }
+  const slotEl = (pi, key) => { const r = +pi === view() ? $("#me") : $("#opp"); return r && r._parts ? r._parts.slots[key] : null; };
+  const cardIn = (el) => (el && el.querySelector(":scope > .card")) || el;
+  // the attack arrow: from the attacker to the unit it attacks, while the battle lasts
+  function arrow(S) {
+    const path = svg.querySelector(".atkline");
+    const b = S.battle;
+    const a = b && slotEl(S.active, b.att), t = b && slotEl(1 - S.active, b.tgt);
+    if (!a || !t) { svg.classList.remove("on"); path.removeAttribute("d"); return; }
+    const [ax, ay] = center(a.getBoundingClientRect()), [tx, ty] = center(t.getBoundingClientRect());
+    const mx = (ax + tx) / 2 + (ty - ay) * 0.12, my = (ay + ty) / 2 - (tx - ax) * 0.12;
+    path.setAttribute("d", `M${ax},${ay} Q${mx},${my} ${tx},${ty}`);
+    svg.classList.add("on");
+  }
+  const TRIG_COLOR = { crit: "#f2b94b", draw: "#5fd0ff", front: "#ff8a5c", heal: "#6fd39a", stand: "#b896ff", over: "#ff5fa2" };
+  return {
+    // call before a redraw
+    before() {
+      if (reduced() || !layer) { prev = null; return; }
+      prev = new Map();
+      for (const el of tracked()) { const r = el.getBoundingClientRect(); if (r.width && !prev.has(el.dataset.uid)) prev.set(el.dataset.uid, { r, el }); }
+    },
+    // call after a redraw
+    after(S) {
+      ensure();
+      const v = view(), where = whereMap(S);
+      const newGame = (S.logN || 0) < lastN;
+      const switched = lastView !== null && v !== lastView; // hot-seat: the table turned to the other player, nothing "moved"
+      lastView = v;
+      if (prev && !switched && !newGame) {
+        const now = new Map();
+        for (const el of tracked()) if (!now.has(el.dataset.uid)) now.set(el.dataset.uid, el);
+        for (const [uid, el] of now) {
+          const old = prev.get(uid);
+          const r = el.getBoundingClientRect();
+          if (!r.width) continue;
+          let from = old && old.el !== el ? old.r : old ? old.r : null;
+          if (!old) { const z = zoneEl(prevWhere.get(uid)); from = z ? z.getBoundingClientRect() : null; }
+          if (from && (Math.abs(from.left - r.left) > 3 || Math.abs(from.top - r.top) > 3)) fly(el, from, r);
+        }
+        for (const [uid, o] of prev) if (!now.has(uid)) { const z = zoneEl(where.get(uid)); if (z) ghost(o, z.getBoundingClientRect()); }
+      }
+      prev = null;
+      prevWhere = where;
+      // battle moments from the log lines written since the last redraw
+      const n = Math.min(S.log.length, Math.max(0, (S.logN || 0) - lastN));
+      lastN = S.logN || 0;
+      if (!reduced() && !switched && !newGame && n) {
+        const fresh = S.log.slice(0, n).reverse();
+        const ai = S.active;
+        for (const line of fresh) {
+          if (/→ HIT!/.test(line) && S.battle) { const t = slotEl(1 - ai, S.battle.tgt); burst("HIT!", t, "#ff5f6d", true); shake(cardIn(t)); }
+          else if (/→ guarded/.test(line)) burst("GUARD", $("#gc"), "#5fd0ff", true);
+          else if (/Persona Ride!/.test(line)) { burst("PERSONA RIDE", slotEl(ai, "vc"), "#f2b94b", true); ring(slotEl(ai, "vc"), "#f2b94b"); }
+          else if (/ rides /.test(line)) ring(slotEl(ai, "vc"), "#5fd0ff");
+          else if (/ strides /i.test(line)) { burst("STRIDE", slotEl(ai, "vc"), "#b896ff", true); ring(slotEl(ai, "vc"), "#b896ff"); }
+          else {
+            const m = line.match(/^(\S+) (Critical|Draw|Front|Heal|Stand|Over) trigger!/);
+            if (m) {
+              const t = Object.keys(TRIG_COLOR).find((k) => TRIG[k] && TRIG[k].name === m[2]) || m[2].toLowerCase();
+              const who = S.checking ? S.checking.pi : ai;
+              const root = who === v ? $("#me") : $("#opp");
+              burst(`${m[1]} ${m[2].toUpperCase()}!`, root && root._parts ? root._parts.trig : null, TRIG_COLOR[t] || "#f2b94b", true);
+            }
+          }
+        }
+      }
+      // the attacker lunges toward its target once per attack
+      const bk = S.battle ? `${S.battleNo || 0}:${S.active}:${S.battle.att}:${S.battle.tgt}` : "";
+      if (bk && bk !== lastBattle && !reduced() && !switched) {
+        const a = cardIn(slotEl(S.active, S.battle.att)), t = slotEl(1 - S.active, S.battle.tgt);
+        if (a && t) {
+          const [ax, ay] = center(a.getBoundingClientRect()), [tx, ty] = center(t.getBoundingClientRect());
+          const [lx, ly] = local(a, (tx - ax) * 0.22, (ty - ay) * 0.22);
+          try { a.animate([{ transform: "translate(0,0)" }, { transform: `translate(${lx}px,${ly}px)`, offset: 0.4 }, { transform: "translate(0,0)" }], { duration: 480, easing: "ease-out", composite: "add" }); } catch { /* */ }
+        }
+      }
+      lastBattle = bk;
+      arrow(S);
+      // power that changed on a circle pops for a moment
+      S.players.forEach((p, pi) => Object.entries(p.slots).forEach(([k, s]) => {
+        const id = `${pi}:${k}`;
+        if (!s || !s.card) { pow.delete(id); return; }
+        const val = `${s.card.uid}:${Game.power(pi, k)}:${Game.crit(pi, k)}`, was = pow.get(id);
+        pow.set(id, val);
+        if (!was || was.split(":")[0] !== String(s.card.uid) || was === val || reduced() || switched) return;
+        const cp = slotEl(pi, k) && slotEl(pi, k).querySelector(".cs");
+        if (cp) { cp.classList.remove("pop"); void cp.offsetWidth; cp.classList.add("pop"); }
+      }));
+    },
+    reset() { prev = null; prevWhere = new Map(); lastN = 0; lastView = null; lastBattle = ""; pow = new Map(); if (layer) layer.innerHTML = ""; },
+  };
+})();
+// Drive / damage checks and battle results wait a moment on screen so both players can follow them
+Game.setPace((kind) => new Promise((ok) => setTimeout(ok, document.hidden || FX_FAST() ? 60 : kind === "check" ? 650 : 420)));
+function FX_FAST() { return !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) || !!ui.test; }
+
 // ---------- full render ----------
 function render() {
   const S = Game.state();
@@ -444,6 +693,9 @@ function render() {
   $("#curtain").hidden = true;
   const v = view();
   preloadPictures(); // cheap after the first time: every picture is already in the cache
+  FX.before();
+  placePlates();
+  if (infoDock() && infoEl().hidden && !infoUid) { infoEl().innerHTML = infoPanel(null); infoEl().hidden = false; }
   renderSide($("#opp"), 1 - v, "opp");
   renderSide($("#me"), v, "me");
 
@@ -472,6 +724,8 @@ function render() {
   const picked = (c) => (S.phase === "mulligan" ? ui.mull.has(c.uid) : ui.sel === c.uid) ? " picked" : "";
   renderHand(mine.hand, picked);
   setHTML($("#actions"), actionsHTML(S, v));
+  const hEl = $("#rail .ph-hint"), hTxt = ($("#actions .hint") || {}).textContent || "";
+  if (hEl && hEl.textContent !== hTxt) hEl.textContent = hTxt;
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
   renderJudge(S, v);
@@ -480,7 +734,10 @@ function render() {
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
   if (S.winner !== null) reportMatch(S); else if (!$("#winCoins").hidden) $("#winCoins").hidden = true;
   if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
+  FX.after(S);
 }
+// the player plates sit beside the mats when the screen has room on the right; otherwise inside the mat (between order and damage)
+function placePlates() { document.body.classList.add("plate-out"); }
 
 // ---------- coins from online matches (supabase/004_matches.sql) ----------
 // Both players report; the server pays when both agree. Hot-seat games never pay (one person could play both sides).
@@ -563,12 +820,36 @@ function actionsHTML(S, v) {
   return "";
 }
 
+// A choice whose options are all units on the field ("0:fl", "1:vc"…) is made by clicking the circles themselves;
+// a slim bar shows the question (and Confirm when several are picked). "Show list" opens the usual window.
+function fieldPickIds(S, v) {
+  const p = S && S.pending;
+  if (!p || p.player !== v || S.judge || ui.listOpen) return null;
+  return p.options.length && p.options.every((o) => /^[01]:[a-z0-9]+$/.test(String(o.id))) ? new Set(p.options.map((o) => String(o.id))) : null;
+}
+function renderPickBar(S, v) {
+  let bar = $("#pickbar");
+  const ids = fieldPickIds(S, v), p = S.pending;
+  document.body.classList.toggle("field-pick", !!ids);
+  if (!ids) { if (bar) bar.hidden = true; return false; }
+  if (!bar) { bar = document.createElement("div"); bar.id = "pickbar"; bar.className = "pickbar"; document.body.appendChild(bar); }
+  bar.hidden = false;
+  const multi = !(p.min === 1 && p.max === 1);
+  setHTML(bar, `<span class="pb-q">${esc(p.prompt)}</span><small>Click a glowing circle${multi ? ` · ${ui.pick.size} picked (${p.min === p.max ? p.max : p.min + "–" + p.max})` : ""}</small>
+    ${multi ? `<button class="go" data-pickok ${ui.pick.size < p.min ? "disabled" : ""}>Confirm</button>` : ""}<button class="ghost" data-picklist>Show list</button>`);
+  return true;
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-pickok]")) { $("#choiceOk").click(); return; }
+  if (e.target.closest("[data-picklist]")) { ui.listOpen = true; render(); }
+});
 function renderPending(S, v) {
   const p = S.pending;
-  if (!p || p.player !== v || S.judge) { $("#choice").hidden = true; ui.pick.clear(); return; } // a manual effect is answered in the Judge panel
+  if (!p || p.player !== v || S.judge) { $("#choice").hidden = true; ui.pick.clear(); ui.listOpen = false; renderPickBar(S, v); return; } // a manual effect is answered in the Judge panel
   // a new prompt starts with nothing picked (picks never carry over from an earlier prompt)
   const key = p.prompt + "|" + p.options.map((o) => o.id).join(",");
-  if (ui.pendingKey !== key) { ui.pendingKey = key; ui.pick.clear(); }
+  if (ui.pendingKey !== key) { ui.pendingKey = key; ui.pick.clear(); ui.listOpen = false; }
+  if (renderPickBar(S, v)) { $("#choice").hidden = true; return; }
   $("#choice").hidden = false;
   $("#choicePrompt").textContent = p.prompt;
   setHTML($("#choiceOpts"), p.options.map((o) => `<button class="opt${ui.pick.has(String(o.id)) ? " picked" : ""}" data-opt="${esc(o.id)}">
@@ -606,6 +887,8 @@ async function act(promise) {
 
 function onSlot(side, key) {
   const S = Game.state(), v = view();
+  const pickIds = myMove() ? fieldPickIds(S, v) : null;
+  if (pickIds) { const id = `${side === "me" ? v : 1 - v}:${key}`; if (pickIds.has(id)) onOpt(id); return; }
   if (S.winner !== null || S.pending || !myMove()) return;
   if (S.battle) { if (v !== S.active && side === "me") act(Game.intercept(key)); return; }
   if (v !== S.active || side !== "me" && S.phase !== "battle") return;
@@ -756,7 +1039,7 @@ document.addEventListener("touchstart", (e) => {
 }, { passive: true });
 ["touchend", "touchmove", "touchcancel"].forEach((ev) => document.addEventListener(ev, () => { clearTimeout(pressT); pressT = null; }, { passive: true }));
 document.addEventListener("click", (e) => { if (e.target.closest("[data-unpin]")) { e.stopPropagation(); unpinInfo(); } }, true);
-window.addEventListener("resize", () => { if (infoDock() && infoEl().hidden && infoUid) showInfo(infoUid); });
+window.addEventListener("resize", () => { if (infoDock() && infoEl().hidden && infoUid) showInfo(infoUid); if (Game.state()) scheduleRender(); });
 // ---------- Judge panel: do card text by hand (Manual blocks), or fix a mistake in hot-seat ----------
 // Online it only works while a Manual effect is open (both players see what was done in the log).
 const J = { pi: null, uid: null };

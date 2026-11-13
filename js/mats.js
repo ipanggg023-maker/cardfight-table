@@ -11,13 +11,18 @@ const MATS = {
 };
 
 // Layout of the mat (own side, unrotated). x/y = centre, in % of width/height.
+// Boxes are [left, top, right, bottom], measured on the printed Standard mat (overDress, 1600×817).
 const MAT_LAYOUT = {
   slots: { fl: [30.4, 39.3], vc: [50, 39.3], fr: [69.6, 39.3], bl: [30.4, 80.1], bc: [50, 80.1], br: [69.6, 80.1] },
-  order: [5.6, 3.6, 20.4, 34],      // left, top, right, bottom
-  damage: [5.6, 61.4, 20.4, 96.6],
-  deck: [81.6, 25.9, 92.2, 57],
-  drop: [82, 63, 91.8, 92.4],
-  ride: [95, 26.5, 100, 56.5],
+  order: [5.75, 4.3, 20.6, 33.7],    // ORDER ZONE (set orders, Songs face down)
+  plate: [5.75, 35, 20.6, 46.4],     // player plate when there is no room beside the mat (the gap between order and damage)
+  damage: [5.75, 47.1, 20.6, 96.7],  // DAMAGE ZONE 1–6
+  dmgSlots: [[47.1, 66.7], [67.3, 72.5], [73.2, 78.3], [79.1, 84.2], [84.9, 90.1], [90.8, 96.7]], // the six printed boxes (top, bottom)
+  trigger: [79.7, 8, 94.4, 19.5],    // TRIGGER CHECK ZONE (the card being checked)
+  deck: [81.6, 25.9, 92.4, 57],      // DECK
+  drop: [81.9, 62.4, 92.2, 92.4],    // DROP ZONE
+  ride: [95.1, 25.9, 100, 56.9],     // RIDE DECK (right edge)
+  crest: [94.9, 3.5, 100, 23.5],     // crest zone: Energy Generator + energy (beside the trigger check zone, above the ride deck)
 };
 
 const Mats = (() => {
