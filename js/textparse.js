@@ -427,7 +427,7 @@ const TextParse = (() => {
     [/when this unit is put into your deck from \(RC\)/i, "rcToDeck", "RC"],
     [/when the unit armed with this card attacks/i, "attack", "VC"],
     [/when this unit in the \[x?overdress\] state attacks( a vanguard)?/i, "attack", null, { conds: [{ type: "dressed" }] }],
-    [/when this card is put in (?:the|your) order zone/i, "toOrderZone", "OZ"],
+    [/when this card is put in(?:to)? (?:the |your )?order zone/i, "toOrderZone", "OZ"],
     // leaving a circle / zone
     [/when (?:this unit is |this card is )?retired from \(rc\) by (?:the ability of )?(?:one of )?your (?:own |other )?cards?'?s? ?(?:abilit(?:y|ies)|effects?)?|when (this unit|this card) is put into (the |your )?drop( zone)? from \(rc\) (?:due to|by) (?:an effect from )?(?:one of )?your (?:own |other )?cards?/i, "retired", "RC", { conds: [{ type: "byMe" }] }],
     [/when (this unit|this card) is put into (the |your )?drop( zone)? from \(rc\)|when (this unit is |this card is )?retired from \(rc\)/i, "retired", "RC"],
@@ -445,7 +445,7 @@ const TextParse = (() => {
     [/when this card becomes an originaldress/i, "originalDress", "RC"],
     [/when (?:this unit|it) (?:\[stand\]|stands|becomes \[stand\])(?=\s*,)/i, "stood", null],
     [/when (?:a|your) card is put into your damage zone/i, "toDamage", null],
-    [/when your card is put into your soul by \[?soul-?charge/i, "soulCharged", null],
+    [/when your card is put into (?:your )?soul by \[?soul-?charge/i, "soulCharged", null],
     [/at the end of each turn/i, "eachTurnEnd", null],
     [/at the beginning of (?:your|the) attack step/i, "attackStep", null],
     [/when (?:its|this unit'?s) attack or the attack (?:it|this unit) boosted hits a vanguard/i, "hitOrBoost", "RC", { conds: [{ type: "targetVC" }] }],
@@ -459,7 +459,7 @@ const TextParse = (() => {
     [/when this unit intercepts/i, "intercepts", "RC"],
     [/when your (.*?)(vanguard|unit|rear-guard)(?: with "[^"]*" in its card name)? is attacked/i, "allyAttacked", null, { subjectAtt: true }],
     [/at the beginning of (the|your) end phase/i, "endTurn", null],
-    [/when this card is put into (the|your) order zone/i, "toOrderZone", "OZ"],
+    [/when this card is put into (the |your )?order zone/i, "toOrderZone", "OZ"],
     [/when this unit'?s drive check reveals (an? )?(.*?)(card|unit)?\s*,/i, "driveReveal", "VC", { subject: 2, subjectNoun: 3 }],
     [/when the attack (this unit|it) boosted hits a vanguard/i, "boostHit", "RC", { conds: [{ type: "targetVC" }] }],
     [/when the attack (this unit|it) boosted hits/i, "boostHit", "RC"],
@@ -482,7 +482,7 @@ const TextParse = (() => {
     [/when (this unit|this card) is placed on \(gc\)|when placed on \(gc\)/i, "placedGC", "GC"],
     [/when (this unit|this card) is placed\b|when placed\b/i, "placed", null],
     [/when your (other )?((?:(?!opponent)[^,])*?)(rear-guards?|units?|<[^>]+>|"[^"]+")((?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?) (is|are) placed(?: on( your| another)? \(rc\))?(?: from (?:your |the )?(deck|drop zone|drop|soul|hand|bind zone))?( in the same column as this unit)?(?=,| during| by| other|$)|when another (.*?) is placed on your \(rc\)/i, "allyPlacedRC", "RC", { allyPlaced: true }],
-    [/when your opponent'?s (.*?)rear-guards? (is|are) placed|when your opponent calls/i, "oppPlacedRC", null, { subject: 1 }],
+    [/when your opponent'?s (.*?)(?:rear-guards?|units?) (is|are) placed|when your opponent calls/i, "oppPlacedRC", null, { subject: 1 }],
     [/at the beginning of your main phase/i, "mainStart", null],
     [/at the beginning of your battle phase/i, "battleStart", null],
     [/at the beginning of the guard step|at the beginning of your opponent'?s guard step/i, "guardStart", null],
@@ -517,7 +517,7 @@ const TextParse = (() => {
     [/when you play an? (.*?)order/i, "orderPlayed", null, { subject: 1 }],
     [/when (your g unit|this unit) strides|when (this unit|this card) is placed on \(vc\) by stride|when your vanguard strides/i, "onStride", "VC"],
     [/when this unit is put on \(rc\) with (x)?overdress|when placed by (x)?overdress/i, "dressed", "RC"],
-    [/when (this card is )?unlocked/i, "unlocked", "RC"],
+    [/when (?:this (?:card|unit) is )?unlocked/i, "unlocked", "RC"],
   ];
   // the timing clause: from the start of the body up to the comma that closes it
   function timing(body) {
