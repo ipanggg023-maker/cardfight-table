@@ -398,6 +398,7 @@ const TextParse = (() => {
   // ---------- timings ----------
   // [regex, event, zone hint, extra {conds, whenFilter, whenFrom}]
   const EVENTS = [
+    [/when this song is sung/i, "sung", "OZ"],
     // round 4: chosen by an ability, drawing, replaced on its circle, opponent's rear-guard into the deck
     [/when this unit is chosen by (?:the )?(?:ability|effect) of your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?)/i, "chosenBy", null, { byVCText: 1 }],
     [/when this unit is chosen by your vanguard'?s (?:ability|effect)/i, "chosenBy", null, { byVC: true }],
@@ -678,6 +679,11 @@ const TextParse = (() => {
     if ((m = t.match(/if "([^"]+)" is in your (soul|drop|hand|damage zone|bind zone|order zone)/i))) add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if it is your battle phase/i.test(t)) add({ type: "battlePhase" });
     if (/if this unit is (?:at )?\[rest\]/i.test(t)) add({ type: "unit", who: "self", filter: { restState: "rest" } });
+    // AutoMOD / Song
+    if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) automod gauges?`)))) add({ type: "count", what: "myAutoMOD", op: CMP(m[0]), n: toNum(m[1]) });
+    if (/if your vanguard sung an? song this turn|if you sung an? song this turn/i.test(t)) add({ type: "sungThisTurn" });
+    if ((m = t.match(rx(`if you have ${N} or more face down cards in your order zone`)))) add({ type: "count", what: "myOrderZoneDown", op: "ge", n: toNum(m[1]) });
+    if (/if your order zone has an? face up song/i.test(t)) add({ type: "count", what: "myOrderZoneUp", op: "ge", n: 1 });
     // Arms on your vanguard: "if your (VC) has two or more Arms", "if you have two or more Arms on your (VC)", "if your vanguard is Armed (with two or more cards)"
     if ((m = t.match(rx(`if (?:your \\(VC\\) has|you have) ${N} or more arms(?: on your \\(VC\\))?`))) || (m = t.match(rx(`if (?:your vanguard|this unit) is armed with ${N} or more cards`))))
       add({ type: "count", what: "myArms", op: "ge", n: toNum(m[1]) });
@@ -831,6 +837,16 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
     if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
+    // AutoMOD gauge: "put the top card of your deck face up as your AutoMOD gauge", "choose a card from your drop, put it face up as your AutoMOD gauge",
+    // "Choose a card from your AutoMOD gauge, and you may put it into hand"
+    if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck face up as (?:your )?automod gauges?$`)))) return [{ type: "move", from: "deckTop", to: "automod", n: m[1] ? toNum(m[1]) : 1 }];
+    if (ctx.pick && /^put (it|them) face up as (?:your )?automod gauges?$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "automod", n: P.n, upTo: P.upTo, filter: P.filter }]; }
+    if ((m = t.match(rx(`^choose (up to )?${N} (.*?)cards? from your automod gauges?$`)))) { ctx.pick = { from: "automod", n: toNum(m[2]), upTo: !!m[1], filter: filt(m[3] || "") }; return []; }
+    // Song: "choose a face up Song from your Order Zone, and sing it", "choose a face down card in your Order Zone, and you may turn it face up"
+    if (/^choose an? face up song from your order zone,? and sing it$|^sing an? (face up )?song$/i.test(t)) return [{ type: "sing" }];
+    if (/^choose an? face up song from your order zone$/i.test(t)) { ctx.song = true; return []; }
+    if (ctx.song && /^sing it$/i.test(t)) { ctx.song = false; return [{ type: "sing" }]; }
+    if ((m = t.match(rx(`^choose (up to )?${N} face (down|up) cards? in your order zone,? and (?:you may )?turn (?:it|them) face (up|down)$`)))) return [{ type: "flipOZ", n: toNum(m[2]), up: m[4].toLowerCase() === "up", ...(m[1] || /you may/i.test(t) ? { upTo: true } : {}) }];
     // markers: "choose one of your (RC) without any Dragontree markers, put a Dragontree marker", "choose two of your (RC), put a Dragontree marker on each of them",
     // "choose one of your (VC) or (RC) without any Treasure markers, put a Treasures marker", "put a Cradle marker on it"
     if ((m = t.match(rx(`^choose (up to )?${N} of your (\\(VC\\) or \\(RC\\)|\\(RC\\)|\\(VC\\)|circles?)(?: without any ([A-Za-z ]+?) markers?)?$`)))) { ctx.markCircle = { n: toNum(m[2]), where: /VC\) or/i.test(m[3]) ? "units" : /^\(VC\)/i.test(m[3]) ? "vc" : "rc", without: !!m[4] }; return []; }

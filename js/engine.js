@@ -57,6 +57,7 @@ const Game = (() => {
       gDeck: (deck.g || []).map(inst), gUp: [], vcGradeAtStart: 0, // G zone: face down / face up (CR 4.14)
       giftType: "", giftVariant: {}, marks: {}, accel: [], legionUsed: [], // imaginary gifts, Legion
       orderZone: [], world: "", regalisUsed: 0, divineUsed: false, uniqueUsed: false, // D era: set orders, World, once-per-game skills
+      automod: [], // AutoMOD gauge (DZ): face-up cards
       crest: [], // crest zone (CR 4.18): crests from effects (Chronojet Dragon…); Energy Generator stays as useEnergy
       slots: { vc: slot(first), fl: null, fr: null, bl: null, bc: null, br: null },
       driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false,
@@ -240,6 +241,9 @@ const Game = (() => {
       case "myCrest": return m(p.crest);
       case "myLocked": return rcOf(pi).filter((k) => p.slots[k] && p.slots[k].locked).length;
       case "myArms": return m(p.slots.vc.arms || []); // Arms attached to your vanguard
+      case "myAutoMOD": return m(p.automod || []);
+      case "myOrderZoneDown": return m((p.orderZone || []).filter((c) => c.faceDown));
+      case "myOrderZoneUp": return m((p.orderZone || []).filter((c) => !c.faceDown));
       case "oppLocked": return rcOf(1 - pi).filter((k) => o.slots[k] && o.slots[k].locked).length;
       case "oppFrontRC": return units(o, frontOf(1 - pi).filter((k) => k !== "vc"));
       case "lastCount": return ctx.last ? ctx.last.count : 0;
@@ -300,7 +304,7 @@ const Game = (() => {
       }
     };
     for (const k of unitsOf(pi)) for (const x of abilitiesAt(pi, k)) add(x.card, k, zoneOf(k), [x]);
-    for (const card of p.orderZone || []) add(card, null, "OZ", ownAbilities(card)); // set orders in the order zone (CR 4.17)
+    for (const card of (p.orderZone || []).filter((c) => !c.faceDown)) add(card, null, "OZ", ownAbilities(card)); // set orders in the order zone (CR 4.17)
     for (const [zone, z] of Object.entries(CARD_ZONES)) for (const card of p[z] || []) { // [CONT](G zone) / (Drop)…
       if (!(card.down && zone === "damage") && (card.abilities || []).some((ab) => ab.kind === "CONT" && ab.zone === zone)) add(card, null, zone, ownAbilities(card).filter((x) => x.ab.zone === zone));
     }
@@ -329,7 +333,7 @@ const Game = (() => {
       && (ab.conds || []).every((c) => condOK(pi, c, { key: k, card }))
       && (ab.effects || []).some((e) => e.type === "restrict" && e.what === what && contTargets(pi, e.target, k).includes(key) && match(sl.card, e.filter, { pi, ctx: { key: k, card } })));
     for (const k of unitsOf(pi)) if (hit(k, zoneOf(k), abilitiesAt(pi, k))) return true;
-    for (const card of p.orderZone || []) if (hit(null, "OZ", ownAbilities(card))) return true;
+    for (const card of (p.orderZone || []).filter((c) => !c.faceDown)) if (hit(null, "OZ", ownAbilities(card))) return true;
     return false;
   }
   // player rules: S.rules (timed) + CONT "playerRule" effects. {pi: the player it binds, what, filter}
@@ -338,7 +342,7 @@ const Game = (() => {
     if ((S.rules || []).some(ok)) return true;
     for (const owner of [0, 1]) {
       const p = P(owner);
-      const lists = [...unitsOf(owner).map((k) => [k, zoneOf(k), abilitiesAt(owner, k)]), ...(p.orderZone || []).map((c) => [null, "OZ", ownAbilities(c)])];
+      const lists = [...unitsOf(owner).map((k) => [k, zoneOf(k), abilitiesAt(owner, k)]), ...(p.orderZone || []).filter((c) => !c.faceDown).map((c) => [null, "OZ", ownAbilities(c)])];
       for (const [k, zone, list] of lists) for (const { ab, card: src } of list) {
         if (ab.kind !== "CONT" || !zoneOK(ab.zone, zone) || !(ab.conds || []).every((c) => condOK(owner, c, { key: k, card: src }))) continue;
         for (const e of ab.effects || []) if (e.type === "playerRule" && ok({ pi: e.who === "me" ? owner : 1 - owner, what: e.what, filter: e.filter })) return true;
@@ -401,6 +405,7 @@ const Game = (() => {
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
       case "world": return String(c.text || "").toLowerCase().split("|").map((x) => x.trim()).includes((p.world || "").toLowerCase()); // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
+      case "sungThisTurn": return p.sungTurn === S.turn; // "if your vanguard sung a Song this turn"
       case "markers": { // "if this unit is on a (RC) with a Dragontree marker", "if you have three or more Dragontree markers"
         const keys = c.where === "self" ? (ctx.key ? [ctx.key] : []) : c.where === "vc" ? ["vc"] : c.where === "rc" ? rcOf(pi) : null;
         return cmp(markerTotal(pi, c.name, keys), c.op || "ge", +c.n || 1);
@@ -621,7 +626,7 @@ const Game = (() => {
   }
   function collectAll(pi, event, extra = {}) {
     for (const k of unitsOf(pi)) if (P(pi).slots[k]) collect(pi, k, event, extra);
-    for (const card of P(pi).orderZone || []) collect(pi, null, event, { ...extra, card, zone: "OZ" });
+    for (const card of (P(pi).orderZone || []).filter((c) => !c.faceDown)) collect(pi, null, event, { ...extra, card, zone: "OZ" });
     collectZones(pi, event, extra);
   }
   // abilities on cards in the hand, drop, soul, damage zone, bind zone or G zone (face up) that listen to this event
@@ -804,7 +809,7 @@ const Game = (() => {
   }
   // ---------- Move cards (Ability Language v2): any zone → any zone ----------
   // e = {from, to, n, upTo, all, random, look (deck top: how many to look at), rest (where the rest go), filter, chooser: "me"|"opp", reveal}
-  const ZONE_OF = { rideDeck: "ride", hand: "hand", deck: "deck", deckTop: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gzone: "gUp", orderZone: "orderZone",
+  const ZONE_OF = { automod: "automod", rideDeck: "ride", hand: "hand", deck: "deck", deckTop: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gzone: "gUp", orderZone: "orderZone",
     oppHand: "hand", oppDeckTop: "deck", oppDrop: "drop", oppSoul: "soul", oppDamage: "damage", oppBind: "bind" };
   const FIELD_FROM = { myRC: "rc", myUnits: "units", myFrontRC: "front", myBackRC: "back", oppRC: "rc", oppUnits: "units", oppFrontRC: "front" };
   const sideOf = (pi, from) => (String(from).startsWith("opp") ? 1 - pi : pi);
@@ -851,6 +856,7 @@ const Game = (() => {
       case "damageUp": c.down = false; q.damage.push(c); break;
       case "damageDown": c.down = true; q.damage.push(c); break;
       case "orderZone": q.orderZone.push(c); break;
+      case "automod": c.down = false; q.automod.push(c); log(`⚙ ${c.name} becomes an AutoMOD gauge`); break;
       case "prison": c.imprisoned = side; P(actor).orderZone.push(c); log(`⛓ ${c.name} is imprisoned`); break;
       case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from); break;
       default: q.drop.push(c);
@@ -1141,6 +1147,24 @@ const Game = (() => {
           log(`◆ ${q.name}: a ${e.name} marker on ${slotName(key)}`);
         }
         return { count: picked.length, cards: [] };
+      }
+      case "sing": { // "choose a face up Song from your Order Zone, and sing it" (its "When this Song is sung" ability, then it turns face down)
+        const songs = (p.orderZone || []).filter((c) => !c.faceDown && (c.abilities || []).some((a) => a.when === "sung") && match(c, e.filter, { pi, ctx }));
+        const [song] = await chooseCards(pi, "Sing which Song?", songs, songs.length ? 1 : 0, 1);
+        if (!song) { log("No face up Song to sing"); return { count: 0, cards: [] }; }
+        log(`🎵 ${p.name} sings ${song.name}`);
+        p.sungTurn = S.turn;
+        collect(pi, null, "sung", { card: song, zone: "OZ", subject: song });
+        await settle();
+        song.faceDown = true;
+        return { count: 1, cards: [song] };
+      }
+      case "flipOZ": { // "choose a face down card in your Order Zone, and you may turn it face up"
+        const want = e.up !== false;
+        const list = (p.orderZone || []).filter((c) => !!c.faceDown === want);
+        const picked = await chooseCards(pi, `Turn ${n} card(s) in your order zone face ${want ? "up" : "down"}`, list, e.upTo ? 0 : Math.min(n, list.length), Math.min(n, list.length));
+        picked.forEach((c) => (c.faceDown = !want));
+        return { count: picked.length, cards: picked };
       }
       case "dealDamage": await dealDamage(e.who === "me" ? pi : 1 - pi, n); break; // "choose one of your opponent's vanguards, and deal one damage"
       case "payCost": { // a second cost in the middle of an ability: "If X, [COST][…], Y" (the next steps need it paid)
@@ -1707,7 +1731,7 @@ const Game = (() => {
     try { await choose(pi, `✋ Manual: ${S.judge.text}\nUse the Judge panel to do it, then press Done.`, [{ id: "done", label: "Done ✓" }, { id: "skip", label: "Skip (do nothing)" }], 1, 1); }
     finally { S.judge = null; }
   }
-  const ZONES = ["hand", "deck", "drop", "soul", "damage", "bind", "removed", "orderZone", "gUp", "gDeck"];
+  const ZONES = ["hand", "deck", "drop", "soul", "damage", "bind", "removed", "orderZone", "automod", "gUp", "gDeck"];
   function judgeOp(op) {
     if (!S || over()) return err("No game");
     const p = P(op.pi);
