@@ -29,7 +29,7 @@ const CONT_TARGETS = ["self", "vc", "allFront", "allFrontRC", "allMyRC", "allMyU
 
 // Move cards (effect and cost) share these settings
 const MOVE_PARAMS = [["from", "mfrom", "from"], ["to", "mto", "to"], ["n", "num", "how many"], ["upTo", "bool", "up to (may choose fewer)"], ["all", "bool", "all matching cards"],
-  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["asRest", "bool", "call as [Rest]"], ["filter", "filter"]];
+  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["asRest", "bool", "call as [Rest]"], ["fromLast", "bool", "only the cards the step before handled (e.g. the cards Soul-Charged by this effect)"], ["eventCard", "bool", "only the card the timing is about (\"one of the discarded cards\")"], ["filter", "filter"]];
 const PER = [["per", "count", "× for each card in (optional)"], ["perFilter", "filter", "counting only"]];
 const SCHEMA = {
   kinds: {
@@ -185,6 +185,8 @@ const SCHEMA = {
     CB: { label: "Counter-Blast", params: [["n", "num"], ["filter", "filter", "only these cards (blank = any)"]], text: (p) => `Counter-Blast ${p.n}${p.filter && Object.keys(p.filter).length ? ` (${flt(p.filter)})` : ""}` },
     SB: { label: "Soul-Blast", params: [["n", "num"], ["filter", "filter", "only these cards (blank = any)"]], text: (p) => `Soul-Blast ${p.n}${p.filter && Object.keys(p.filter).length ? ` (${flt(p.filter)})` : ""}` },
     EB: { label: "Energy-Blast", params: [["n", "num"]], text: (p) => `Energy-Blast ${p.n}` },
+    reveal: { label: "Reveal cards (they stay where they are)", params: [["from", "mfrom", "from"], ["n", "num"], ["filter", "filter"]], text: (p) => `reveal ${p.n || 1} ${flt(p.filter)} from ${SCHEMA.paramOptions.mfrom[p.from || "hand"]}` },
+    payGauge: { label: "Pay equip gauge", params: [["n", "num"]], text: (p) => `pay ${p.n || 1} gauge` },
     discard: { label: "Discard from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `discard ${p.n} ${flt(p.filter)}` },
     move: { label: "Move cards (put a card from hand into soul, bind this card, put this unit on the bottom of the deck…)", params: MOVE_PARAMS, text: (p) => moveText(p) },
     restSelf: { label: "[Rest] this unit", params: [], text: () => "[Rest] this unit" },
@@ -212,6 +214,7 @@ const SCHEMA = {
     draw: { label: "Draw", params: [["n", "num"], ...PER], text: (p) => `draw ${p.n}${per(p)}` },
     CC: { label: "Counter-Charge", params: [["n", "num"], ...PER], text: (p) => `Counter-Charge ${p.n}${per(p)}` },
     SC: { label: "Soul-Charge", params: [["n", "num"], ...PER], text: (p) => `Soul-Charge ${p.n}${per(p)}` },
+    gauge: { label: "Equip gauge: put the top card of your deck face down as an equip gauge for this unit", params: [["n", "num"]], text: (p) => `put the top ${p.n > 1 ? p.n + " cards" : "card"} of your deck face down as equip gauge for this unit` },
     EC: { label: "Energy-Charge", params: [["n", "num"], ...PER], text: (p) => `Energy-Charge ${p.n}${per(p)}` },
     heal: { label: "Heal damage", params: [["n", "num"]], text: (p) => `heal ${p.n} damage` },
     move: { label: "★ Move cards (any zone → any zone: search, call from drop/soul, to hand/soul/deck/bind/damage, discard, mill…)", params: MOVE_PARAMS, text: (p) => moveText(p) },
@@ -267,9 +270,9 @@ const SCHEMA = {
     dur: { turn: "until end of turn", battle: "until end of battle", oppTurn: "until end of your opponent's turn", nextTurn: "until end of your next turn", game: "for the rest of the game (while on the field)" },
     restrict: { cantAttack: "cannot attack", cantBoost: "cannot boost", cantIntercept: "cannot intercept", cantBeAttacked: "cannot be attacked",
       cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantStand: "does not stand", canBoost: "gets [Boost]", canIntercept: "gets [Intercept]", canAttackBack: "can attack from the back row", canInterceptBack: "can intercept from the back row" },
-    prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard" },
+    prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard", mustGuard3: "must call three or more cards from hand to guard" },
     side: { opp: "your opponent", me: "you" },
-    tokenWhere: { any: "a (RC) you choose", empty: "an open (RC)" },
+    tokenWhere: { any: "a (RC) you choose", empty: "an open (RC)", orderZone: "your order zone" },
     powWho: { self: "this unit", vc: "your vanguard", anyRC: "one of your rear-guards", anyUnit: "one of your units", oppVc: "opponent's vanguard" },
     rideFrom: { deck: "deck", drop: "drop", soul: "soul", hand: "hand", rideDeck: "ride deck", bind: "bind zone", self: "this card itself" },
     from: { deck: "deck", drop: "drop", soul: "soul" },
@@ -284,12 +287,12 @@ const SCHEMA = {
       myColumn: "your other units in this unit's column", oppColumn: "opponent's units in this unit's column", imprisoned: "opponent's cards in your Prison", myCrest: "your crest zone", battleNo: "this turn's battles (this is the Nth)", lastCount: "cards the step before handled", lastMatch: "cards the step before handled (matching)" },
     op: { ge: "≥ (or more)", le: "≤ (or less)", eq: "= (exactly)", gt: "> (more than)", lt: "< (less than)" },
     who: { vc: "your vanguard", self: "this unit", oppVc: "opponent's vanguard", attacker: "the attacking unit", attacked: "the attacked unit" },
-    mfrom: { self: "this card itself", automod: "your AutoMOD gauge", hand: "your hand", deck: "your deck (search)", deckTop: "the top of your deck (look at N)", drop: "your drop", soul: "your soul",
+    mfrom: { self: "this card itself", rideDeck: "your ride deck", automod: "your AutoMOD gauge", hand: "your hand", deck: "your deck (search)", deckTop: "the top of your deck (look at N)", drop: "your drop", soul: "your soul",
       damage: "your damage zone", bind: "your bind zone", gzone: "your G zone (face up)", orderZone: "your order zone",
       myRC: "your rear-guards", myFrontRC: "your front row rear-guards", myBackRC: "your back row rear-guards",
       oppHand: "opponent's hand", oppDeckTop: "the top of opponent's deck", oppDrop: "opponent's drop", oppSoul: "opponent's soul", oppDamage: "opponent's damage zone",
       oppRC: "opponent's rear-guards", oppFrontRC: "opponent's front row rear-guards" },
-    mto: { hand: "hand", RC: "RC (call)", automod: "AutoMOD gauge (face up)", soul: "soul", drop: "drop (discard / retire)", deckTop: "top of the deck", deckBottom: "bottom of the deck", deck: "into the deck (shuffle)", bind: "bind zone",
+    mto: { rideDeck: "ride deck", hand: "hand", RC: "RC (call)", automod: "AutoMOD gauge (face up)", soul: "soul", drop: "drop (discard / retire)", deckTop: "top of the deck", deckBottom: "bottom of the deck", deck: "into the deck (shuffle)", bind: "bind zone",
       damageUp: "damage zone (face up)", damageDown: "damage zone (face down)", removed: "removed from the game", orderZone: "order zone", prison: "your Prison (imprison)" },
     chooser: { me: "you choose", opp: "your opponent chooses" },
     lookRest: { shuffle: "shuffle the rest into the deck", bottom: "the rest on the bottom", top: "the rest back on top", drop: "the rest into the drop", soul: "the rest into the soul" },
@@ -335,6 +338,8 @@ function flt(f, short) {
   if (f.clan) bits.push(`<${f.clan}>`);
   if (Array.isArray(f.names) && f.names.length) bits.push(f.names.map((n) => `"${n}"`).join(" or "));
   if (f.kai) bits.push("with a Kai icon");
+  if (f.skill) bits.push(`with the [${f.skill}] ability`);
+  if (f.notName) bits.push(`other than "${f.notName}"`);
   if (f.trig) bits.push(f.trig === "none" ? "non-trigger" : f.trig === "any" ? "trigger" : f.trig + " trigger");
   if (f.sentinel === "yes") bits.push("sentinel");
   if (f.sameNameVC) bits.push("with your vanguard's name");

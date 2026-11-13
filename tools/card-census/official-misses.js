@@ -1,5 +1,6 @@
 // What the reader can't read yet, over every unique ability text on the official card list (official/cards.json).
 // Run: node tools/card-census/official-misses.js [timing|cost|step|all] [rows] [words]
+// SETS=<regex on the card number> limits it, e.g. SETS="^DZ?-" for Standard (D / DZ) cards
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
@@ -16,7 +17,9 @@ const seen = new Set();
 const miss = {};
 let abilities = 0, full = 0, cardsN = 0, cardsFull = 0;
 const key = (t) => t.toLowerCase().replace(/"[^"]*"/g, '"X"').replace(/<[^>]*>/g, "<C>").replace(/\d+/g, "N").split(/\s+/).slice(0, WORDS).join(" ");
+const SETS = process.env.SETS ? new RegExp(process.env.SETS) : null;
 for (const c of cards) {
+  if (SETS && !SETS.test(String(c.card_number || ""))) continue;
   const t = String(c.text || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/?(i|b|em|strong|font|sskl)[^>]*>/gi, "");
   if (!t.trim() || t.trim() === "-" || seen.has(t)) continue;
   seen.add(t);

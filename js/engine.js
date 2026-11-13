@@ -151,7 +151,7 @@ const Game = (() => {
     S.players.forEach((p) => ["drop", "soul", "bind", "damage", "removed", "deck"].forEach((z) => { if (p[z].some((c) => c.protect)) p[z] = p[z].filter((c) => !c.protect); }));
     // tokens only exist on circles, tickets only in the hand / order zone (CR 15.4, 15.5): anywhere else they cease to exist
     S.players.forEach((p) => {
-      ["drop", "soul", "bind", "damage", "removed", "deck", "hand", "orderZone", "gUp"].forEach((z) => { if ((p[z] || []).some((c) => c.token)) p[z] = p[z].filter((c) => !c.token); });
+      ["drop", "soul", "bind", "damage", "removed", "deck", "hand", "orderZone", "gUp"].forEach((z) => { if ((p[z] || []).some((c) => c.token && !(z === "orderZone" && c.ozToken))) p[z] = p[z].filter((c) => !c.token || (z === "orderZone" && c.ozToken)); });
       ["drop", "soul", "bind", "damage", "removed", "deck"].forEach((z) => { if (p[z].some((c) => c.ticket)) p[z] = p[z].filter((c) => !c.ticket); });
     });
     S.players.forEach((p, pi) => { if (p.damage.length >= 6 && !S.loss[pi]) S.loss[pi] = "6 damage"; });
@@ -199,6 +199,12 @@ const Game = (() => {
       if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
     }
     if (f.kai && !c.kai) return false; // "with a Kai icon"
+    if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
+    if (f.skill) { // "with the [overDress] ability": the card field, or the keyword written in its text
+      const k = String(f.skill).toLowerCase();
+      const has = k === "overdress" ? !!(c.overDress || c.xoverDress || c.dress) : k === "xoverdress" ? !!c.xoverDress : k === "persona ride" ? !!c.persona : String(c.text || "").toLowerCase().includes("[" + k + "]");
+      if (!has) return false;
+    }
     if (f.sentinel === "yes" && !c.sentinel) return false;
     if (f.sentinel === "no" && c.sentinel) return false;
     if (env.pi !== undefined && S) {
@@ -476,6 +482,8 @@ const Game = (() => {
       case "SB": return (c.filter ? p.soul.filter((x) => match(x, c.filter, { pi, ctx })) : p.soul).length >= n;
       case "restRC": return rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].rest && match(p.slots[k].card, c.filter, { pi, ctx: { ...ctx, card: ctx.card } }) && !(c.filter && c.filter.other && k === ctx.key)).length >= n;
       case "EB": return p.energy >= n;
+      case "reveal": return (p[ZONE_OF[c.from] || c.from] || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
+      case "payGauge": { const own = ctx.key && p.slots[ctx.key] && p.slots[ctx.key].gauge ? p.slots[ctx.key].gauge.length : 0; return own >= n || unitsOf(pi).reduce((t, k) => t + ((p.slots[k] && p.slots[k].gauge) || []).length, 0) >= n; }
       case "discard": return p.hand.filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
       case "move": return moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : n);
       case "gFaceUp": return (p.gDeck || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n; // turn face-down G zone cards face up
@@ -491,6 +499,26 @@ const Game = (() => {
   async function pay(pi, c, ctx) {
     const p = P(pi), n = +c.n || 1;
     switch (c.type) {
+      case "reveal": { // "reveal a grade 3 card with "X" from hand / ride deck": shown, stays where it is
+        const zone = p[ZONE_OF[c.from] || c.from] || [];
+        const shown = await chooseCards(pi, `Reveal ${n} for the cost`, zone.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
+        log(`${p.name} reveals ${shown.map((x) => x.name).join(", ")}`);
+        ctx.revealed = shown;
+        break;
+      }
+      case "payGauge": { // the gauge of this unit first, else choose a unit with gauge
+        let left = n;
+        const take = (k) => { const g = p.slots[k] && p.slots[k].gauge; while (left > 0 && g && g.length) { const x = g.pop(); x.down = false; p.drop.push(x); left--; } };
+        if (ctx.key) take(ctx.key);
+        while (left > 0) {
+          const ks = unitsOf(pi).filter((k) => p.slots[k] && p.slots[k].gauge && p.slots[k].gauge.length);
+          if (!ks.length) break;
+          const [u] = await chooseUnits(pi, "Pay a gauge: choose a unit with equip gauge", ks.map((k) => ({ pi, key: k })), 1);
+          take(u ? u.key : ks[0]);
+        }
+        log(`${p.name} pays ${n} gauge`);
+        break;
+      }
       case "CB": {
         const up = p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx }));
         const picked = c.filter && up.length > n ? await chooseCards(pi, `Counter-Blast ${n}: choose face-up damage cards`, up, n, n) : up.slice(0, n);
@@ -692,6 +720,7 @@ const Game = (() => {
       if (key === "vc" && s.heart) { s.card = s.heart; s.heart = null; s.mate = s.heartMate || null; s.heartMate = null; return; }
     } else p[dest].push(s.card);
     if (s.under && s.under.length) p.drop.push(...s.under); // the originalDress separates (CR 6.7)
+    if (s.gauge && s.gauge.length) { s.gauge.forEach((g) => (g.down = false)); p.drop.push(...s.gauge); s.gauge = []; } // equip gauge goes with the unit
     p.slots[key] = null;
   }
   function retire(pi, key) { leaveCircle(pi, key, "drop"); }
@@ -826,6 +855,8 @@ const Game = (() => {
   function moveCandidates(pi, e, ctx) {
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     if (e.from === "self") return ctx.card ? [ctx.card] : [];
+    if (e.eventCard) { const z = q[ZONE_OF[e.from] || e.from] || []; return ctx.subject && z.includes(ctx.subject) && match(ctx.subject, e.filter, env) ? [ctx.subject] : []; } // "one of the discarded cards": the card the timing is about
+    if (e.fromLast) { const z = q[ZONE_OF[e.from] || e.from] || []; return ((ctx.last && ctx.last.cards) || []).filter((c) => z.includes(c) && match(c, e.filter, env)); }
     if (FIELD_FROM[e.from]) {
       const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK }[FIELD_FROM[e.from]];
       return unitsAt(side, keys, e.filter, env).filter((u) => !(e.filter && e.filter.other && ctx.key === u.key && side === pi));
@@ -866,6 +897,7 @@ const Game = (() => {
       case "damageUp": c.down = false; q.damage.push(c); break;
       case "damageDown": c.down = true; q.damage.push(c); break;
       case "orderZone": q.orderZone.push(c); break;
+      case "rideDeck": q.ride.push(c); break;
       case "automod": c.down = false; q.automod.push(c); log(`⚙ ${c.name} becomes an AutoMOD gauge`); break;
       case "prison": c.imprisoned = side; P(actor).orderZone.push(c); log(`⛓ ${c.name} is imprisoned`); break;
       case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from); break;
@@ -900,7 +932,8 @@ const Game = (() => {
       // several zones ("hand|drop"): one list to choose from; each card leaves its own zone
       const zonesOf = String(e.from).includes("|") ? String(e.from).split("|").map((z) => q[ZONE_OF[z] || z] || []) : null;
       const pool = look || (zonesOf ? zonesOf.flat() : q[ZONE_OF[e.from] || "drop"]);
-      const cands = pool.filter((c) => match(c, e.filter, env));
+      const only = e.fromLast ? (ctx.last && ctx.last.cards) || [] : e.eventCard ? (ctx.subject ? [ctx.subject] : []) : null; // "the cards the step before handled" / "the card the timing is about"
+      const cands = pool.filter((c) => match(c, e.filter, env) && (!only || only.includes(c)));
       if (look && e.reveal) log(`${q.name} reveals ${look.map((c) => c.name).join(", ") || "nothing"}`);
       if (e.all) picked = cands.slice();
       else if (e.random) { const tmp = cands.slice(); shuffle(tmp); picked = tmp.slice(0, n); }
@@ -996,6 +1029,11 @@ const Game = (() => {
         if (!def) { log(`Token "${e.name}" isn't in the card library (make a card with Token ticked)`); return { count: 0 }; }
         const out = [];
         const cnt = Math.max(1, +e.n || 1);
+        if (e.where === "orderZone") { // "put a Forge token in your order zone": it stays there
+          for (let i = 0; i < cnt; i++) { const t = { ...inst(def), token: true, ozToken: true }; p.orderZone.push(t); out.push(t); }
+          log(`${p.name} puts ${cnt > 1 ? cnt + " " : "a "}${def.name} token${cnt > 1 ? "s" : ""} into the order zone`);
+          return { count: out.length, cards: out };
+        }
         for (let i = 0; i < cnt; i++) {
           const t = { ...inst(def), token: true };
           const keys = e.where === "empty" ? rcOf(pi).filter((k) => !p.slots[k]) : rcOf(pi);
@@ -1030,9 +1068,15 @@ const Game = (() => {
         return { count: us.length };
       }
       case "rideBy": { // Superior Ride: ride a card from hand / deck / drop / soul / ride deck / this card, by an effect
-        const src = e.from || "deck";
-        const zone = src === "rideDeck" ? p.ride : src === "self" ? null : p[src];
-        const pool = src === "self" ? (ctx.card ? [ctx.card] : []) : (zone || []).filter((c) => c.type !== "order" && c.type !== "g" && match(c, e.filter, { pi, ctx }));
+        let src = e.from || "deck";
+        let only = null;
+        if (src === "revealed") { // "ride the card revealed for this cost": the card shown when paying, wherever it is (hand / ride deck)
+          only = ctx.revealed || [];
+          src = only.length && p.ride.includes(only[0]) ? "rideDeck" : "hand";
+        }
+        const zone0 = src === "rideDeck" ? p.ride : src === "self" ? null : p[src];
+        const zone = zone0;
+        const pool = src === "self" ? (ctx.card ? [ctx.card] : []) : (zone || []).filter((c) => c.type !== "order" && c.type !== "g" && match(c, e.filter, { pi, ctx }) && (!only || only.includes(c)));
         const [c] = src === "self" ? pool : await chooseCards(pi, `Ride by effect: choose a card from your ${src === "rideDeck" ? "ride deck" : src}`, pool, e.upTo ? 0 : Math.min(1, pool.length), 1);
         if (src === "deck") shuffle(p.deck);
         if (!c) return { count: 0 };
@@ -1079,7 +1123,16 @@ const Game = (() => {
       case "drive": p.driveBonus += amt; break;
       case "draw": draw(pi, n); return { count: n };
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
-      case "SC": for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } break;
+      case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
+      // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
+      case "gauge": {
+        const sl = ctx.key && p.slots[ctx.key];
+        if (!sl) return { count: 0, cards: [] };
+        const got = [];
+        for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); c.down = true; (sl.gauge = sl.gauge || []).push(c); got.push(c); }
+        if (got.length) log(`🔧 ${sl.card.name} gets ${got.length} equip gauge (${sl.gauge.length})`);
+        return { count: got.length, cards: got };
+      }
       case "EC": p.energy = Math.min(10, p.energy + n); break;
       case "heal": { // the player chooses which damage to heal (CR 11.10.2.5)
         const hs = await chooseCards(pi, `Heal: choose ${Math.min(n, p.damage.length)} damage`, p.damage, Math.min(n, p.damage.length), Math.min(n, p.damage.length));
@@ -1957,6 +2010,7 @@ const Game = (() => {
     if (!b) return err("No attack");
     const ai = S.active, di = 1 - ai, p = P(ai), d = P(di);
     if (b.handGuards === 1 && ruleOn(di, "mustGuard2")) return err("You must call two or more cards from your hand to guard (or none)");
+    if (b.handGuards > 0 && b.handGuards < 3 && ruleOn(di, "mustGuard3")) return err("You must call three or more cards from your hand to guard (or none)");
     S.controller = ai;
     if (b.att === "vc") {
       const n = driveOf(p.slots.vc.card) + p.driveBonus;
