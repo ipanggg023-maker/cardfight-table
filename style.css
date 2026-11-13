@@ -486,3 +486,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 
 /* rulings notes in the card detail */
 .rnotes { font-size: .78rem; color: #ffd28a; border-left: 2px solid var(--gold); padding-left: 6px; }
+
+/* card detail: the official stat line */
+.statline { font-size: 12px; line-height: 1.45; color: var(--fg); }

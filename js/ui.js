@@ -273,11 +273,10 @@ function infoPanel(c) {
   if (!c) return `<p class="muted">Hover a card to see its details.</p>`;
   return `${Pics.url(c) ? `<img src="${esc(Pics.url(c))}" alt="" decoding="async">` : ""}
     <h3>${esc(c.name)}</h3>
-    <p class="muted">${c.type === "order" ? "Order" : "Grade " + c.grade} · ${esc(c.nation || "")}${c.race ? " · " + esc(c.race) : ""}</p>
-    ${c.type !== "order" ? `<p>Power ${fmt(c.power)} · Shield ${fmt(c.shield || 0)} · Crit ${c.crit || 1}</p>` : ""}
-    ${c.trigger ? `<p>${TRIG[c.trigger].icon} ${TRIG[c.trigger].name}: ${TRIG[c.trigger].desc}</p>` : ""}
+    <p class="statline">${esc(cardStatLine(c))}</p>
+    ${cardNoLine(c) ? `<p class="muted">${esc(cardNoLine(c))}</p>` : ""}
+    ${c.trigger && TRIG[c.trigger] ? `<p>${TRIG[c.trigger].icon} ${TRIG[c.trigger].name}: ${TRIG[c.trigger].desc}</p>` : ""}
     ${c.sentinel ? "<p>◆ Sentinel: discard 1 to make the attacked unit unhittable</p>" : ""}
-    ${c.persona ? "<p>Persona Ride</p>" : ""}
     ${(c.abilities || []).map((a) => `<p class="abl">${esc(describeAbility(a))}</p>`).join("")}
     ${c.text ? `<p class="muted pre">${esc(c.text)}</p>` : ""}${c.notes ? `<p class="pre rnotes"><b>Rulings:</b> ${esc(c.notes)}</p>` : ""}`;
 }

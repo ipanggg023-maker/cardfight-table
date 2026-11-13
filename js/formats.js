@@ -66,6 +66,38 @@ const isNationName = (s) => NATIONS.some((n) => fmtNorm(n) === fmtNorm(s));
 const isNeutral = (c) => { const k = fmtNorm(c.clan || c.nation); return !k || k === "cray elemental" || k === "-"; };
 
 // Card pool icon: the card's own field, else guessed from its collection number (D-/DZ- = D, V- = V).
+// The card's stat line as the official card list prints it:
+// "Normal Unit | Dragon Empire | Flame Dragon | Kagero | Grade 3 | Power 13000 | Critical 1 | Shield | Twin Drive!!, Persona Ride"
+// Skills follow the same defaults as the engine (Boost G0–1, Intercept G2, Twin Drive G3+, Triple Drive stride G units).
+function cardStatLine(c) {
+  if (!c) return "";
+  const fl = (v, d) => (v === true || v === "1" ? true : v === false || v === "0" ? false : d);
+  const num = (n) => (n == null || n === "" ? "" : String(n));
+  const type = c.type === "order" ? (c.ticket ? "Ticket" : c.setOrder ? "Set Order" : (c.abilities || []).some((a) => a.kind === "BLITZ") ? "Blitz Order" : "Normal Order")
+    : c.type === "trigger" ? "Trigger Unit" : c.type === "g" ? "G Unit" : c.type === "crest" ? "Crest" : c.token ? "Token Unit" : "Normal Unit";
+  const parts = [type, c.nation, c.race, c.clan && c.clan !== c.nation ? c.clan : ""].filter((x) => x && x !== "-");
+  if (c.type === "crest") return parts.join(" | ");
+  parts.push(`Grade ${num(c.grade)}`);
+  if (c.type !== "order") {
+    parts.push(`Power ${c.type === "g" ? "+" : ""}${num(c.power)}`, `Critical ${num(c.crit || 1)}`, `Shield${c.shield ? " " + c.shield : ""}`);
+    const sk = [];
+    if (fl(c.boost, c.grade <= 1)) sk.push("Boost");
+    if (fl(c.intercept, c.grade === 2)) sk.push("Intercept");
+    const dr = +c.drive || (c.type === "g" ? (c.gKind === "guardian" ? 0 : 3) : c.grade >= 3 ? 2 : 1);
+    if (dr === 2) sk.push("Twin Drive!!"); else if (dr === 3) sk.push("Triple Drive!!!");
+    if (c.persona) sk.push("Persona Ride");
+    if (c.gift) sk.push("Imaginary Gift: " + c.gift[0].toUpperCase() + c.gift.slice(1));
+    if (sk.length) parts.push(sk.join(", "));
+    if (c.trigger) {
+      const tn = { crit: "Critical", front: "Front", draw: "Draw", heal: "Heal", over: "Over", stand: "Stand" }[c.trigger] || c.trigger;
+      parts.push(`${tn} Trigger`, `+${+c.trigPower || (c.trigger === "over" ? 100000000 : 10000)}`);
+    }
+  }
+  return parts.join(" | ");
+}
+// "DZ-SS03/018EN · RRR"
+const cardNoLine = (c) => [c.number || (c.source && c.source.number) || "", c.rarity || ""].filter(Boolean).join(" · ");
+
 function iconOf(c) {
   if (c.icon === "D" || c.icon === "V" || c.icon === "-") return c.icon;
   const num = String((c.source && c.source.number) || c.number || "");

@@ -29,6 +29,16 @@ const TextParse = (() => {
     for (const l of lines) (isStatLine(l) ? statLines : rest).push(l);
     const out = {};
     if (!statLines.length) return { stats: out, rest: String(text || "").trim() };
+    // a whole card page pasted: the first line is the name; illustrator and flavor text (a fully quoted line) aren't abilities
+    for (let i = rest.length - 1; i >= 0; i--) {
+      const l = rest[i].trim();
+      if (/^illust(rator|ration)?\s*[:：]?/i.test(l) || /^["“].*["”]$/.test(l)) rest.splice(i, 1);
+    }
+    const firstAt = rest.findIndex((l) => l.trim());
+    if (firstAt >= 0 && lines.indexOf(rest[firstAt]) < lines.indexOf(statLines[0])) {
+      const l = rest[firstAt].trim();
+      if (l.length <= 80 && !/^[\[(（【]/.test(l) && !/[.!:]$/.test(l) && !/\b(you|your|this card|this unit)\b/i.test(l)) { out.name = l; rest.splice(firstAt, 1); }
+    }
     const tokens = statLines.join("|").split("|").flatMap((t) => (/drive|persona|boost|intercept|gift/i.test(t) ? t.split(",") : [t])).map((t) => t.trim()).filter(Boolean);
     let seenGrade = false;
     const races = [];

@@ -142,11 +142,12 @@ function renderCard() {
   if (!c) { $("#cardForm").innerHTML = `<p class="muted">Pick a card on the left or create a new one.</p>`; return; }
   $("#cardForm").innerHTML = `
     <h2>${esc(c.name)}</h2>
+    <p class="statline" title="As the official card list prints it: compare with the card's page"><span class="sl">${esc(cardStatLine(c))}</span>${cardNoLine(c) ? ` <span class="muted">· ${esc(cardNoLine(c))}</span>` : ""}</p>
     ${typeof cardExtrasHTML === "function" ? cardExtrasHTML(c) : ""}
     <details class="paste" ${c.abilities.length || c.text ? "" : "open"}>
       <summary>Fill from card text</summary>
-      <p class="muted">Paste the card's text (stats and [AUTO]/[ACT]/[CONT] lines). Stats and abilities are filled in as a best guess. Check every purple line below, then save.</p>
-      <textarea id="pasteText" placeholder="Grade 3 / Power 13000 / Shield 0 / Critical 1&#10;[AUTO](VC):When this unit attacks, [COST][Counter-Blast 1], …"></textarea>
+      <p class="muted">Paste the card from its page on the official card list: name, the stat line (Normal Unit | Nation | Race | … | Grade | Power | Critical | Shield | skills), the ability text, card number and rarity. Every field is filled in; abilities are a best guess, so check every purple line below, then save. Pasting only the stat line keeps the abilities.</p>
+      <textarea id="pasteText" placeholder="Card name&#10;Normal Unit | Dragon Empire | Flame Dragon | Kagero | Grade 3 | Power 13000 | Critical 1 | Shield | Twin Drive!!, Persona Ride&#10;[AUTO](VC):When this unit attacks, [COST][Counter-Blast 1], …&#10;DZ-SS03/018EN | RRR"></textarea>
       <button data-do="fill" class="go">Fill from text</button>
     </details>
     <div class="fgrid">
@@ -436,7 +437,7 @@ $("#cardForm").addEventListener("click", async (e) => {
       const { abilities, ...statsFound } = r;
       abilities.forEach((a) => delete a.unread);
       // re-reading text of an imported card keeps its printed stats; only flags and abilities are taken
-      const keep = b.dataset.do === "reread" ? Object.fromEntries(Object.entries(statsFound).filter(([k]) => !["grade", "power", "shield", "crit", "type", "trigger", "nation", "race"].includes(k))) : statsFound;
+      const keep = b.dataset.do === "reread" ? Object.fromEntries(Object.entries(statsFound).filter(([k]) => !["grade", "power", "shield", "crit", "type", "trigger", "nation", "race", "clan", "name", "number", "rarity"].includes(k))) : statsFound;
       if (keep.number) { cur.source = { ...(cur.source || {}), number: keep.number }; delete keep.number; }
       Object.assign(cur, keep, abText ? { text: abText, abilities } : {});
       if (cur.type !== "trigger") cur.trigger = cur.trigger || null;
@@ -1518,4 +1519,14 @@ $("#rsChoice").addEventListener("change", () => {
   const groups = $("#rsChoice").value.split("\n").map((l) => l.split("|").map((x) => x.trim()).filter(Boolean)).filter((g) => g.length > 1);
   saveRestrictions(fmt, R.list, groups);
   toast("Choice restrictions saved");
+});
+
+// keep the official-style stat line under the card name in step with the fields
+$("#cardForm").addEventListener("input", () => {
+  const el = $("#cardForm .statline .sl");
+  if (el && cur) el.textContent = cardStatLine(cur);
+});
+$("#cardForm").addEventListener("change", () => {
+  const el = $("#cardForm .statline .sl");
+  if (el && cur) el.textContent = cardStatLine(cur);
 });
