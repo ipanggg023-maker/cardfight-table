@@ -181,6 +181,7 @@ const Game = (() => {
     if (t === "order" && c.type !== "order") return false;
     if (t === "g" && c.type !== "g") return false;
     if (f.nameExact && !names.includes(String(f.nameExact).toLowerCase())) return false;
+    if (Array.isArray(f.names) && f.names.length && !f.names.some((n) => names.includes(String(n).toLowerCase()))) return false; // one of these exact names
     if (f.clan && !c.allClans) { const w = String(f.clan).toLowerCase(); if (![c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(w))) return false; }
     if (f.trig && f.trig !== "") {
       if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
@@ -380,7 +381,10 @@ const Game = (() => {
       case "oppTurn": return S.active !== pi;
       case "legion": return !!p.slots.vc.mate;
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
-      case "world": return (p.world || "").toLowerCase() === String(c.text || "").toLowerCase();
+      case "world": return String(c.text || "").toLowerCase().split("|").map((x) => x.trim()).includes((p.world || "").toLowerCase()); // "Dark Night|Abyssal Dark Night"
+      case "onVC": return ctx.key === "vc";
+      case "onRC": return !!ctx.key && ctx.key !== "vc" && rcOf(pi).includes(ctx.key);
+      case "gradeVs": { const a = +p.slots.vc.card.grade, b = +P(1 - pi).slots.vc.card.grade; return ({ lt: a < b, le: a <= b, eq: a === b, ge: a >= b, gt: a > b })[c.op || "lt"]; }
       case "orderZone": return (p.orderZone || []).length >= n;
       case "vcName": return [p.slots.vc.card, p.slots.vc.heart, p.slots.vc.mate].some((x) => x && [x.name, ...(x.alias || [])].some((nm) => String(nm).toLowerCase().includes((c.text || "").toLowerCase())));
       case "inBattleAtt": return !!S.battle && S.battle.att === ctx.key && S.active === pi; // "during the battle this unit attacked"
@@ -430,15 +434,16 @@ const Game = (() => {
   function canPay(pi, c, ctx) {
     const p = P(pi), n = +c.n || 1;
     switch (c.type) {
-      case "CB": return faceUp(p) >= n;
-      case "SB": return p.soul.length >= n;
+      case "CB": return c.filter ? p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx })).length >= n : faceUp(p) >= n;
+      case "SB": return (c.filter ? p.soul.filter((x) => match(x, c.filter, { pi, ctx })) : p.soul).length >= n;
+      case "restRC": return rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].rest && match(p.slots[k].card, c.filter, { pi, ctx: { ...ctx, card: ctx.card } }) && !(c.filter && c.filter.other && k === ctx.key)).length >= n;
       case "EB": return p.energy >= n;
       case "discard": return p.hand.filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
       case "move": return moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : n);
       case "gFaceUp": return (p.gDeck || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n; // turn face-down G zone cards face up
       case "restSelf": return selfThere(pi, ctx) && !P(pi).slots[ctx.key].rest;
       case "retireSelf": case "selfToSoul": return selfThere(pi, ctx) && ctx.key !== "vc";
-      case "retireRC": return rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key).length >= n;
+      case "retireRC": return rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key && match(p.slots[k].card, c.filter, { pi, ctx })).length >= n;
       case "dropToTop": { const max = c.maxTrig === "" || c.maxTrig === undefined ? n : +c.maxTrig; return p.drop.length >= n && p.drop.filter((x) => !x.trigger).length + Math.min(max, p.drop.filter((x) => x.trigger).length) >= n; }
       default: return true;
     }
@@ -446,9 +451,20 @@ const Game = (() => {
   async function pay(pi, c, ctx) {
     const p = P(pi), n = +c.n || 1;
     switch (c.type) {
-      case "CB": p.damage.filter((d) => !d.down).slice(0, n).forEach((d) => (d.down = true)); break;
+      case "CB": {
+        const up = p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx }));
+        const picked = c.filter && up.length > n ? await chooseCards(pi, `Counter-Blast ${n}: choose face-up damage cards`, up, n, n) : up.slice(0, n);
+        picked.forEach((d) => (d.down = true));
+        break;
+      }
+      case "restRC": {
+        const keys = rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].rest && match(p.slots[k].card, c.filter, { pi, ctx }) && !(c.filter && c.filter.other && k === ctx.key));
+        const us = await chooseUnits(pi, `Rest ${n} of your rear-guards`, keys.map((k) => ({ pi, key: k })), n);
+        us.forEach((u) => { if (p.slots[u.key]) p.slots[u.key].rest = true; });
+        break;
+      }
       case "SB": {
-        const picked = await chooseCards(pi, `Soul-Blast ${n}: choose cards from soul`, p.soul, n, n);
+        const picked = await chooseCards(pi, `Soul-Blast ${n}: choose cards from soul`, c.filter ? p.soul.filter((x) => match(x, c.filter, { pi, ctx })) : p.soul, n, n);
         picked.forEach((x) => { p.soul.splice(p.soul.indexOf(x), 1); p.drop.push(x); collect(pi, null, "soulToDrop", { card: x, zone: "soul", subject: x }); });
         break;
       }
@@ -481,7 +497,7 @@ const Game = (() => {
         break;
       }
       case "retireRC": {
-        const us = await chooseUnits(pi, `Retire ${n} of your rear-guards`, unitsAt(pi, rcOf(pi)).filter((u) => u.key !== ctx.key), n);
+        const us = await chooseUnits(pi, `Retire ${n} of your rear-guards`, unitsAt(pi, rcOf(pi)).filter((u) => u.key !== ctx.key && match(P(pi).slots[u.key].card, c.filter, { pi, ctx })), n);
         us.forEach((u) => retireBy(u.pi, u.key, pi));
         break;
       }
@@ -1324,10 +1340,18 @@ const Game = (() => {
     if (!next) return err("No next grade in ride deck");
     const hi = p.hand.findIndex((c) => c.uid === discardUid);
     if (hi < 0) return err("Choose a card in hand to discard");
+    const ok = rideAllowed(pi, next);
+    if (ok !== true) return err(ok);
     p.drop.push(p.hand.splice(hi, 1)[0]);
     p.ride.splice(p.ride.indexOf(next), 1);
     await doRide(pi, next, false);
   });
+  // card.cantBeRidden ("This card cannot be ridden"), card.rideFrom (filter: "can only be ridden from a grade 3 with "X" in its card name")
+  function rideAllowed(pi, card) {
+    if (card.cantBeRidden) return `${card.name} cannot be ridden`;
+    if (card.rideFrom && !match(P(pi).slots.vc.card, card.rideFrom, { pi })) return `${card.name} can only be ridden from ${flt(card.rideFrom)}`;
+    return true;
+  }
   const rideFromHand = (uid) => run(async () => {
     if (S.phase !== "ride") return err("You can only ride in the ride phase");
     const pi = S.active, p = P(pi);
@@ -1335,6 +1359,8 @@ const Game = (() => {
     if (!card || card.type === "order" || card.protect) return err("That card can't ride");
     const g = p.slots.vc.card.grade;
     if (card.grade !== g && card.grade !== g + 1) return err(`Ride grade ${g} or ${g + 1} only`);
+    const ok = rideAllowed(pi, card);
+    if (ok !== true) return err(ok);
     p.hand.splice(p.hand.indexOf(card), 1);
     await doRide(pi, card, true);
   });
@@ -1750,7 +1776,7 @@ const Game = (() => {
   const intercept = (key) => run(async () => {
     const b = S.battle, di = 1 - S.active, d = P(di), s = d.slots[key];
     if (!b) return err("No attack");
-    if (!["fl", "fr"].includes(key) || !s) return err("Only front row rear-guards can intercept");
+    if (!s || !(["fl", "fr"].includes(key) || (rcOf(di).includes(key) && restricted(di, key, "canInterceptBack")))) return err("Only front row rear-guards can intercept");
     if (s.locked) return err("A locked card can't intercept");
     if (!canInterceptIcon(s.card) && !restricted(di, key, "canIntercept")) return err("This unit has no Intercept skill");
     if (key === b.tgt) return err("The attacked unit can't intercept");

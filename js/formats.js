@@ -182,7 +182,9 @@ function validateDeck(deck, byId) {
   if (count((c) => c.ace) > 1) errs.push("Max 1 Ace Unit (CR 14.56)");
   const names = {};
   both.forEach((c) => (names[c.name] = (names[c.name] || 0) + 1));
-  Object.entries(names).forEach(([n, k]) => { if (k > 4) errs.push(`"${n}": ${k} copies (max 4${F.rideDeck ? " incl. ride deck" : ""})`); });
+  // the card's own limit ("You may only have one … in a deck" / "You may have up to sixteen …": card.deckMax) replaces 4
+  const maxOf = (n) => { const c = both.find((x) => x.name === n); return c && +c.deckMax > 0 ? +c.deckMax : 4; };
+  Object.entries(names).forEach(([n, k]) => { const mx = maxOf(n); if (k > mx) errs.push(`"${n}": ${k} copies (max ${mx}${F.rideDeck ? " incl. ride deck" : ""})`); });
   // card pool
   const all = [...both, ...gcards];
   if (F.poolIcon) {

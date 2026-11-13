@@ -148,6 +148,9 @@ const SCHEMA = {
     heart: { label: "Your heart card is … (Stride)", params: [["filter", "filter"]], text: (p) => `you have a heart card that is ${flt(p.filter)}` },
     ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
+    onVC: { label: "This unit is on (VC)", params: [], text: () => "this unit is on (VC)" },
+    onRC: { label: "This unit is on (RC)", params: [], text: () => "this unit is on (RC)" },
+    gradeVs: { label: "Your vanguard's grade vs your opponent's vanguard's", params: [["op", "op", "is"]], text: (p) => `your vanguard's grade is ${({ lt: "lower than", le: "at most", eq: "the same as", ge: "at least", gt: "higher than" })[p.op || "lt"]} your opponent's vanguard's` },
     targetRC: { label: "This battle's attack is on a rear-guard", params: [], text: () => "it attacked a rear-guard" },
     byMe: { label: "It was by your own card's ability", params: [], text: () => "it was by your own card's ability" },
     mainPhase: { label: "During your main phase", params: [], text: () => "during your main phase" },
@@ -155,15 +158,16 @@ const SCHEMA = {
   },
 
   costs: {
-    CB: { label: "Counter-Blast", params: [["n", "num"]], text: (p) => `Counter-Blast ${p.n}` },
-    SB: { label: "Soul-Blast", params: [["n", "num"]], text: (p) => `Soul-Blast ${p.n}` },
+    CB: { label: "Counter-Blast", params: [["n", "num"], ["filter", "filter", "only these cards (blank = any)"]], text: (p) => `Counter-Blast ${p.n}${p.filter && Object.keys(p.filter).length ? ` (${flt(p.filter)})` : ""}` },
+    SB: { label: "Soul-Blast", params: [["n", "num"], ["filter", "filter", "only these cards (blank = any)"]], text: (p) => `Soul-Blast ${p.n}${p.filter && Object.keys(p.filter).length ? ` (${flt(p.filter)})` : ""}` },
     EB: { label: "Energy-Blast", params: [["n", "num"]], text: (p) => `Energy-Blast ${p.n}` },
     discard: { label: "Discard from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `discard ${p.n} ${flt(p.filter)}` },
     move: { label: "Move cards (put a card from hand into soul, bind this card, put this unit on the bottom of the deck…)", params: MOVE_PARAMS, text: (p) => moveText(p) },
     restSelf: { label: "[Rest] this unit", params: [], text: () => "[Rest] this unit" },
     retireSelf: { label: "Retire this unit", params: [], text: () => "retire this unit" },
     selfToSoul: { label: "Put this unit into soul", params: [], text: () => "put this unit into soul" },
-    retireRC: { label: "Retire your rear-guards", params: [["n", "num"]], text: (p) => `retire ${p.n} of your rear-guards` },
+    retireRC: { label: "Retire your rear-guards", params: [["n", "num"], ["filter", "filter"]], text: (p) => `retire ${p.n} of your ${p.filter && Object.keys(p.filter).length ? flt(p.filter) + " " : ""}rear-guards` },
+    restRC: { label: "[Rest] your rear-guards", params: [["n", "num"], ["filter", "filter"]], text: (p) => `[Rest] ${p.n || 1} of your ${p.filter && Object.keys(p.filter).length ? flt(p.filter) + " " : ""}rear-guards` },
     gFaceUp: { label: "Turn face-down G zone card(s) face up", params: [["n", "num"], ["filter", "filter"]], text: (p) => `turn ${p.n || 1} ${flt(p.filter)} in your G zone face up` },
     dropToTop: { label: "Return drop cards to the top of the deck (Seek Mate)", params: [["n", "num"], ["maxTrig", "num", "max trigger units (D-Seek Mate: 2)"]],
       text: (p) => `return ${p.n || 4} cards from your drop to the top of your deck${p.maxTrig !== undefined && p.maxTrig !== "" ? ` (max ${p.maxTrig} trigger units)` : ""}` },
@@ -228,7 +232,7 @@ const SCHEMA = {
     gift: { force: "Force", accel: "Accel", protect: "Protect" },
     dur: { turn: "until end of turn", battle: "until end of battle", oppTurn: "until end of your opponent's turn", nextTurn: "until end of your next turn", game: "for the rest of the game (while on the field)" },
     restrict: { cantAttack: "cannot attack", cantBoost: "cannot boost", cantIntercept: "cannot intercept", cantBeAttacked: "cannot be attacked",
-      cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantStand: "does not stand", canBoost: "gets [Boost]", canIntercept: "gets [Intercept]", canAttackBack: "can attack from the back row" },
+      cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantStand: "does not stand", canBoost: "gets [Boost]", canIntercept: "gets [Intercept]", canAttackBack: "can attack from the back row", canInterceptBack: "can intercept from the back row" },
     prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard" },
     side: { opp: "your opponent", me: "you" },
     tokenWhere: { any: "a (RC) you choose", empty: "an open (RC)" },
@@ -294,6 +298,7 @@ function flt(f, short) {
   if (f.ctype && f.ctype !== "any") bits.push(SCHEMA.paramOptions.ctype[f.ctype]);
   if (f.nameExact) bits.push(`named "${f.nameExact}"`);
   if (f.clan) bits.push(`<${f.clan}>`);
+  if (Array.isArray(f.names) && f.names.length) bits.push(f.names.map((n) => `"${n}"`).join(" or "));
   if (f.kai) bits.push("with a Kai icon");
   if (f.trig) bits.push(f.trig === "none" ? "non-trigger" : f.trig === "any" ? "trigger" : f.trig + " trigger");
   if (f.sentinel === "yes") bits.push("sentinel");

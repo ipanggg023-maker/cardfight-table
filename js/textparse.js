@@ -289,6 +289,13 @@ const TextParse = (() => {
     if (/this card is (regarded as being )?from all clans/i.test(text)) out.allClans = true;
     const sg = text.match(/while (?:you are )?paying the cost (?:for|of) \[?stride\]?,? this card gets grade \+(\d)/i);
     if (sg) out.strideGrade = +sg[1];
+    if (/this card cannot be ridden/i.test(text)) out.cantBeRidden = true;
+    const rf = text.match(/this card can only be ridden from (?:a |an )?(grade \d )?(?:card |unit )?(?:with "([^"]+)" in its card name|named "([^"]+)")/i);
+    if (rf) out.rideFrom = { ...(rf[1] ? { gmin: +rf[1].match(/\d/)[0], gmax: +rf[1].match(/\d/)[0] } : {}), ...(rf[2] ? { name: rf[2] } : { nameExact: rf[3] }) };
+    const onlyN = text.match(/you may only have (one|two|three|four|\d+) "([^"]+)" in (?:a|your) deck/i);
+    if (onlyN) out.deckMax = toNum(onlyN[1]);
+    const upToN = text.match(/you may have up to (\w+) "([^"]+)" in (?:a|your) deck/i);
+    if (upToN) out.deckMax = toNum(upToN[1]);
     // "[CONT]:The normal ride of this card from a grade 3 card with a Kai icon and a different card name from this card also becomes a persona ride."
     if (/normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride/i.test(text)) out.personaFromKai = true;
     // "[CONT](Hand):When this card would be discarded, it may be discarded as a grade 4 or 3…" (counts for the stride cost)
@@ -320,7 +327,8 @@ const TextParse = (() => {
     .replace(/\((?:this ability is active|active on|active if|when a unit of the same clan|you may only have|this card is regarded|this card cannot|it will not be retired|the locked card|a unit with)[^()]*(?:\([^()]*\)[^()]*)*\)/gi, "")
     .replace(/\((?![^()]*\b(?:VC|RC|GC)\b\)$)[^()]{26,}(?:\([^()]*\)[^()]*)*\)/g, (m) => (/^\((VC|RC|GC|\[)/.test(m) ? m : ""))
     .replace(/\[(soul-charge|counter-charge|energy-charge) (\d+)\]/gi, "$1 $2")
-    .replace(/((?:counter|soul)-blast \d+)\s*[-‐–]\s*(?:card|cards) with "[^"]*" in (?:its|their) card names?/gi, "$1")
+    .replace(/\[(Counter|Soul|Energy)-Blast\]\s*(\d+)\]/gi, "[$1-Blast $2]") // typo on the site: "[Counter-Blast]1]"
+    .replace(/(^|:)\s*\[Rest\] this (unit|card)\]/gi, "$1[[Rest] this $2]") // "[ACT](RC):[Rest] this unit] …" (old cost with a lost bracket)
     .replace(/ +/g, " ");
 
   // ---------- filters ("grade 3 or greater normal unit with "X" in its card name") ----------
@@ -578,7 +586,21 @@ const TextParse = (() => {
     if (/if you have (another unit|a unit) in the same column/i.test(t)) add({ type: "count", what: "myColumn", op: "ge", n: 1 });
     if (/if this unit is in the front row/i.test(t)) add({ type: "selfFront" });
     if (/if this unit is in the back row/i.test(t)) add({ type: "selfBack" });
-    if ((m = t.match(/if your order zone has (\d+) or more/i))) add({ type: "orderZone", n: +m[1] });
+    if ((m = t.match(rx(`if your order zone has ${N} or more`)))) add({ type: "orderZone", n: toNum(m[1]) });
+    // round 1 (official card list): frequent condition wordings
+    if ((m = t.match(/if you have (?:an?|the) ((?:"[^"]+"(?:,? (?:or|and) )?)+) on your (?:\(VC\)(?: or \(RC\))?|\(RC\)|field|circles?)/i)))
+      add({ type: "count", what: /^\(RC\)$/i.test(t.match(/on your (\([A-Z]+\))/i)?.[1] || "") && !/\(VC\)/i.test(m[0]) ? "myRC" : "myUnits", op: "ge", n: 1, filter: { names: [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) } });
+    if ((m = t.match(/if you have another unit named "([^"]+)" on your \(RC\)/i))) add({ type: "count", what: "myRC", op: "ge", n: 1, filter: { nameExact: m[1], other: true } });
+    if (/if this unit is on \(VC\)/i.test(t)) add({ type: "onVC" });
+    else if (/if this unit is on \(RC\)/i.test(t)) add({ type: "onRC" });
+    if ((m = t.match(/if the number of (?:cards in )?your (damage zone|hand|soul|drop|rear-guards) is (more|greater|less|fewer) than or equal to (?:the number of )?(?:cards in )?your opponent'?s/i)))
+      add({ type: "countVs", what: "my" + { "damage zone": "Damage", hand: "Hand", soul: "Soul", drop: "Drop", "rear-guards": "RC" }[m[1].toLowerCase()], vs: "opp" + { "damage zone": "Damage", hand: "Hand", soul: "Soul", drop: "Drop", "rear-guards": "RC" }[m[1].toLowerCase()], op: /more|greater/i.test(m[2]) ? "ge" : "le" });
+    if (/if your opponent has no rear-guards/i.test(t)) add({ type: "count", what: "oppRC", op: "eq", n: 0 });
+    if ((m = t.match(/if your vanguard'?s grade is (less|lower|greater|higher) than (?:or equal to )?your opponent'?s vanguard'?s grade/i)))
+      add({ type: "gradeVs", op: /less|lower/i.test(m[1]) ? (/or equal/i.test(m[0]) ? "le" : "lt") : (/or equal/i.test(m[0]) ? "ge" : "gt") });
+    if ((m = t.match(/if your world is ([A-Z][A-Za-z ]+?)(?: or ([A-Z][A-Za-z ]+?))?(?=,|\.|$)/))) add({ type: "world", text: [m[1], m[2]].filter(Boolean).join("|") });
+    if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) cards in (?:your )?hand`)))) add({ type: "count", what: "myHand", op: CMP(m[0]), n: toNum(m[1]) });
+    if ((m = t.match(rx(`if the number of your (other )?(.*?)rear-guards is ${N} or (more|less|fewer)`)))) add({ type: "count", what: "myRC", op: CMP(m[0]), n: toNum(m[3]), filter: { ...(filt(m[2]) || {}), ...(m[1] ? { other: true } : {}) } });
     return { conds: out, read };
   }
 
@@ -589,8 +611,10 @@ const TextParse = (() => {
       const p = part.trim().replace(/^\[|\]$/g, "");
       if (!p) continue;
       let m;
-      if ((m = p.match(/^counter-blast (\d+)/i))) out.push({ type: "CB", n: +m[1] });
-      else if ((m = p.match(/^soul-blast (\d+)/i))) out.push({ type: "SB", n: +m[1] });
+      // "Counter-Blast 1-card with "Eradicator" in its card name": only those cards may be paid
+      const paidWith = (q) => { const k = q.match(/[-‐–]\s*cards? with "([^"]+)" in (?:its|their) card names?/i) || q.match(/[-‐–]\s*"([^"]+)"/); return k ? { filter: { name: k[1] } } : {}; };
+      if ((m = p.match(/^counter-blast (\d+)/i))) out.push({ type: "CB", n: +m[1], ...paidWith(p) });
+      else if ((m = p.match(/^soul-blast (\d+)/i))) out.push({ type: "SB", n: +m[1], ...paidWith(p) });
       else if ((m = p.match(/^energy-blast (\d+)/i))) out.push({ type: "EB", n: +m[1] });
       else if ((m = p.match(rx(`^(?:choose ${N} (.*?)(?:cards? )?from your hand,? and )?discard (them|it|${N} (.*?)cards? from (your )?hand|this card)`)))) {
         if (/this card/i.test(m[3])) out.push({ type: "move", from: "self", to: "drop" });
@@ -606,7 +630,23 @@ const TextParse = (() => {
       else if ((m = p.match(rx(`^choose (${N}) of your (other )?(.*?)rear-guards?,? and retire (it|them)`)))) out.push({ type: "retireRC", n: toNum(m[1]) });
       else if (/^\[?rest\]? this (unit|card)/i.test(p)) out.push({ type: "restSelf" });
       else if ((m = p.match(/^(counter|soul)-blast$/i))) out.push({ type: m[1].toLowerCase() === "counter" ? "CB" : "SB", n: 1 });
-      else if ((m = p.match(rx(`^reveal (${N} |a |an )?(.*?)cards? from your hand`)))) out.push({ type: "move", from: "hand", to: "hand", n: 1, reveal: true, filter: filt(m[2] || "") });
+      else if (/^\[?rest\]?$/i.test(p)) out.push({ type: "restSelf" }); // "[COST][Rest]": rest this unit
+      else if ((m = p.match(rx(`^reveal (${N} |a |an )?(.*?)cards? from (?:your )?hand`)))) out.push({ type: "move", from: "hand", to: "hand", n: m[1] && /\d|two|three|four|five/i.test(m[1]) ? toNum(m[1].trim()) : 1, reveal: true, filter: filt(m[2] || "") });
+      // "choose one of your (other) rear-guards (with "X" in its card name), and put it into your soul / retire it / [Rest] it"
+      else if ((m = p.match(rx(`^choose ${N} of your (other )?(.*?)rear-guards?(?: (?:with|named) [^,]*)?,? and (put (?:it|them) into (?:your )?soul|retire (?:it|them)|put (?:it|them) on the bottom of (?:your |the )?deck|return (?:it|them) to (?:your )?hand|\\[rest\\] (?:it|them))`)))) {
+        const f = filt(p.replace(/,? and .*$/i, "").replace(/^choose \S+ of your /i, "")) || {};
+        if (m[2]) f.other = true;
+        const to = /soul/i.test(m[4]) ? "soul" : /retire/i.test(m[4]) ? "drop" : /bottom/i.test(m[4]) ? "deckBottom" : /hand/i.test(m[4]) ? "hand" : "rest";
+        out.push(to === "drop" ? { type: "retireRC", n: toNum(m[1]), filter: f } : to === "rest" ? { type: "restRC", n: toNum(m[1]), filter: f } : { type: "move", from: "myRC", to, n: toNum(m[1]), filter: f });
+      }
+      else if ((m = p.match(rx(`^retire (?:${N} |an?)?(other|another) (.*?)rear-guards?`)))) out.push({ type: "retireRC", n: m[1] ? toNum(m[1]) : 1, filter: { ...(filt(m[3] || "") || {}), other: true } });
+      else if ((m = p.match(rx(`^(?:choose ${N} (.*?)cards? from your damage zone,? and put (?:it|them)|put ${N} (.*?)cards? from your damage zone) on the (top|bottom) of (?:your|the) deck`))))
+        out.push({ type: "move", from: "damage", to: m[5].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: toNum(m[1] || m[3]), filter: filt(m[2] || m[4] || "") });
+      else if ((m = p.match(rx(`^bind ${N} (.*?)cards? from your (drop|soul|hand|damage zone)`)))) out.push({ type: "move", from: { drop: "drop", soul: "soul", hand: "hand", "damage zone": "damage" }[m[3].toLowerCase()], to: "bind", n: toNum(m[1]), filter: filt(m[2] || "") });
+      else if ((m = p.match(rx(`^put (?:the top )?${N} cards? from the top of your deck into (?:your )?(drop|soul|damage zone)`)))) out.push({ type: "move", from: "deckTop", to: /soul/i.test(m[2]) ? "soul" : /damage/i.test(m[2]) ? "damageUp" : "drop", n: toNum(m[1]) });
+      else if (/^return this (unit|card) to (your )?hand/i.test(p)) out.push({ type: "move", from: "self", to: "hand" });
+      else if (/^remove this (unit|card)/i.test(p)) out.push({ type: "move", from: "self", to: "removed" });
+      else if ((m = p.match(rx(`^put ${N} (.*?)cards? from your (hand|soul|drop) into (?:your )?(drop|soul)`)))) out.push({ type: "move", from: m[3].toLowerCase(), to: m[4].toLowerCase(), n: toNum(m[1]), filter: filt(m[2] || "") });
       else if ((m = p.match(rx(`^put ${N} (.*?)cards? from (your )?hand into (your )?soul`)))) out.push({ type: "move", from: "hand", to: "soul", n: toNum(m[1]), filter: filt(m[2]) });
       else if ((m = p.match(/^(bind|put) this (card|unit)( into| on the)? ?(bind zone|bottom of (your|the) deck|top of (your|the) deck|soul|drop)?/i)))
         out.push({ type: "move", from: "self", to: /^bind/i.test(p) || /bind/i.test(m[4] || "") ? "bind" : /bottom/i.test(p) ? "deckBottom" : /top/i.test(p) ? "deckTop" : /soul/i.test(p) ? "soul" : "drop" });
@@ -649,6 +689,18 @@ const TextParse = (() => {
     // resources
     if ((m = t.match(rx(`^draw ${N} cards?`))) || (m = t.match(/^draw (a|one) card/i))) return [{ type: "draw", n: toNum(m[1]), ...per }];
     if ((m = t.match(/^counter-charge (\d+)/i))) return [{ type: "CC", n: +m[1], ...per }];
+    // round 1: "choose a card from your damage zone, and turn it face up" = Counter-Charge; the rest of these were common unread steps
+    if ((m = t.match(rx(`^choose (?:up to )?${N} (?:face down )?(?:cards? )?(?:from|in) your damage zone,? and turn (?:it|them) face up`)))) return [{ type: "CC", n: toNum(m[1]) }];
+    if ((m = t.match(rx(`^choose (?:up to )?${N} (?:face down )?cards? (?:from|in) your damage zone$`)))) { ctx.lastDamage = toNum(m[1]); return []; }
+    if (/^turn (it|them) face up$/i.test(t) && ctx.lastDamage) return [{ type: "CC", n: ctx.lastDamage }];
+    if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
+    if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
+    if (/^choose an? units? being attacked$/i.test(t)) { ctx.last = { target: "attacked" }; ctx.lastUsed = false; return []; }
+    if ((m = t.match(/(this unit|it|they) (?:gets? "boost",? and )?can intercept from the back row/i))) return [{ type: "restrict", what: "canInterceptBack", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }, ...(/"boost"/i.test(t) ? [{ type: "restrict", what: "canBoost", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }] : [])];
+    if (/^can intercept from the back row$/i.test(t)) return [{ type: "restrict", what: "canInterceptBack", dur, ...(ctx.last ? { ...ctx.last } : { target: "self" }) }];
+    if (/your opponent cannot call sentinels from (his or her|their) hand/i.test(t)) return [{ type: "playerRule", who: "opp", what: "cantGuard", filter: { sentinel: "yes" }, dur }];
+    if ((m = t.match(rx(`^call (up to )?${N} (.*?)(?:cards? )?(?:with "([^"]+)" in (?:its|their) card names? )?(?:from your hand )?to \\(RC\\)(?: from your hand)?$`))) && /hand/i.test(t))
+      return [{ type: "callFromHand", n: toNum(m[2]), filter: { ...(filt(m[3] || "") || {}), ...(m[4] ? { name: m[4] } : {}) } }];
     if ((m = t.match(/^soul-charge (\d+)/i))) return [{ type: "SC", n: +m[1], ...per }];
     if ((m = t.match(/^energy-charge (\d+)/i))) return [{ type: "EC", n: +m[1], ...per }];
     // stand / rest / retire / bind / lock
@@ -810,9 +862,13 @@ const TextParse = (() => {
     let m = rest.match(/^\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*/);
     if (m && !/(blast|discard|retire|rest|soul|bind|put|reveal|choose|turn)/i.test(m[1])) m = null;
     if (m) { const r = costsIn(m[1]); ab.costs.push(...r.costs); unread.push(...r.unread); rest = rest.slice(m[0].length); }
-    // "[Counter-Blast 1-card with "X" in its card name]": the cards paid must have that name (paid by hand: noted as an extra step)
+    // "[Counter-Blast 1]-card with "X" in its card name]": only cards with that name may be paid (the blast cost gets a filter)
     const named = rest.match(/^[-‐–]\s*cards? with "([^"]+)" in (?:its|their) card names?\]\s*/i);
-    if (named) { unread.push(`the cards paid must have "${named[1]}" in their names`); rest = rest.slice(named[0].length); }
+    if (named) {
+      const blast = [...ab.costs].reverse().find((c) => c.type === "CB" || c.type === "SB");
+      if (blast) blast.filter = { name: named[1] }; else unread.push(`the cards paid must have "${named[1]}" in their names`);
+      rest = rest.slice(named[0].length);
+    }
     // leading "during your (opponent's) turn / main phase / battle phase," before the timing
     const lead = rest.match(/^during your (opponent'?s )?(turn|main phase|battle phase),\s*/i);
     if (lead) { ab.conds.push({ type: lead[1] ? "oppTurn" : /main/i.test(lead[2]) ? "mainPhase" : /battle/i.test(lead[2]) ? "battlePhase" : "myTurn" }); rest = rest.slice(lead[0].length); }
@@ -1029,6 +1085,10 @@ const TextParse = (() => {
       if (/^[A-Z][A-Za-z!'‐-]{2,20}( \d+)?\s*$/.test(body)) continue;
       if (/^\[legion \d+\]\s*"[^"]+"\s*$/i.test(body)) continue;
       if (/^the normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride\.?$/i.test(body)) continue; // card field personaFromKai
+      // deck-building rules and card fields, not abilities: "You may only have one … in a deck", "You may have up to ten energy",
+      // "This card cannot be ridden", "This card can only be ridden from a grade 3 with "X" in its card name"
+      if (/^you may (only )?have (up to )?[^.]*\b(in (a|your) deck|energy)\.?$/i.test(body)) continue;
+      if (/^this card (cannot be ridden|can only be ridden from [^.]*)\.?$/i.test(body)) continue;
       if (/^(hand:\s*)?while (you are )?paying the cost (for|of) \[?stride\]?,? this card gets grade \+\d\.?$/i.test(body)) continue; // card field strideGrade // Legion mate name (the Seek Mate ability carries it) // a keyword label only (Engorge, Blaze, Success 20000…): its effect is in other lines
       const a = ability(l, undefined, extraAbs);
       out.push(a);
