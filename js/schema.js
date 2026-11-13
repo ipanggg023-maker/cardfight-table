@@ -86,11 +86,27 @@ const SCHEMA = {
     damageReveal: "When your damage check reveals a card",
     revealedDamage: "When this card is revealed in a damage check",
     orderPlayed: "When you play an order",
+    allyPlacedVC: "When your vanguard is placed (ride or stride; filter = the new vanguard)",
+    leftGC: "When this card goes from (GC) to the drop",
+    soulToDrop: "When this card goes from the soul to the drop",
+    rcToSoul: "When this unit is put from (RC) into the soul",
+    returnedHand: "When this unit is returned from (RC) to the hand",
+    legion: "When your vanguard forms a Legion",
+    harmonized: "When this unit becomes in harmony",
+    originalDress: "When this card becomes an originalDress",
+    stood: "When this unit stands (by an effect or in the stand phase)",
+    toDamage: "When a card is put into your damage zone (damage check)",
+    soulCharged: "When your card is put into your soul by Soul-Charge",
+    eachTurnEnd: "At the end of each turn (yours and your opponent's)",
+    attackStep: "At the beginning of your attack step (each battle)",
+    hitOrBoost: "When its attack or the attack it boosted hits",
+    armed: "When this card is Armed",
   },
   // events that are about another card: the AUTO ability may filter it ("when your grade 3 rear-guard is placed…")
   eventSubject: { allyHit: "the attacking unit", allyAttacked: "the attacked unit", placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
     oppAttacks: "the attacking unit", guardStart: "the attacking unit", allyRetired: "the retired card", oppRetired: "the retired card", driveReveal: "the revealed card",
-    damageReveal: "the revealed card", orderPlayed: "the order", riddenUpon: "the unit that rides this one", placedVC: "this new vanguard" },
+    damageReveal: "the revealed card", orderPlayed: "the order", riddenUpon: "the unit that rides this one", placedVC: "this new vanguard",
+    allyPlacedVC: "the new vanguard", toDamage: "the card", soulCharged: "the card", legion: "the vanguard" },
   fromEvents: { placed: 1, placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1, placedVC: 1, riddenUpon: 1 },
 
   conds: {
@@ -132,6 +148,9 @@ const SCHEMA = {
     heart: { label: "Your heart card is … (Stride)", params: [["filter", "filter"]], text: (p) => `you have a heart card that is ${flt(p.filter)}` },
     ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
+    byMe: { label: "It was by your own card's ability", params: [], text: () => "it was by your own card's ability" },
+    mainPhase: { label: "During your main phase", params: [], text: () => "during your main phase" },
+    battlePhase: { label: "During your battle phase", params: [], text: () => "during your battle phase" },
   },
 
   costs: {

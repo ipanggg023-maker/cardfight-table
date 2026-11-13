@@ -417,6 +417,9 @@ const Game = (() => {
       case "heart": { const h = p.slots.vc.heart; return !!h && match(h, c.filter, { pi, ctx }); } // "if you have a heart card with …"
       case "ritual": return p.drop.filter((x) => x.grade === 1 && x.type !== "order").length >= n; // Ritual N (CR 14.37)
       case "byOpp": return ctx.by !== undefined && ctx.by !== null && ctx.by !== pi; // retired by the opponent's card
+      case "byMe": return ctx.by === pi; // by your own card's ability
+      case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
+      case "battlePhase": return S.active === pi && (S.phase === "battle" || !!S.battle);
       case "wentSecond": return S.first !== pi;
       default: return true;
     }
@@ -444,7 +447,7 @@ const Game = (() => {
       case "CB": p.damage.filter((d) => !d.down).slice(0, n).forEach((d) => (d.down = true)); break;
       case "SB": {
         const picked = await chooseCards(pi, `Soul-Blast ${n}: choose cards from soul`, p.soul, n, n);
-        picked.forEach((x) => { p.soul.splice(p.soul.indexOf(x), 1); p.drop.push(x); });
+        picked.forEach((x) => { p.soul.splice(p.soul.indexOf(x), 1); p.drop.push(x); collect(pi, null, "soulToDrop", { card: x, zone: "soul", subject: x }); });
         break;
       }
       case "EB": p.energy -= n; break;
@@ -526,12 +529,14 @@ const Game = (() => {
   // come first, then the turn player resolves their waiting abilities one by one in the order they
   // choose, then the other player; abilities triggered meanwhile join the queue.
   let depth = 0, inCheck = false, qN = 0;
+  // events about a card that just changed place: its printed zone is where it was, so the zone isn't checked
+  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed"]);
   function collect(pi, key, event, extra = {}) {
     if (over()) return;
     const list = extra.card ? ownAbilities(extra.card) : key ? abilitiesAt(pi, key) : [];
     const zone = extra.zone || zoneOf(key);
     for (const { card, ab, i } of list) {
-      if (ab.kind !== "AUTO" || ab.when !== event || (event !== "overDrive" && !zoneOK(ab.zone, zone))) continue;
+      if (ab.kind !== "AUTO" || ab.when !== event || (!ZONE_FREE.has(event) && !zoneOK(ab.zone, zone))) continue;
       if (!whenOK(pi, ab, extra, card)) continue;
       S.queue.push({ id: ++qN, pi, i, ab, card, ctx: { key, zone, ...extra, card } });
     }
@@ -617,7 +622,7 @@ const Game = (() => {
     for (const k of unitsOf(pi)) {
       const sl = p.slots[k];
       if (k !== key && sl && COL[k] && COL[k] === COL[key] && sl.card.harmony) {
-        for (const kk of [k, key]) if (!hasState(pi, kk, "harmony")) addMod(pi, kk, { stat: "state", name: "harmony", until: S.turn });
+        for (const kk of [k, key]) if (!hasState(pi, kk, "harmony")) { addMod(pi, kk, { stat: "state", name: "harmony", until: S.turn }); collect(pi, kk, "harmonized"); }
         log(`♪ ${sl.card.name} and ${card.name} are in harmony`);
       }
     }
@@ -822,6 +827,10 @@ const Game = (() => {
     for (const c of picked) {
       await putCard(side, c, e.to, pi, fromName);
       if (e.to === "soul") collect(side, null, "toSoul", { card: c, zone: "soul", subject: c });
+      const fromRC = e.from === "self" ? !!(ctx.key && ctx.key !== "vc" && rcOf(side).includes(ctx.key)) : /^(my|opp)?(front|back)?RC$/i.test(String(e.from || ""));
+      if (fromRC && e.to === "soul") collect(side, null, "rcToSoul", { card: c, zone: "RC", subject: c });
+      if (fromRC && e.to === "hand") collect(side, null, "returnedHand", { card: c, zone: "RC", subject: c });
+      if (e.from === "soul" && e.to === "drop") collect(side, null, "soulToDrop", { card: c, zone: "soul", subject: c });
       if (e.to === "drop" && (e.from === "hand" || e.from === "oppHand")) discarded(side, c);
     }
     if (!picked.length) log(`Move: no card (${zn(e.from)} → ${zn(e.to)})`);
@@ -949,14 +958,14 @@ const Game = (() => {
         }
         return { count: us.length, cards: us.map((u) => P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card).filter(Boolean) };
       }
-      case "stand": { const us = await pickUnits(pi, e, ctx); for (const u of us) if (P(u.pi).slots[u.key] && !restricted(u.pi, u.key, "cantStand")) P(u.pi).slots[u.key].rest = false; return { count: us.length, cards: us.map((u) => P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card).filter(Boolean) }; }
+      case "stand": { const us = await pickUnits(pi, e, ctx); for (const u of us) { const sl = P(u.pi).slots[u.key]; if (sl && !restricted(u.pi, u.key, "cantStand")) { const was = sl.rest; sl.rest = false; if (was) collect(u.pi, u.key, "stood", { by: pi }); } } return { count: us.length, cards: us.map((u) => P(u.pi).slots[u.key] && P(u.pi).slots[u.key].card).filter(Boolean) }; }
       case "rest": for (const u of await pickUnits(pi, e, ctx)) if (P(u.pi).slots[u.key]) P(u.pi).slots[u.key].rest = true; break;
       case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.pi !== pi && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; } if (u.key !== "vc" && P(u.pi).slots[u.key]) { const c = P(u.pi).slots[u.key].card; if (await retireUnit(u.pi, u.key, pi)) { log(`${c.name} is retired`); out.push(c); } } } return { count: out.length, cards: out }; }
       case "bind": for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc") { log(`${P(u.pi).slots[u.key].card.name} is bound`); bindUnit(u.pi, u.key); } } break;
       case "drive": p.driveBonus += amt; break;
       case "draw": draw(pi, n); return { count: n };
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
-      case "SC": for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); } break;
+      case "SC": for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); } break;
       case "EC": p.energy = Math.min(10, p.energy + n); break;
       case "heal": for (let i = 0; i < n && p.damage.length; i++) p.drop.push(p.damage.pop()); break;
       case "shield": if (S.battle) S.battle.shieldBonus += amt; break;
@@ -1030,6 +1039,7 @@ const Game = (() => {
         vs.mate = m;
         p.legionUsed.push(vs.card.uid, m.uid);
         log(`⚭ ${p.name}: ${vs.card.name} and ${m.name} form a Legion`);
+        collectAll(pi, "legion", { subject: vs.card });
         break;
       }
       case "callFromHand": {
@@ -1095,7 +1105,7 @@ const Game = (() => {
     if (t === "stand") { // Premium: stand one of your rear-guards
       const rested = unitsAt(pi, rcOf(pi)).filter((u) => p.slots[u.key].rest);
       const [su] = await chooseUnits(pi, "Stand trigger: stand which rear-guard?", rested, 1);
-      if (su) { p.slots[su.key].rest = false; log(`${p.slots[su.key].card.name} stands`); }
+      if (su) { const was = p.slots[su.key].rest; p.slots[su.key].rest = false; log(`${p.slots[su.key].card.name} stands`); if (was) collect(pi, su.key, "stood", { by: pi }); }
     }
     if (t === "heal") {
       // Only if your damage ≥ opponent's; the checked card isn't in the damage zone yet, so it doesn't count
@@ -1114,7 +1124,7 @@ const Game = (() => {
     const pi = S.active, p = P(pi);
     p.vcGradeAtStart = p.slots.vc.card.grade;
     (p.orderZone || []).forEach((c) => (c.rest = false));
-    for (const k of unitsOf(pi)) { const sl = p.slots[k]; if (sl && !restricted(pi, k, "cantStand")) sl.rest = false; }
+    for (const k of unitsOf(pi)) { const sl = p.slots[k]; if (sl && !restricted(pi, k, "cantStand")) { const was = sl.rest; sl.rest = false; if (was) collect(pi, k, "stood"); } }
     S.used = new Set();
     S.battleNo = 0;
     Object.assign(p, { driveBonus: 0, ordersThisTurn: 0, personaThisTurn: false, personaFront: false });
@@ -1207,6 +1217,7 @@ const Game = (() => {
     vs.card = g;
     log(`⇧ ${p.name} strides ${g.name} (heart: ${vs.heart.name}) · discarded total grade ${total}`);
     collect(pi, "vc", "onStride");
+    collectAll(pi, "allyPlacedVC", { from: "G", subject: g });
     await settle();
     S.phase = "main";
     await fireAll(pi, "mainStart");
@@ -1291,6 +1302,7 @@ const Game = (() => {
     collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc", subject: card, from });
     collect(pi, "vc", "placedVC", { from, subject: card });
     collect(pi, "vc", "placed", { from, subject: card });
+    collectAll(pi, "allyPlacedVC", { from, subject: card }); // "when your (grade 3) vanguard is placed"
     await settle();
     if (!opts.effect) await enterMain();
   }
@@ -1452,6 +1464,8 @@ const Game = (() => {
         if (same) { vs.arms.splice(vs.arms.indexOf(same), 1); p.drop.push(same); }
         vs.arms.push(card);
         log(`${card.name} is attached to ${vs.card.name} (Arms)`);
+        collect(pi, null, "armed", { card, zone: "VC", subject: card });
+        await settle();
         return;
       }
       log(`${card.name}: no vanguard named "${card.armsName}", it goes to the drop`);
@@ -1486,6 +1500,7 @@ const Game = (() => {
     p.slots[key] = { ...slot(card), rest: old ? old.rest : false, under };
     log(`👗 ${p.name}: ${card.name} ${card.xoverDress ? "XoverDress" : "overDress"} onto ${under.map((c) => c.name).join(" + ")}`);
     collect(pi, key, "dressed");
+    for (const u of under) collect(pi, null, "originalDress", { card: u, zone: "RC", subject: u });
     for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key });
     await settle();
   }
@@ -1676,6 +1691,7 @@ const Game = (() => {
     S.battleNo = (S.battleNo || 0) + 1; // "the Nth battle of that turn"
     S.reveal = [];
     log(`${p.slots[att].card.name}${bk ? " (boosted)" : ""} attacks ${P(di).slots[tgt].card.name}`);
+    collectAll(ai, "attackStep"); // "at the beginning of your attack step" (resolves with the attack's abilities)
     collect(ai, att, "attack");
     if (bk) { collect(ai, bk, "boost"); collect(ai, att, "boosted", { subject: p.slots[bk].card }); }
     collect(di, tgt, "attacked");
@@ -1770,13 +1786,15 @@ const Game = (() => {
           collectAll(di, "damageReveal", { subject: c });
           collect(di, null, "revealedDamage", { card: c, zone: "deck", subject: c });
           await trigger(di, c, "damage");
-          if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else d.damage.push(c);
+          if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); collectAll(di, "toDamage", { subject: c }); }
           ruleActions(); // 6 damage is a rule action, checked after each damage check
         }
       } else b.hitUid = d.slots[b.tgt].card.uid;
       if (!over()) {
         collect(ai, b.att, "attackHit");
         if (b.boostKey && P(ai).slots[b.boostKey]) collect(ai, b.boostKey, "boostHit"); // "when the attack this unit boosted hits"
+        collect(ai, b.att, "hitOrBoost"); // "when its attack or the attack it boosted hits"
+        if (b.boostKey && P(ai).slots[b.boostKey]) collect(ai, b.boostKey, "hitOrBoost");
         collectAll(ai, "allyHit", { subject: P(ai).slots[b.att] && P(ai).slots[b.att].card }); // "when your vanguard's attack hits"
         await settle();
       }
@@ -1792,7 +1810,7 @@ const Game = (() => {
     for (const c of b.guards.filter((x) => x.type !== "g")) { // "if this card would be put into the drop from (GC), … instead"
       const to = c.protect ? null : await replaceFor(1 - ai, c, ["wouldLeaveGC"], { key: null, zone: "GC", card: c });
       if (to && to !== "stay") { await putCard(1 - ai, c, to, 1 - ai); log(`↺ ${c.name} ${PLACE_NAME[to] || "goes to " + to} instead of the drop`); }
-      else d.drop.push(c);
+      else { d.drop.push(c); if (!c.protect) collect(1 - ai, null, "leftGC", { card: c, zone: "GC", subject: c }); }
     }
     b.guards = [];
     if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { const hc = d.slots[b.tgt].card; if (await retireUnit(1 - ai, b.tgt, ai)) log(`${hc.name} is retired`); }
@@ -1814,6 +1832,7 @@ const Game = (() => {
     S.players.forEach((pl) => { const music = (pl.orderZone || []).filter((c) => c.music); if (music.length) { pl.orderZone = pl.orderZone.filter((c) => !c.music); pl.drop.push(...music); } });
     collectAll(S.active, "endTurn");
     collectAll(1 - S.active, "oppTurnEnd");
+    collectAll(S.active, "eachTurnEnd"); collectAll(1 - S.active, "eachTurnEnd");
     await settle();
     if (over()) return;
     P(S.active).personaFront = false;

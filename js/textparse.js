@@ -191,6 +191,30 @@ const TextParse = (() => {
   // ---------- timings ----------
   // [regex, event, zone hint, extra {conds, whenFilter, whenFrom}]
   const EVENTS = [
+    // leaving a circle / zone
+    [/when (?:this unit is |this card is )?retired from \(rc\) by (?:the ability of )?(?:one of )?your (?:own |other )?cards?'?s? ?(?:abilit(?:y|ies)|effects?)?|when (this unit|this card) is put into (the |your )?drop( zone)? from \(rc\) (?:due to|by) (?:an effect from )?(?:one of )?your (?:own |other )?cards?/i, "retired", "RC", { conds: [{ type: "byMe" }] }],
+    [/when (this unit|this card) is put into (the |your )?drop( zone)? from \(rc\)|when (this unit is |this card is )?retired from \(rc\)/i, "retired", "RC"],
+    [/when (this unit|this card) is put into (the |your )?drop( zone)? from \(gc\)|when (this unit is |this card is )?retired from \(gc\)/i, "leftGC", "GC"],
+    [/when (this card|this unit) is put (?:into (?:the |your )?drop(?: zone)? from (?:your )?soul|from (?:your )?soul into (?:the |your )?drop(?: zone)?)/i, "soulToDrop", "soul"],
+    [/when this unit is put (?:from \(rc\) into (?:your )?soul|into (?:your )?soul from \(rc\))/i, "rcToSoul", "RC"],
+    [/when this unit is returned (?:to (?:your )?hand from \(rc\)|from \(rc\) to (?:your )?hand)/i, "returnedHand", "RC"],
+    [/when your opponent'?s (.*?)rear-guards? (?:is|are) (?:put into the drop(?: zone)?|retired) (?:due to|by) (?:an effect (?:from|of) |the abilit(?:y|ies) of )?(?:one of )?your (?:other )?cards?(?:'s)?(?: abilit(?:y|ies)| effects?)?/i, "oppRetired", null, { subject: 1, conds: [{ type: "byMe" }] }],
+    // the vanguard / field
+    [/when your ((?:(?!rear-guard|opponent)[^,])*?) is placed on \(vc\)|when your ((?:(?!rear-guard|opponent)[^,])*?vanguard(?: with "[^"]*" in its card name)?) is placed\b/i, "allyPlacedVC", null, { subjectPlacedVC: true }],
+    [/when your ((?:g unit|vanguard|unit)(?: with "[^"]*" in its (?:original )?card name)?|"[^"]+") (?:\[stride\]s?|strides)/i, "allyPlacedVC", null, { subjectPlacedVC: true, whenFrom: "G" }],
+    [/when (?:an|your) opponent'?s (.*?)rear-guards? (?:is|are) put into the drop(?: zone)?(?! from)/i, "oppRetired", null, { subject: 1 }],
+    [/when your (?:vanguard|unit) (?:\[legion\]|legions)|when this unit (?:\[legion\]|legions)/i, "legion", "VC"],
+    [/when this unit becomes in harmony|when this unit is put in harmony/i, "harmonized", "RC"],
+    [/when this card becomes an originaldress/i, "originalDress", "RC"],
+    [/when (?:this unit|it) (?:\[stand\]|stands|becomes \[stand\])(?=\s*,)/i, "stood", null],
+    [/when (?:a|your) card is put into your damage zone/i, "toDamage", null],
+    [/when your card is put into your soul by \[?soul-?charge/i, "soulCharged", null],
+    [/at the end of each turn/i, "eachTurnEnd", null],
+    [/at the beginning of (?:your|the) attack step/i, "attackStep", null],
+    [/when (?:its|this unit'?s) attack or the attack (?:it|this unit) boosted hits a vanguard/i, "hitOrBoost", "RC", { conds: [{ type: "targetVC" }] }],
+    [/when (?:its|this unit'?s) attack or the attack (?:it|this unit) boosted hits/i, "hitOrBoost", "RC"],
+    [/when this card (?:is|becomes) armed/i, "armed", null],
+    [/when you play "([^"]+)"/i, "orderPlayed", null, { nameSubject: 1 }],
     [/when (this unit|this card) is put on \(vc\)|when this unit is put on your \(vc\)/i, "placedVC", "VC"],
     [/when (this unit|this card) is put on \(rc\)|when this unit is put on your \(rc\)/i, "placedRC", "RC"],
     [/when (this unit|this card) is put on \(gc\)/i, "placedGC", "GC"],
@@ -271,6 +295,12 @@ const TextParse = (() => {
       if (extra.subject && m[extra.subject] && m[extra.subject].trim()) { const wf = filt((m[extra.subject].trim() + (extra.subjectNoun && m[extra.subjectNoun] ? " " + m[extra.subjectNoun] : "")).replace(/\s+/g, " ")); if (wf) ab.whenFilter = wf; }
       if (extra.subjectAtt) { const wf = filt(m[0].replace(/^when your /i, "").replace(/ is attacked$/i, "")); if (wf) ab.whenFilter = wf; }
       if (extra.subjectVC) { const wf = filt(m[0].replace(/^when your /i, "").replace(/'?s attack hits.*$/i, "")) || {}; ab.whenFilter = wf; ab.conds.push({ type: "unit", who: "attacker", filter: { ...wf } }); }
+      if (extra.nameSubject) ab.whenFilter = { nameExact: m[extra.nameSubject] };
+      if (extra.subjectPlacedVC) {
+        const who = String(m[1] || m[2] || "").replace(/original card name/i, "card name").replace(/^"([^"]+)"$/, 'unit named "$1"').trim();
+        const wf = filt(who.replace(/^(other )/i, ""));
+        if (wf && Object.keys(wf).some((k) => k !== "type")) ab.whenFilter = wf;
+      }
       if (extra.subjectWhole) { const wf = filt(m[0].replace(/^when your /i, "").replace(/ attacks$/i, "")); if (wf) ab.whenFilter = wf; }
       if (when === "riddenUpon" && !extra.subject && (m[3] || m[4])) { const wf = filt(m[3] || m[4]); if (wf) ab.whenFilter = wf; }
       return { ...ab, clause, rest: rest.trim() };
@@ -589,9 +619,12 @@ const TextParse = (() => {
     let m = rest.match(/^\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*/);
     if (m && !/(blast|discard|retire|rest|soul|bind|put|reveal|choose|turn)/i.test(m[1])) m = null;
     if (m) { const r = costsIn(m[1]); ab.costs.push(...r.costs); unread.push(...r.unread); rest = rest.slice(m[0].length); }
-    // leading "during your (opponent's) turn," before the timing
-    const lead = rest.match(/^during your (opponent'?s )?turn,\s*/i);
-    if (lead) { ab.conds.push({ type: lead[1] ? "oppTurn" : "myTurn" }); rest = rest.slice(lead[0].length); }
+    // "[Counter-Blast 1-card with "X" in its card name]": the cards paid must have that name (paid by hand: noted as an extra step)
+    const named = rest.match(/^[-‐–]\s*cards? with "([^"]+)" in (?:its|their) card names?\]\s*/i);
+    if (named) { unread.push(`the cards paid must have "${named[1]}" in their names`); rest = rest.slice(named[0].length); }
+    // leading "during your (opponent's) turn / main phase / battle phase," before the timing
+    const lead = rest.match(/^during your (opponent'?s )?(turn|main phase|battle phase),\s*/i);
+    if (lead) { ab.conds.push({ type: lead[1] ? "oppTurn" : /main/i.test(lead[2]) ? "mainPhase" : /battle/i.test(lead[2]) ? "battlePhase" : "myTurn" }); rest = rest.slice(lead[0].length); }
     // timing
     if (kind === "AUTO") {
       const tm = timing(rest);
