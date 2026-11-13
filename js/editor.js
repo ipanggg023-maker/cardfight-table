@@ -155,6 +155,11 @@ function renderCard() {
       ${c.type === "g" ? `<label>G unit kind ${sel("gKind", { stride: "Stride (vanguard)", guardian: "G guardian (guard step)" }, c.gKind || "stride")}</label>` : ""}
       <label>Grade ${num("grade", c.grade)}</label>
       <label title="“While you are paying the cost for [Stride], this card gets grade +N”">Stride cost grade + ${num("strideGrade", c.strideGrade, "0")}</label>
+      <label title="“When this card would be discarded, it may be discarded as a grade N” (counts for stride costs)">May be discarded as grade ${num("discardAs", c.discardAs, "—")}</label>
+      ${c.type === "g" ? `<label title="The printed [Stride] cost. Blank = discard cards whose grades total 3 or more">Stride cost: discard a card named ${txt("strideCost.name", (c.strideCost && c.strideCost.name) || "", "blank = grades total 3+")}</label>
+      <label>… of grade ${num("strideCost.grade", c.strideCost && c.strideCost.grade, "any")}</label>
+      <label title="Total grade needed when discarding by grade (default 3)">… or grades total ${num("strideCost.sum", c.strideCost && c.strideCost.sum, "3")}</label>
+      <label class="chk"><input type="checkbox" data-path="strideCost.sameNameVC" ${c.strideCost && c.strideCost.sameNameVC ? "checked" : ""}> Stride cost: discard a card with your vanguard's name</label>` : ""}
       <label>Power${c.type === "g" ? " (+ added to the heart's)" : ""} ${num("power", c.power)}</label>
       <label>Shield ${num("shield", c.shield)}</label>
       <label>Critical ${num("crit", c.crit)}</label>
@@ -351,7 +356,7 @@ function getParent(obj, path) {
   for (const k of parts) { if (o[k] === undefined) o[k] = {}; o = o[k]; }
   return [o, last];
 }
-const NUM_FIELDS = new Set(["grade", "power", "shield", "crit", "n", "amount", "pick", "look", "strideGrade"]);
+const NUM_FIELDS = new Set(["grade", "power", "shield", "crit", "n", "amount", "pick", "look", "strideGrade", "discardAs", "sum"]);
 function setPath(path, value) {
   const [o, k] = getParent(cur, path);
   o[k] = NUM_FIELDS.has(k) && value !== "" ? Number(value) : value;

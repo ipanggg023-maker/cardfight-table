@@ -1163,22 +1163,42 @@ const Game = (() => {
   // ---------- Stride (CR 6.5, 9.8, 14.12) ----------
   const strideUnits = (p) => p.gDeck.filter((c) => c.gKind !== "guardian" && (!c.ultimate || p.gUp.length >= 3));
   // "While you are paying the cost for [Stride], this card gets grade +2": card.strideGrade
-  const handGrades = (cards) => cards.reduce((n, c) => n + (+c.grade || 0) + (+c.strideGrade || 0), 0);
+  // "it may be discarded as a grade 3": card.discardAs (the best grade it can count as)
+  const strideGradeOf = (c) => Math.max((+c.grade || 0) + (+c.strideGrade || 0), +c.discardAs || 0);
+  const handGrades = (cards) => cards.reduce((n, c) => n + strideGradeOf(c), 0);
+  // the G unit's printed stride cost (card.strideCost): default = discard cards whose grades total 3+;
+  // {sum: N} = total N+; {name, grade} = discard one grade-N card with that name; {sameNameVC} = one card named like your vanguard
+  function strideCostOf(pi, g) {
+    const p = P(pi), sc = { ...(g.strideCost || {}) };
+    if (sc.grade === "" || sc.grade === undefined) sc.grade = null;
+    if (sc.name) {
+      const ok = (c) => String(c.name || "").toLowerCase().includes(sc.name.toLowerCase()) && (sc.grade == null || strideGradeOf(c) === sc.grade || +c.grade === sc.grade);
+      return { one: true, cards: p.hand.filter(ok), text: `discard a ${sc.grade != null ? "grade " + sc.grade + " " : ""}card with "${sc.name}" in its name` };
+    }
+    if (sc.sameNameVC) {
+      const vs = p.slots.vc, names = [vs.card, vs.heart, vs.mate].filter(Boolean).flatMap((x) => [x.name, ...(x.alias || [])]).map((n) => String(n).toLowerCase());
+      return { one: true, cards: p.hand.filter((c) => names.includes(String(c.name || "").toLowerCase())), text: "discard a card with the same name as your vanguard" };
+    }
+    const sum = sc.sum || 3;
+    return { sum, cards: p.hand, text: `discard cards from your hand whose grades total ${sum} or more` };
+  }
+  const canPayStride = (pi, g) => { const c = strideCostOf(pi, g); return c.one ? c.cards.length > 0 : handGrades(c.cards) >= c.sum; };
   function canStride(pi) {
     const p = P(pi), o = P(1 - pi);
     if (!strideUnits(p).length || p.slots.vc.card.type === "g") return false;
     const ok = (p.slots.vc.card.grade >= 3 && o.slots.vc.card.grade >= 3) || p.vcGradeAtStart >= 3;
-    return ok && handGrades(p.hand) >= 3; // default stride cost: discard cards with total grade 3+
+    return ok && strideUnits(p).some((g) => canPayStride(pi, g));
   }
   const stride = () => run(async () => {
     if (S.phase !== "stride") return err("Stride in the stride step, right after the ride step");
     const pi = S.active, p = P(pi);
     if (!canStride(pi)) return err("You can't stride now");
-    const [g] = await chooseCards(pi, "Stride: choose a G unit from your G zone", strideUnits(p), 1, 1);
+    const [g] = await chooseCards(pi, "Stride: choose a G unit from your G zone", strideUnits(p).filter((x) => canPayStride(pi, x)), 1, 1);
     if (!g) return err("No G unit chosen");
-    const picked = await chooseCards(pi, `Stride ${g.name}: discard cards from your hand whose grades total 3 or more`, p.hand, 1, p.hand.length);
+    const cost = strideCostOf(pi, g);
+    const picked = await chooseCards(pi, `Stride ${g.name}: ${cost.text}`, cost.cards, 1, cost.one ? 1 : cost.cards.length);
     const total = handGrades(picked);
-    if (total < 3) return err(`Those cards total grade ${total}; you need 3 or more`);
+    if (cost.one ? picked.length !== 1 : total < cost.sum) return err(cost.one ? "Choose one card" : `Those cards total grade ${total}; you need ${cost.sum} or more`);
     picked.forEach((x) => { p.hand.splice(p.hand.indexOf(x), 1); p.drop.push(x); });
     p.gDeck.splice(p.gDeck.indexOf(g), 1);
     const vs = p.slots.vc;

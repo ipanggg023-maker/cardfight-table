@@ -103,6 +103,18 @@ const TextParse = (() => {
     if (/this card is (regarded as being )?from all clans/i.test(text)) out.allClans = true;
     const sg = text.match(/while (?:you are )?paying the cost (?:for|of) \[?stride\]?,? this card gets grade \+(\d)/i);
     if (sg) out.strideGrade = +sg[1];
+    // "[CONT](Hand):When this card would be discarded, it may be discarded as a grade 4 or 3…" (counts for the stride cost)
+    const da = text.match(/may be discarded as a grade ((?:\d+(?:\s*or\s*)?)+)/i);
+    if (da) out.discardAs = Math.max(...da[1].match(/\d+/g).map(Number));
+    // a G unit's printed stride cost (the default is "discard cards whose grades total 3 or more")
+    const sl = text.match(/\[Stride\][^\n]*?-Stride Step-[^\n]*/i);
+    if (sl) {
+      const l = sl[0];
+      let m;
+      if ((m = l.match(/discard an? (?:grade (\d+) )?card with "([^"]+)" in its card name/i))) out.strideCost = { grade: m[1] != null ? +m[1] : null, name: m[2] };
+      else if (/same card name as a card on your \(VC\)/i.test(l)) out.strideCost = { sameNameVC: true };
+      else if ((m = l.match(/sum of their grades being (\d+) or greater/i)) && +m[1] !== 3) out.strideCost = { sum: +m[1] };
+    }
     return Object.assign(out, split.stats);
   }
 

@@ -91,7 +91,8 @@ function cgsToCard(d, trigger) {
     source: { from: "cgs", number: d.number || "", set: d.productName || "", setCode: d._set || "", url: d.url || "", cardType: d.type },
   };
   if (isTrig && !card.trigger) card.needsTrigger = true;
-  for (const k of ["forerunner", "lord", "resist", "harmony", "cantBeCalled", "ace", "ultimate"]) if (guessed[k]) card[k] = true;
+  for (const k of ["forerunner", "lord", "resist", "harmony", "cantBeCalled", "ace", "ultimate", "allClans"]) if (guessed[k]) card[k] = true;
+  for (const k of ["strideGrade", "discardAs", "strideCost", "alias"]) if (guessed[k] != null) card[k] = guessed[k];
   card.abilities.forEach((a) => delete a.unread);
   if (d.type === "Set Order") card.setOrder = true;
   if (/Regalis Piece/i.test(text)) card.regalis = true;
