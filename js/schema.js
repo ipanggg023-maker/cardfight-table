@@ -148,6 +148,7 @@ const SCHEMA = {
     heart: { label: "Your heart card is … (Stride)", params: [["filter", "filter"]], text: (p) => `you have a heart card that is ${flt(p.filter)}` },
     ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
+    targetRC: { label: "This battle's attack is on a rear-guard", params: [], text: () => "it attacked a rear-guard" },
     byMe: { label: "It was by your own card's ability", params: [], text: () => "it was by your own card's ability" },
     mainPhase: { label: "During your main phase", params: [], text: () => "during your main phase" },
     battlePhase: { label: "During your battle phase", params: [], text: () => "during your battle phase" },
@@ -215,6 +216,8 @@ const SCHEMA = {
     unlock: { label: "Unlock your locked cards", params: [["n", "num", "up to"]], text: (p) => `unlock up to ${p.n || 1} of your locked cards` },
     delete: { label: "Delete the opponent's vanguard", params: [["target", "target"]], text: () => "delete your opponent's vanguard" },
     timeLeap: { label: "Time Leap (bind, call a unit 1 grade higher from the deck)", params: [["target", "target"], ["n", "num"]], text: (p) => `Time Leap ${TARGETS[p.target] || "your rear-guards"}` },
+    payCost: { label: "Pay a cost mid-ability (you may; next steps with “only if you did” need it)", params: [],
+      text: (p) => `you may pay ${(p.costs || []).map((c) => (SCHEMA.costs[c.type] ? SCHEMA.costs[c.type].text(c) : c.type)).join(" & ") || "a cost"}` },
     manual: { label: "✋ Manual: do it by hand (Judge panel)", params: [["text", "text", "what to do"]], text: (p) => `[Manual] ${p.text || "do the card's text by hand"}` },
     setWorld: { label: "Set your World", params: [["text", "text", "World (e.g. Dark Night)"]], text: (p) => `your World becomes "${p.text || "?"}"` },
     gift: { label: "Gain an Imaginary Gift", params: [["kind", "giftKind", "gift"]], text: (p) => `gain Imaginary Gift: ${({ force: "Force", accel: "Accel", protect: "Protect" })[p.kind || "force"]}` },
@@ -291,6 +294,7 @@ function flt(f, short) {
   if (f.ctype && f.ctype !== "any") bits.push(SCHEMA.paramOptions.ctype[f.ctype]);
   if (f.nameExact) bits.push(`named "${f.nameExact}"`);
   if (f.clan) bits.push(`<${f.clan}>`);
+  if (f.kai) bits.push("with a Kai icon");
   if (f.trig) bits.push(f.trig === "none" ? "non-trigger" : f.trig === "any" ? "trigger" : f.trig + " trigger");
   if (f.sentinel === "yes") bits.push("sentinel");
   if (f.sameNameVC) bits.push("with your vanguard's name");

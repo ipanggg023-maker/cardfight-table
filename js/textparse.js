@@ -19,12 +19,35 @@ const TextParse = (() => {
     "murakumo", "narukami", "nubatama", "gear chronicle", "nova grappler", "dimension police", "link joker", "dark irregulars", "spike brothers",
     "pale moon", "megacolony", "great nature", "neo nectar", "granblue", "aqua force", "bermuda triangle", "etranger"];
   const RARITY = /^(?:rarity\s*[:\-]?\s*)?(C|R|RR|RRR|VR|SVR|SP|SEC|SSR|TD|PR|H|FR|ORR|DSR|LSR|MSR|SR|ZR|GR|XR|EXRRR|EXRR|EXR|EXC|FFR|LR|SNR|RE|FIR|DR|SCR|ZXR)$/i;
+  // Copying from the card page often loses the separators: "Normal UnitDragon EmpireFlame DragonKageroGrade 3Power 13000Critical 1Shield Twin Drive!!, Persona Ride".
+  // Put the "|" back before/after every known word (types, nations, clans, Grade/Power/Critical/Shield, skills, triggers); what's left between is the race.
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const KNOWN_RE = new RegExp(`(${[...NATION_NAMES, ...CLAN_NAMES].sort((a, b) => b.length - a.length).map(reEsc).join("|")})`, "gi");
+  const GLUE_START = /^\s*((?:normal|trigger|g|token) unit|(?:normal|blitz|set|trigger) order|ride deck crest)/i;
+  function unglue(l) {
+    if (/\|/.test(l) || !GLUE_START.test(l) || !/grade\s*\d|power|shield/i.test(l) || /\[(auto|act|cont)\]/i.test(l)) return l;
+    return l.replace(GLUE_START, "$1|")
+      .replace(KNOWN_RE, "|$1|")
+      .replace(/(grade\s*\d+|power\s*\+?[\d,]*|critical\s*\d+|shield\s*[\d,]*)/gi, "|$1|")
+      .replace(/((?:critical|front|draw|heal|over|stand) trigger)\s*(\+\s*[\d,]+)?/gi, (m, t, p) => `|${t}|${p || ""}|`)
+      .replace(/(twin drive!*|triple drive!*|persona ride|imaginary gift\s*[:\-]?\s*(?:force|accel|protect)|\bboost\b|\bintercept\b)/gi, "|$1|")
+      .replace(/\|\s*(,\s*)?\|/g, "|").replace(/\|{2,}/g, "|");
+  }
+  // the page's last line, also glued: "StandardDZ-SS14/001ENTDillust/伊藤彰 icon:MAMEX" → format, card number, rarity (illustrators dropped)
+  const RARITY_ALT = "EXRRR|RRR|SVR|SEC|SSR|ORR|DSR|LSR|MSR|FFR|SNR|FIR|SCR|ZXR|EXRR|EXR|EXC|RR|VR|SP|TD|PR|FR|SR|ZR|GR|XR|LR|RE|DR|C|R|H";
+  const FOOTER = new RegExp(`^\\s*(standard|v premium|premium|extreme)?\\s*([A-Z0-9]+(?:-[A-Z0-9]+)*\\/[A-Z]*\\d+[A-Z]*?(?:EN)?)(${RARITY_ALT})?\\s*(?:illust.*|icon.*)?$`, "i");
+  function unfoot(l) {
+    if (/\|/.test(l)) return l;
+    const m = l.match(FOOTER);
+    if (!m || (!m[1] && !m[3] && !/illust/i.test(l))) return l;
+    return [m[2], m[3] || "", m[1] ? "Format " + m[1] : ""].filter(Boolean).join(" | ");
+  }
   const isStatLine = (l) => (/^\s*(card\s*no\.?|rarity)\s*[:\-]/i.test(l) || /^\s*[A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Z0-9-]+\s*(\||$)/i.test(l)) ||
     (/\|/.test(l) && !/\[(auto|act|cont)\]/i.test(l) &&
     /(^|\|)\s*((normal|trigger|g|token)\s+unit|(normal|blitz|set|trigger)\s+order|grade\s*\d|power\s*\+?\d|critical\s*\d|shield\b|twin drive|triple drive|persona ride)/i.test(l));
   // → {stats, rest}: the fields read from the stat line(s) and the text without them
   function splitStats(text) {
-    const lines = String(text || "").replace(/\r/g, "").split("\n");
+    const lines = String(text || "").replace(/\r/g, "").split("\n").map((l) => unfoot(unglue(l)));
     const statLines = [], rest = [];
     for (const l of lines) (isStatLine(l) ? statLines : rest).push(l);
     const out = {};
@@ -32,7 +55,16 @@ const TextParse = (() => {
     // a whole card page pasted: the first line is the name; illustrator and flavor text (a fully quoted line) aren't abilities
     for (let i = rest.length - 1; i >= 0; i--) {
       const l = rest[i].trim();
-      if (/^illust(rator|ration)?\s*[:：]?/i.test(l) || /^["“].*["”]$/.test(l)) rest.splice(i, 1);
+      if (/^illust(rator|ration)?\s*[:：/]?/i.test(l) || /^["“].*["”]$/.test(l)) rest.splice(i, 1);
+    }
+    // units: unquoted flavor text at the end (a line with no [AUTO]/[CONT]/… tag, not an option bullet) isn't an ability
+    if (statLines.some((l) => /(^|\|)\s*(normal|trigger|g|token) unit\s*(\||$)/i.test(l))) {
+      for (let i = rest.length - 1; i >= 0; i--) {
+        const l = rest[i].trim();
+        if (!l) continue;
+        if (/\[/.test(l) || /^[・(（\-–]/.test(l) || i === rest.findIndex((x) => x.trim())) break;
+        rest.splice(i, 1);
+      }
     }
     const firstAt = rest.findIndex((l) => l.trim());
     if (firstAt >= 0 && lines.indexOf(rest[firstAt]) < lines.indexOf(statLines[0])) {
@@ -48,6 +80,7 @@ const TextParse = (() => {
       if ((m = low.match(/^(normal|trigger|g|token) unit$/))) { out.type = m[1] === "trigger" ? "trigger" : m[1] === "g" ? "g" : "unit"; if (m[1] === "token") out.token = true; }
       else if ((m = low.match(/^(normal|blitz|set|trigger) order$/))) { out.type = "order"; if (m[1] === "set") out.setOrder = true; }
       else if (/^(ride deck )?crest$/.test(low)) out.type = "crest";
+      else if ((m = low.match(/^format (standard|v premium|premium|extreme)$/))) out.icon = m[1] === "standard" ? "D" : m[1] === "v premium" ? "V" : "-";
       else if ((m = low.match(/^(critical|front|draw|heal|over|stand) trigger$/))) { out.trigger = m[1] === "critical" ? "crit" : m[1]; out.type = "trigger"; }
       else if ((m = low.match(/^grade\s*[:\-]?\s*(\d+)$/))) { out.grade = +m[1]; seenGrade = true; }
       else if ((m = low.match(/^power\s*[:\-]?\s*(\+)?\s*([\d,]+)$/))) { out.power = +m[2].replace(/,/g, ""); if (m[1]) out.powerPlus = true; }
@@ -59,6 +92,7 @@ const TextParse = (() => {
       else if (low === "boost") out.boost = true;
       else if (low === "intercept") out.intercept = true;
       else if (low === "persona ride") out.persona = true;
+      else if (low === "kai" || low === "kai icon") out.kai = true;
       else if (low === "sentinel") out.sentinel = true;
       else if ((m = low.match(/^imaginary gift\s*[:\-]?\s*(force|accel|protect)/))) out.gift = m[1];
       else if ((m = t.match(/^(?:card\s*no\.?|number)?\s*[:\-]?\s*([A-Z0-9]+(?:-[A-Z0-9]+)*\/[A-Z0-9-]+)$/i))) out.number = m[1];
@@ -113,6 +147,8 @@ const TextParse = (() => {
     if (/this card is (regarded as being )?from all clans/i.test(text)) out.allClans = true;
     const sg = text.match(/while (?:you are )?paying the cost (?:for|of) \[?stride\]?,? this card gets grade \+(\d)/i);
     if (sg) out.strideGrade = +sg[1];
+    // "[CONT]:The normal ride of this card from a grade 3 card with a Kai icon and a different card name from this card also becomes a persona ride."
+    if (/normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride/i.test(text)) out.personaFromKai = true;
     // "[CONT](Hand):When this card would be discarded, it may be discarded as a grade 4 or 3…" (counts for the stride cost)
     const da = text.match(/may be discarded as a grade ((?:\d+(?:\s*or\s*)?)+)/i);
     if (da) out.discardAs = Math.max(...da[1].match(/\d+/g).map(Number));
@@ -156,6 +192,7 @@ const TextParse = (() => {
     else if ((m = t.match(/(?:card|unit)s? named "([^"]+)"/i)) || (m = t.match(/^"([^"]+)"$/))) f.nameExact = m[1];
     if ((m = t.match(/<+([^>]+)>+/))) f.clan = m[1].trim();
     if (/same card name as (your|the) vanguard/i.test(t)) f.sameNameVC = true;
+    if (/with an? kai icon/i.test(t)) f.kai = true;
     if (/\bother\b/i.test(t)) f.other = true;
     if (/normal units?/i.test(t)) f.ctype = "unit";
     else if (/trigger units?/i.test(t)) f.ctype = "trigger";
@@ -261,6 +298,8 @@ const TextParse = (() => {
     [/at the beginning of the guard step|at the beginning of your opponent'?s guard step/i, "guardStart", null],
     [/at the beginning of your (ride phase|turn|stand phase|draw phase)/i, "turnStart", null],
     [/at the beginning of your opponent'?s (turn|ride phase)/i, "oppTurnStart", null],
+    [/at the end of the battle (?:that )?(?:this unit|it) attacked a rear-guard/i, "battleEnd", null, { conds: [{ type: "targetRC" }] }],
+    [/at the end of the battle (?:that )?(?:this unit|it) attacked a vanguard/i, "battleEnd", null, { conds: [{ type: "targetVC" }] }],
     [/at the end of the battle (that |this unit |it )?(this unit |it )?(attacked|boosted)/i, "battleEnd", null],
     [/at the end of the battle/i, "battleEnd", null],
     [/when (this unit'?s|its|the) attack (that this unit boosted |)hits a vanguard/i, "attackHit", null, { conds: [{ type: "targetVC" }] }],
@@ -743,6 +782,22 @@ const TextParse = (() => {
         ab.effects.push({ type: "grant", ability: -extraAbs.length, dur: ctx.dur || "turn", ...(ctx.last ? { ...ctx.last } : { target: "self" }) });
         continue;
       }
+      // a second cost in the middle: "If you persona rode this turn, [COST][put a card from hand into soul], until end of turn, …"
+      const pcm = t.match(/^\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?\s*(?:and\s+)?([\s\S]*)$/i);
+      if (pcm) {
+        const r = costsIn(pcm[1]);
+        if (r.costs.length && !r.unread.length) {
+          const step = { type: "payCost", costs: r.costs };
+          if (ifCond) step.ifCond = ifCond;
+          if (onlyIf) step.onlyIf = onlyIf;
+          if (later) step.later = later;
+          ab.effects.push(step);
+          onlyIf = "did"; // the rest of the sentence needs the cost paid
+          if (!pcm[2].trim()) continue;
+          t = pcm[2].trim();
+          if (/^(until end of (turn|that battle|the battle|your opponent'?s turn|your next turn))$/i.test(t)) { ctx.dur = durOf(t); continue; }
+        }
+      }
       const es0 = effectOf(t, ctx);
       if (es0 === null && /\b(is|are|has|have)\b/i.test(t) && !/\b(gets?|draw|call|put|retire|choose|look|search)\b/i.test(t)) {
         const r2 = condsIn("if " + t);
@@ -821,6 +876,7 @@ const TextParse = (() => {
       if (/^(sentinel|forerunner|lord|boost|intercept|resist|harmony|restraint)\b\s*\.?\s*$/i.test(body)) continue; // a keyword: card field
       if (/^[A-Z][A-Za-z!'‐-]{2,20}( \d+)?\s*$/.test(body)) continue;
       if (/^\[legion \d+\]\s*"[^"]+"\s*$/i.test(body)) continue;
+      if (/^the normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride\.?$/i.test(body)) continue; // card field personaFromKai
       if (/^(hand:\s*)?while (you are )?paying the cost (for|of) \[?stride\]?,? this card gets grade \+\d\.?$/i.test(body)) continue; // card field strideGrade // Legion mate name (the Seek Mate ability carries it) // a keyword label only (Engorge, Blaze, Success 20000…): its effect is in other lines
       const a = ability(l, undefined, extraAbs);
       out.push(a);

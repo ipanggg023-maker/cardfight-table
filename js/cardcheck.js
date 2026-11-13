@@ -48,6 +48,7 @@ const CardCheck = (() => {
   function flagLine(l, c) {
     if (/^\(.*\)$/.test(l)) return { note: "reminder text" };
     if (/^sentinel\b/.test(l)) return c.sentinel ? { ok: "Sentinel box" } : { warn: "Tick “Sentinel”" };
+    if (/normal ride of this card from a grade 3 card with a kai icon/.test(l)) return c.personaFromKai ? { ok: "“Persona Ride from a Kai grade 3” box" } : { warn: "Tick “Persona Ride from a Kai grade 3”" };
     if (/^persona ride/.test(l)) return c.persona ? { ok: "Persona Ride box" } : { warn: "Tick “Persona Ride”" };
     if (/^regalis piece/.test(l)) return c.regalis ? { ok: "Regalis box" } : { warn: "Tick “Regalis Piece”" };
     if (/^ace unit|^\[ace unit\]/.test(l)) return c.ace ? { ok: "Ace box" } : { warn: "Tick “Ace Unit”" };

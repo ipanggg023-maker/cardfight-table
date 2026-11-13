@@ -185,6 +185,7 @@ const Game = (() => {
     if (f.trig && f.trig !== "") {
       if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
     }
+    if (f.kai && !c.kai) return false; // "with a Kai icon"
     if (f.sentinel === "yes" && !c.sentinel) return false;
     if (f.sentinel === "no" && c.sentinel) return false;
     if (env.pi !== undefined && S) {
@@ -399,6 +400,7 @@ const Game = (() => {
       case "persona": return p.personaThisTurn;
       case "playedOrder": return p.ordersThisTurn > 0;
       case "targetVC": return !!S.battle && S.battle.tgt === "vc";
+      case "targetRC": return !!S.battle && S.battle.tgt !== "vc";
       case "selfFront": return frontOf(pi).includes(ctx.key);
       case "selfBack": return BACK.includes(ctx.key);
       case "count": return cmp(countOf(pi, c.what || "mySoul", c.filter, ctx), c.op || "ge", n);
@@ -1024,6 +1026,13 @@ const Game = (() => {
         break;
       }
       case "manual": await manualEffect(pi, ctx, e.text); break;
+      case "payCost": { // a second cost in the middle of an ability: "If X, [COST][…], Y" (the next steps need it paid)
+        const costs = e.costs || [];
+        if (!costs.length || !costs.every((c) => canPay(pi, c, ctx))) { log(`${ctx.card ? ctx.card.name + ": " : ""}can't pay ${SCHEMA.effects.payCost.text(e)}`); return { count: 0, cards: [] }; }
+        if (!(await yesNo(pi, `${ctx.card ? ctx.card.name + ": " : ""}pay ${costs.map((c) => (SCHEMA.costs[c.type] ? SCHEMA.costs[c.type].text(c) : c.type)).join(" & ")}?`))) return { count: 0, cards: [] };
+        for (const c of costs) await pay(pi, c, ctx);
+        return { count: 1, cards: [] };
+      }
       case "setWorld": p.world = e.text || ""; log(`🌐 ${p.name}'s World is now ${p.world || "(none)"}`); break;
       case "seekMate": {
         // Seek Mate (CR 6.4, 14.11): legion with a named card from the deck; a unit only legions once
@@ -1284,7 +1293,9 @@ const Game = (() => {
     if (opts.effect) vs.rest = opts.stand ? false : vs.rest; // "ride it as [Stand]"
     log(`${p.name} rides ${card.name} (G${card.grade})${opts.effect ? " by an effect" : ""}`);
     // Persona Ride (CR 6.3.8): a normal ride from hand onto a vanguard with the same name, both with the icon
-    if (!opts.effect && fromHand && card.persona && old.persona && old.name === card.name) {
+    // card.personaFromKai: "the normal ride of this card from a grade 3 card with a Kai icon and a different card name also becomes a persona ride"
+    const kaiPersona = card.personaFromKai && old.kai && +old.grade === 3 && old.name !== card.name;
+    if (!opts.effect && fromHand && card.persona && ((old.persona && old.name === card.name) || kaiPersona)) {
       p.personaFront = true;
       p.personaThisTurn = true;
       draw(pi, 1);
