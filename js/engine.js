@@ -1052,6 +1052,58 @@ const Game = (() => {
     return OK;
   }
 
+  // ---------- test table (index.html?test=<card id>): put a card anywhere and fire its events ----------
+  // ops: ride {uid} · call {uid, key} · fire {key, event} · fill {zone, n} (top deck cards → soul/drop/damage/hand/bind, gUp from the G deck)
+  const testOp = (op) => run(async () => {
+    const pi = op.pi ?? 0, p = P(pi);
+    const take = (uid) => {
+      for (const z of ZONES) { const i = (p[z] || []).findIndex((c) => c.uid === uid); if (i >= 0) return p[z].splice(i, 1)[0]; }
+      return null;
+    };
+    switch (op.op) {
+      case "ride": {
+        const card = take(op.uid);
+        if (!card) return err("Card not found");
+        const vs = p.slots.vc, old = vs.card;
+        if (vs.heart) { toGZone(p, old); p.soul.push(vs.heart); vs.heart = null; } else p.soul.push(old);
+        vs.card = card;
+        log(`🧪 ${p.name} rides ${card.name}`);
+        if (card.gift) await giveGift(pi, card.gift, true);
+        collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc" });
+        collect(pi, "vc", "placedVC");
+        await settle();
+        break;
+      }
+      case "call": {
+        if (!rcOf(pi).includes(op.key)) return err("Pick a rear-guard circle");
+        const card = take(op.uid);
+        if (!card) return err("Card not found");
+        log(`🧪 test call`);
+        await place(pi, card, op.key);
+        break;
+      }
+      case "fire": {
+        if (!p.slots[op.key]) return err("No unit on that circle");
+        log(`🧪 event “${op.event}” on ${p.slots[op.key].card.name}`);
+        collect(pi, op.key, op.event);
+        await settle();
+        break;
+      }
+      case "fill": {
+        const n = Math.max(1, +op.n || 1);
+        for (let i = 0; i < n; i++) {
+          if (op.zone === "gUp") { if (!p.gDeck.length) break; p.gUp.push(p.gDeck.pop()); continue; }
+          const c = p.deck.pop();
+          if (!c) break;
+          if (op.zone === "damage") { c.down = false; p.damage.push(c); } else p[op.zone].push(c);
+        }
+        log(`🧪 ${p.name}: +${n} ${op.zone === "gUp" ? "face-up G card" : op.zone}`);
+        break;
+      }
+      default: return err("Unknown test action");
+    }
+  });
+
   // ---------- battle ----------
   const toBattle = () => run(async () => {
     if (S.phase !== "main") return err("Not in main phase");
@@ -1227,7 +1279,7 @@ const Game = (() => {
     newGame, state: () => S, setOnChange: (f) => (onChange = f), snapshot, load, checkTiming,
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
-    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, judgeOp, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
+    toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, judgeOp, testOp, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
     driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower,
   };
 })();

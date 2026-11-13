@@ -35,8 +35,10 @@
       <select id="qg"><option value="">All grades</option><option>0</option><option>1</option><option>2</option><option>3</option><option value="o">Orders</option></select>
       <select id="qn" title="Clan / nation"></select>
       <select id="qr" title="Race"></select>
+      <select id="qs" title="Status (text check)"><option value="">All statuses</option><option value="gaps">⚠ Needs work</option><option value="none">◻ No blocks yet</option><option value="manual">✋ Uses Manual</option><option value="auto">✅ Automatic</option><option value="vanilla">· No abilities</option></select>
       <button id="newCard" class="go">+ New card</button>
     </div>
+    <div id="cardStats" class="cstats"></div>
     <ul id="cardList" class="clist"></ul>
   </div>
   <div class="formcol" id="cardForm"></div>
@@ -161,6 +163,7 @@
 <script src="js/formats.js"></script>
 <script src="js/db.js"></script>
 <script src="js/textparse.js"></script>
+<script src="js/cardcheck.js"></script>
 <script src="js/tcgapi.js"></script>
 <script src="js/cgs.js"></script>
 <script src="js/editor.js"></script>

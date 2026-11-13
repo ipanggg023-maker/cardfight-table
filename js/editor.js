@@ -93,9 +93,13 @@ const cardMatches = (c, f) => c.name.toLowerCase().includes((f.q || "").toLowerC
 function renderList() {
   const f = { q: $("#q").value, g: $("#qg").value, n: fillPick($("#qn"), "All clans", clanOf, $("#qn").value), r: fillPick($("#qr"), "All races", "race", $("#qr").value) };
   const LIMIT = 400; // drawing thousands of rows at once stalls the page; search to narrow down
-  const found = cards.filter((c) => cardMatches(c, f));
+  const qs = $("#qs").value;
+  const found = cards.filter((c) => cardMatches(c, f) && (!qs || CardCheck.analyze(c).status === qs));
+  const tally = {};
+  cards.forEach((c) => { const s = CardCheck.analyze(c).status; tally[s] = (tally[s] || 0) + 1; });
+  setHTML($("#cardStats"), Object.entries(CardCheck.STATUS).filter(([k]) => tally[k]).map(([k, v]) => `<button data-st="${k}" class="${qs === k ? "on" : ""}" title="${v.label}">${v.icon} ${tally[k].toLocaleString()}</button>`).join(""));
   setHTML($("#cardList"), found.slice(0, LIMIT)
-    .map((c) => `<li data-id="${esc(c.id)}" class="${cur && cur.id === c.id ? "on" : ""}"><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>${esc(c.name)}
+    .map((c) => `<li data-id="${esc(c.id)}" class="${cur && cur.id === c.id ? "on" : ""}"><span class="st st-${CardCheck.analyze(c).status}" title="${CardCheck.STATUS[CardCheck.analyze(c).status].label}">${CardCheck.STATUS[CardCheck.analyze(c).status].icon}</span><span class="g">${c.type === "order" ? "ORD" : "G" + c.grade}</span>${esc(c.name)}
       <span class="x">${c.type === "trigger" && !c.trigger ? "⚠" : ""}${c.trigger ? TRIG[c.trigger].icon : ""}${c.sentinel ? "◆" : ""}${(c.abilities || []).length ? "✦" + c.abilities.length : ""}</span></li>`).join("")
     || `<li class="muted">No cards</li>`) ;
   if (found.length > LIMIT) $("#cardList").insertAdjacentHTML("beforeend", `<li class="muted">… ${(found.length - LIMIT).toLocaleString()} more. Search or filter to see them.</li>`), ($("#cardList")._h = null);
@@ -105,6 +109,8 @@ $("#q").addEventListener("input", () => { clearTimeout(listT); listT = setTimeou
 $("#qg").addEventListener("change", renderList);
 $("#qn").addEventListener("change", renderList);
 $("#qr").addEventListener("change", renderList);
+$("#qs").addEventListener("change", renderList);
+$("#cardStats").addEventListener("click", (e) => { const b = e.target.closest("[data-st]"); if (!b) return; $("#qs").value = $("#qs").value === b.dataset.st ? "" : b.dataset.st; renderList(); });
 $("#cardList").addEventListener("click", (e) => {
   const li = e.target.closest("[data-id]");
   if (!li) return;
@@ -175,7 +181,8 @@ function renderCard() {
         ${c.image ? `<button data-do="clearImg">Remove image</button>` : ""}
       </div>
     </div>
-    <div class="full"><label>Card text (for reference, shown on hover) <textarea data-path="text">${esc(c.text)}</textarea></label></div>
+    <div class="full"><label>Official card text (checked against the blocks below) <textarea data-path="text" id="cardText">${esc(c.text)}</textarea></label></div>
+    <div id="textCheck" class="tcheck"></div>
     <h2>Abilities</h2>
     ${(c.abilities || []).map(abilityHTML).join("") || `<p class="muted">No abilities. Vanilla units, triggers and sentinels need none.</p>`}
     <div class="btnrow">
@@ -183,11 +190,37 @@ function renderCard() {
     </div>
     <div class="btnrow">
       <button data-do="save" class="go">Save card</button>
+      <button data-do="test" title="Save, then try this card on a test table in a new tab">🧪 Test this card</button>
       <button data-do="dup">Duplicate</button>
       <button data-do="del" class="del">Delete</button>
     </div>`;
   $("#imgFile").addEventListener("change", onImage);
+  renderCheck();
 }
+// Text ↔ blocks check (js/cardcheck.js): each text ability, the block it matched, and what differs
+function renderCheck() {
+  const box = $("#textCheck");
+  if (!box || !cur) return;
+  const r = CardCheck.analyze({ ...cur, abilities: JSON.parse(JSON.stringify(cur.abilities || [])) });
+  const S = CardCheck.STATUS[r.status];
+  const icon = { ok: "✅", flag: "✅", warn: "⚠", missing: "❌", note: "ℹ" };
+  setHTML(box, `<div class="tc-head"><b>${S.icon} ${S.label}</b><span class="muted">Text check: each line of the card text and the block that does it</span></div>
+    ${r.items.map((it) => `<div class="tc-item tc-${it.state}"${it.ab !== null ? ` data-goab="${it.ab}"` : ""}>
+      <span class="tc-ic">${icon[it.state]}</span>
+      <div><p>${esc(it.text)}</p>${it.ab !== null ? `<small class="tc-link">→ Ability ${it.ab + 1}${it.manual ? " (✋ Manual)" : ""}</small>` : ""}
+      ${it.notes.length && it.state !== "ok" ? `<ul>${it.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : it.state === "flag" ? `<small class="muted">${esc(it.notes[0])}</small>` : ""}</div></div>`).join("") || '<p class="muted">No card text. Paste the official text above to check the blocks against it.</p>'}
+    ${r.extraBlocks.length ? `<p class="tc-extra">⚠ Ability ${r.extraBlocks.map((i) => i + 1).join(", ")} doesn't match any line of the text.</p>` : ""}`);
+  document.querySelectorAll("#cardForm .abil").forEach((el, i) => {
+    const it = r.items.find((x) => x.ab === i);
+    el.dataset.state = it ? it.state : "extra";
+  });
+}
+$("#cardForm").addEventListener("click", (e) => {
+  const it = e.target.closest("[data-goab]");
+  if (!it) return;
+  const el = document.querySelectorAll("#cardForm .abil")[+it.dataset.goab];
+  if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+});
 
 function abilityHTML(ab, ai) {
   const base = `abilities.${ai}`;
@@ -195,8 +228,9 @@ function abilityHTML(ab, ai) {
   const part = (key, title, lib) => `<div class="part"><h4>${title}</h4>
     ${(ab[key] || []).map((row, ri) => rowHTML(`${base}.${key}.${ri}`, row, lib, ab.kind === "CONT" && key === "effects")).join("")}
     <div class="addrow">${sel(`@add:${base}.${key}`, { "": "+ add " + title.toLowerCase().replace(/s$/, "") + "…", ...Object.fromEntries(Object.entries(lib).filter(([k]) => ab.kind !== "CONT" || key !== "effects" || ["power", "crit"].includes(k)).map(([k, v]) => [k, v.label])) }, "")}</div></div>`;
-  return `<div class="abil">
+  return `<div class="abil" data-ab="${ai}">
     <div class="head">
+      <span class="abno">Ability ${ai + 1}</span>
       <label>Kind ${sel(`${base}.kind`, SCHEMA.kinds, ab.kind)}</label>
       ${order ? "" : `<label>Zone ${sel(`${base}.zone`, SCHEMA.zones, ab.zone || "VC")}</label>`}
       ${ab.kind === "AUTO" ? `<label>When ${sel(`${base}.when`, SCHEMA.events, ab.when)}</label>` : ""}
@@ -284,8 +318,10 @@ function defaultRow(type) {
   if (type === "lookTop") { r.n = 5; r.pick = 1; }
   return r;
 }
+let checkT = 0;
 function updatePreviews() {
   document.querySelectorAll(".abil .preview").forEach((el, i) => (el.textContent = describeAbility(cur.abilities[i])));
+  clearTimeout(checkT); checkT = setTimeout(renderCheck, 150);
   const h = document.querySelector("#cardForm h2");
   if (h) h.textContent = cur.name;
 }
@@ -319,6 +355,14 @@ $("#cardForm").addEventListener("click", async (e) => {
       await reload();
       renderList();
       return toast("Saved");
+    }
+    case "test": {
+      if (dirty) {
+        if (!window.confirm("Save this card first, then test it?")) return;
+        await DB.put("cards", cur); dirty = false; await reload(); renderList();
+      }
+      window.open("index.html?test=" + encodeURIComponent(cur.id), "_blank");
+      return;
     }
     case "dup": cur = { ...JSON.parse(JSON.stringify(cur)), id: DB.newId(), name: cur.name + " (copy)" }; dirty = true; renderList(); return renderCard();
     case "del": {

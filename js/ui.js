@@ -466,6 +466,7 @@ function render() {
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
   renderJudge(S, v);
+  if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
   if (S.winner !== null) reportMatch(S); else if (!$("#winCoins").hidden) $("#winCoins").hidden = true;
@@ -773,4 +774,89 @@ $("#netRetry").addEventListener("click", async () => {
 $("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value.toUpperCase()));
 // Host: every engine change goes to the guest too.
 Game.setOnChange(() => { scheduleRender(); if (ui.online && ONLINE === "host") Net.pushState(); });
-Loader.wait(loadSetup());
+const TEST = new URLSearchParams(location.search).get("test"); // card id: open the test table for that card
+Loader.wait(TEST && !ONLINE ? startTest(TEST) : loadSetup());
+
+// ---------- test table (editor → 🧪 Test this card) ----------
+// A solo table: you (seat 0) with the test card ×4 in the deck (or in the G deck), plain filler cards, and a dummy opponent.
+// The 🧪 panel puts the card in hand / on VC / on RC, fires any event on any circle, and fills zones. The ⚖ Judge panel does the rest.
+const testFiller = () => {
+  const u = (g, extra = {}) => ({ id: "test-g" + g + (extra.trigger || ""), name: extra.trigger ? `Test ${TRIG[extra.trigger].name}` : `Test Unit G${g}`,
+    grade: g, type: extra.trigger ? "trigger" : "unit", power: [5000, 8000, 10000, 13000][g], shield: g === 3 ? 0 : g === 0 ? 5000 : 5000 + (g === 1 ? 0 : 5000),
+    crit: 1, trigger: null, nation: "Test", race: "", image: "", text: "", abilities: [], ...extra });
+  return { u, trig: (t) => u(0, { trigger: t, shield: t === "heal" ? 15000 : 10000, power: 5000 }) };
+};
+function testDeck(card) {
+  const { u, trig } = testFiller();
+  const isG = card && card.type === "g";
+  const main = [];
+  if (card && !isG) for (let i = 0; i < 4; i++) main.push(card);
+  const add = (c, n) => { for (let i = 0; i < n; i++) main.push(c); };
+  add(trig("crit"), 8); add(trig("draw"), 4); add(trig("heal"), 4);
+  add(u(1), 12); add(u(2), 11); add(u(3), 50);
+  return { name: "Test deck", format: "standard", energy: true, ride: [u(0), u(1), u(2), u(3)], starter: null, main: main.slice(0, 50), g: isG ? [card, card, card] : [] };
+}
+async function startTest(id) {
+  const card = (await DB.all("cards")).find((c) => c.id === id);
+  if (!card) { toast("Test card not found. Save it in the editor first."); return loadSetup(); }
+  ui.test = { card };
+  ui.hotseat = false;
+  ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
+  Game.newGame(["Tester", "Dummy"], [testDeck(card), testDeck(null)], { first: 0 });
+  Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
+  await Game.mulligan([]);
+  await Game.mulligan([]);
+  $("#setup").hidden = true;
+  $("#testBtn").hidden = false;
+  $("#testBox").hidden = false;
+  document.title = "Test: " + card.name;
+  render();
+}
+const T = { key: "vc", event: "attack", zone: "soul" };
+function renderTest(S) {
+  if (!ui.test || $("#testBox").hidden || !S) return;
+  const p = S.players[0], c = ui.test.card;
+  const copies = ["hand", "deck", "drop", "soul", "damage", "bind", "gDeck", "gUp"].flatMap((z) => (p[z] || []).filter((x) => x.id === c.id).map((x) => ({ z, x })));
+  const onField = Game.unitsOf(0).filter((k) => p.slots[k] && p.slots[k].card.id === c.id);
+  const first = copies[0];
+  const where = (z) => ({ hand: "hand", deck: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gDeck: "G deck", gUp: "G zone" }[z]);
+  const circles = Game.unitsOf(0).map((k) => `<option value="${k}" ${T.key === k ? "selected" : ""}>${k.toUpperCase()}${p.slots[k] ? " · " + esc(p.slots[k].card.name) : " (empty)"}</option>`).join("");
+  setHTML($("#testBody"), `
+    <p class="tt-card"><b>${esc(c.name)}</b><br><span class="muted">${copies.length} cop${copies.length === 1 ? "y" : "ies"} off the field${copies.length ? " (" + [...new Set(copies.map((y) => where(y.z)))].join(", ") + ")" : ""}${onField.length ? " · on " + onField.map((k) => k.toUpperCase()).join(", ") : ""}</span></p>
+    <h4>Put the test card</h4>
+    <div class="jrow">${first ? `<button data-t="hand" ${first.z === "hand" ? "disabled" : ""}>To hand</button><button data-t="ride">Ride it (VC)</button>
+      <select id="ttCallKey">${Game.rcOf(0).map((k) => `<option value="${k}">${k.toUpperCase()}</option>`).join("")}</select><button data-t="call">Call to RC</button>` : '<span class="muted">No copy left off the field. Use the Judge panel to move one back.</span>'}</div>
+    <h4>Fire an event</h4>
+    <div class="jrow"><select id="ttKey">${circles}</select><select id="ttEvent">${Object.entries(SCHEMA.events).map(([k, v]) => `<option value="${k}" ${T.event === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select><button data-t="fire" class="go">Fire</button></div>
+    <p class="muted small">Runs that circle's AUTO abilities for the event (as if it happened), then resolves them. Conditions and costs still apply.</p>
+    <h4>Set up</h4>
+    <div class="jrow">${[["damage", "+1 damage"], ["soul", "+1 soul"], ["drop", "+1 drop"], ["hand", "+1 hand"], ["bind", "+1 bind"]].map(([z, l]) => `<button data-t="fill" data-z="${z}">${l}</button>`).join("")}${p.gDeck.length ? '<button data-t="fill" data-z="gUp">+1 face-up G</button>' : ""}
+      <button data-t="fill" data-z="damage" data-n="5">Damage to 5</button><button data-t="opp" data-z="damage">Opponent +1 damage</button><button data-t="energy">Energy +3</button></div>
+    <h4>Phase</h4>
+    <div class="jrow"><span class="muted">Now: turn ${S.turn}, ${esc(S.phase)}${S.active ? " (dummy's turn)" : ""}</span>${S.phase === "ride" ? '<button data-t="skipRide">Skip ride → main</button>' : ""}${S.phase === "main" && S.active === 0 ? '<button data-t="battle">To battle</button>' : ""}<button data-t="restart">Start over</button></div>
+    <p class="muted small">The ⚖ Judge panel moves any card anywhere and changes power, critical, rest/stand. Turn 1 can't attack: end the turn twice to attack. Watch the log (☰) for ✦ ability lines.</p>`);
+}
+$("#testBody").addEventListener("change", (e) => { if (e.target.id === "ttKey") T.key = e.target.value; if (e.target.id === "ttEvent") T.event = e.target.value; });
+$("#testBody").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-t]");
+  if (!b || !ui.test) return;
+  const S = Game.state(), p = S.players[0], c = ui.test.card;
+  const copy = ["hand", "deck", "drop", "soul", "damage", "bind", "gDeck", "gUp"].flatMap((z) => (p[z] || []).filter((x) => x.id === c.id))[0];
+  let r;
+  switch (b.dataset.t) {
+    case "hand": r = await Game.judgeOp({ op: "move", pi: 0, uid: copy.uid, to: "hand" }); break;
+    case "ride": r = await Game.testOp({ op: "ride", uid: copy.uid }); break;
+    case "call": r = await Game.testOp({ op: "call", uid: copy.uid, key: $("#ttCallKey").value }); break;
+    case "fire": T.key = $("#ttKey").value; T.event = $("#ttEvent").value; r = await Game.testOp({ op: "fire", key: T.key, event: T.event }); break;
+    case "fill": r = await Game.testOp({ op: "fill", zone: b.dataset.z, n: b.dataset.n ? Math.max(0, +b.dataset.n - p.damage.length) || 0 : 1 }); break;
+    case "opp": r = await Game.testOp({ op: "fill", pi: 1, zone: "damage", n: 1 }); break;
+    case "energy": for (let i = 0; i < 3; i++) Game.judgeOp({ op: "energy", pi: 0, amount: 1 }); break;
+    case "skipRide": r = await Game.skipRide(); break;
+    case "battle": r = await Game.toBattle(); break;
+    case "restart": location.reload(); return;
+  }
+  if (r && !r.ok) toast(r.msg);
+  render();
+});
+$("#testBtn").addEventListener("click", () => { $("#testBox").hidden = !$("#testBox").hidden; render(); });
+$("#testClose").addEventListener("click", () => { $("#testBox").hidden = true; });

@@ -27,6 +27,7 @@
 <div class="hud-tl">
   <a href="lobby.html" class="hud-btn" title="Back to lobby" aria-label="Back to lobby">←</a>
   <button id="logBtn" class="hud-btn" title="Game log" aria-label="Game log">☰</button>
+  <button id="testBtn" class="hud-btn" title="Test table controls" aria-label="Test table" hidden>🧪</button>
   <button id="judgeBtn" class="hud-btn" title="Judge panel: move any card by hand (for card text the game can't do)" aria-label="Judge panel">⚖</button>
   <span id="turnTag" class="turntag"></span>
 </div>
@@ -36,6 +37,10 @@
 <aside id="logDrawer" class="drawer" hidden>
   <div class="drawer-head"><b>Game log</b><span class="userchip" data-userchip></span><button id="logClose" class="hud-btn" aria-label="Close">✕</button></div>
   <ul id="log"></ul>
+</aside>
+<aside id="testBox" class="drawer judge testbox" hidden>
+  <div class="drawer-head"><b>🧪 Test table</b><button id="testClose" class="hud-btn" aria-label="Close">✕</button></div>
+  <div id="testBody"></div>
 </aside>
 <aside id="judge" class="drawer judge" hidden>
   <div class="drawer-head"><b>⚖ Judge panel</b><button id="judgeClose" class="hud-btn" aria-label="Close">✕</button></div>

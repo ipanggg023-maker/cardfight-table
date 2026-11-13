@@ -473,3 +473,13 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 
 /* coins from online matches */
 .win-coins { margin: 0 0 14px; color: var(--gold); font: 600 1rem var(--display); }
+
+/* test table (index.html?test=<card id>) */
+.drawer.testbox { left: 0; right: auto; border-left: 0; border-right: 1px solid var(--line); width: min(400px, 92vw); }
+#testBody { display: grid; gap: 6px; overflow-y: auto; font-size: .82rem; padding-bottom: 12px; }
+#testBody h4 { margin: 8px 0 0; font: 600 .75rem var(--display); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+#testBody button, #testBody select { padding: 3px 8px; font-size: .76rem; }
+#testBody .small { font-size: .74rem; margin: 2px 0; }
+.tt-card { margin: 0; }
+#testBody > * { min-width: 0; }
+#testBody select { max-width: 100%; min-width: 0; }
