@@ -154,6 +154,7 @@ function renderCard() {
       <label>Card type ${sel("type", { unit: "Normal unit", trigger: "Trigger unit", order: "Order", g: "G unit (grade 4)", crest: "Crest (made by effects)" }, c.type)}</label>
       ${c.type === "g" ? `<label>G unit kind ${sel("gKind", { stride: "Stride (vanguard)", guardian: "G guardian (guard step)" }, c.gKind || "stride")}</label>` : ""}
       <label>Grade ${num("grade", c.grade)}</label>
+      <label title="“While you are paying the cost for [Stride], this card gets grade +N”">Stride cost grade + ${num("strideGrade", c.strideGrade, "0")}</label>
       <label>Power ${num("power", c.power)}</label>
       <label>Shield ${num("shield", c.shield)}</label>
       <label>Critical ${num("crit", c.crit)}</label>
@@ -165,6 +166,7 @@ function renderCard() {
       <label>Nation ${txt("nation", c.nation, "Dragon Empire")}</label>
       <label>Clan (older cards) ${txt("clan", c.clan, "e.g. Kagero")}</label>
       <label>Race ${txt("race", c.race)}</label>
+      <label title="“This card is also regarded as …”: extra names, separated by |">Also named ${txt("aliasText", (c.alias || []).join(" | "), "e.g. Name A | Name B")}</label>
       ${c.type === "order" && c.arms ? `<label>Arms: vanguard name contains ${txt("armsName", c.armsName, "e.g. Vyrgilla")}</label>` : ""}
       ${c.type === "unit" && c.dress ? `<label>overDress onto a rear-guard named (blank = any) ${txt("overDress", c.overDress, "e.g. Lianorn")}</label>` : ""}
       ${c.type === "unit" ? `<label>XoverDress: needed rear-guards (names, separated by |) ${txt("xoverDress", c.xoverDress, "e.g. Name A | Name B")}</label>` : ""}
@@ -176,6 +178,7 @@ function renderCard() {
       <label class="chk"><input type="checkbox" data-path="persona" ${c.persona ? "checked" : ""}> Persona Ride</label>
       <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
       <label class="chk" title="Your opponent's effects can't choose this unit"><input type="checkbox" data-path="resist" ${c.resist ? "checked" : ""}> Resist</label>
+      <label class="chk" title="“This card is from all clans and nations”"><input type="checkbox" data-path="allClans" ${c.allClans ? "checked" : ""}> All clans</label>
       <label class="chk" title="Can't attack while you have a unit of another clan / nation"><input type="checkbox" data-path="lord" ${c.lord ? "checked" : ""}> Lord</label>
       <label class="chk" title="When a unit of the same clan rides this unit, you may call it from the soul to (RC)"><input type="checkbox" data-path="forerunner" ${c.forerunner ? "checked" : ""}> Forerunner</label>
       <label class="chk" title="When your other unit is placed in this unit's column, both are in harmony until end of turn"><input type="checkbox" data-path="harmony" ${c.harmony ? "checked" : ""}> Harmony</label>
@@ -346,7 +349,7 @@ function getParent(obj, path) {
   for (const k of parts) { if (o[k] === undefined) o[k] = {}; o = o[k]; }
   return [o, last];
 }
-const NUM_FIELDS = new Set(["grade", "power", "shield", "crit", "n", "amount", "pick", "look"]);
+const NUM_FIELDS = new Set(["grade", "power", "shield", "crit", "n", "amount", "pick", "look", "strideGrade"]);
 function setPath(path, value) {
   const [o, k] = getParent(cur, path);
   o[k] = NUM_FIELDS.has(k) && value !== "" ? Number(value) : value;
@@ -359,6 +362,7 @@ $("#cardForm").addEventListener("input", (e) => {
   let v = el.type === "checkbox" ? el.checked : el.value;
   if (el.dataset.path === "trigger") v = v || null;
   setPath(el.dataset.path, v);
+  if (el.dataset.path === "aliasText") { cur.alias = String(v).split("|").map((x) => x.trim()).filter(Boolean); delete cur.aliasText; }
   if (el.dataset.path === "type" && v === "g" && !(cur.grade >= 4)) { cur.grade = 4; cur.gKind = cur.gKind || "stride"; } // G units are grade 4
   // switching an ability between AUTO and Replacement: give it a timing of the right kind
   const km = el.dataset.path.match(/^abilities\.(\d+)\.kind$/);

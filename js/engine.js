@@ -172,15 +172,16 @@ const Game = (() => {
     if (!f || !c) return !!c || !f;
     if (f.gmin !== undefined && f.gmin !== "" && c.grade < +f.gmin) return false;
     if (f.gmax !== undefined && f.gmax !== "" && c.grade > +f.gmax) return false;
-    if (f.name && !c.name.toLowerCase().includes(f.name.toLowerCase())) return false;
+    const names = [c.name, ...(c.alias || [])].map((x) => String(x).toLowerCase());
+    if (f.name && !names.some((x) => x.includes(f.name.toLowerCase()))) return false;
     const t = f.ctype || "any";
     if (t === "unit" && c.type !== "unit") return false;
     if (t === "trigger" && c.type !== "trigger") return false;
     if (t === "anyunit" && c.type === "order") return false;
     if (t === "order" && c.type !== "order") return false;
     if (t === "g" && c.type !== "g") return false;
-    if (f.nameExact && c.name.toLowerCase() !== String(f.nameExact).toLowerCase()) return false;
-    if (f.clan) { const w = String(f.clan).toLowerCase(); if (![c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(w))) return false; }
+    if (f.nameExact && !names.includes(String(f.nameExact).toLowerCase())) return false;
+    if (f.clan && !c.allClans) { const w = String(f.clan).toLowerCase(); if (![c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(w))) return false; }
     if (f.trig && f.trig !== "") {
       if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
     }
@@ -380,7 +381,11 @@ const Game = (() => {
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
       case "world": return (p.world || "").toLowerCase() === String(c.text || "").toLowerCase();
       case "orderZone": return (p.orderZone || []).length >= n;
-      case "vcName": return [p.slots.vc.card, p.slots.vc.heart, p.slots.vc.mate].some((x) => x && x.name.toLowerCase().includes((c.text || "").toLowerCase()));
+      case "vcName": return [p.slots.vc.card, p.slots.vc.heart, p.slots.vc.mate].some((x) => x && [x.name, ...(x.alias || [])].some((nm) => String(nm).toLowerCase().includes((c.text || "").toLowerCase())));
+      case "inBattleAtt": return !!S.battle && S.battle.att === ctx.key && S.active === pi; // "during the battle this unit attacked"
+      case "inBattleBoost": return !!S.battle && S.battle.boostKey === ctx.key && S.active === pi; // "during the battle this unit boosted"
+      case "boosted": return !!S.battle && !!S.battle.boostKey && S.battle.att === ctx.key && S.active === pi; // "if this unit is boosted"
+      case "countVs": return cmp(countOf(pi, c.what || "myDamage", c.filter, ctx), c.op || "gt", countOf(pi, c.vs || "oppDamage", c.filter, ctx)); // "more … than your opponent"
       case "genBreak": return gFaceUp(p) >= n;   // Generation Break N (CR 14.14)
       case "limitBreak": return p.damage.length >= n; // Limit Break N (CR 14.7)
       case "vcGrade": return p.slots.vc.card.grade >= n;
@@ -842,6 +847,7 @@ const Game = (() => {
       case "chooseOppRC": return chooseUnits(pi, label, unitsAt(o, rcOf(o), f, env), n);
       case "chooseOppFrontRC": return chooseUnits(pi, label, unitsAt(o, ["fl", "fr"], f, env), n);
       case "chooseOppUnit": return chooseUnits(pi, label, unitsAt(o, unitsOf(o), f, env), n);
+      case "attacked": return S.battle && P(1 - S.active).slots[S.battle.tgt] ? [{ pi: 1 - S.active, key: S.battle.tgt }] : [];
       case "thatUnit": { // the unit(s) the step before chose ("…, and retire that unit")
         const uids = new Set(((ctx.last && ctx.last.cards) || []).map((c) => c.uid));
         const out = [];
@@ -1156,7 +1162,8 @@ const Game = (() => {
   }
   // ---------- Stride (CR 6.5, 9.8, 14.12) ----------
   const strideUnits = (p) => p.gDeck.filter((c) => c.gKind !== "guardian" && (!c.ultimate || p.gUp.length >= 3));
-  const handGrades = (cards) => cards.reduce((n, c) => n + (+c.grade || 0), 0);
+  // "While you are paying the cost for [Stride], this card gets grade +2": card.strideGrade
+  const handGrades = (cards) => cards.reduce((n, c) => n + (+c.grade || 0) + (+c.strideGrade || 0), 0);
   function canStride(pi) {
     const p = P(pi), o = P(1 - pi);
     if (!strideUnits(p).length || p.slots.vc.card.type === "g") return false;
@@ -1429,7 +1436,7 @@ const Game = (() => {
       }
       log(`${card.name}: no vanguard named "${card.armsName}", it goes to the drop`);
     }
-    if (card.setOrder) { p.orderZone.push(card); log(`${card.name} goes to the order zone`); return; } // set order (CR 4.17)
+    if (card.setOrder) { p.orderZone.push(card); log(`${card.name} goes to the order zone`); collect(pi, null, "toOrderZone", { card, zone: "OZ", subject: card }); await settle(); return; } // set order (CR 4.17)
     p.drop.push(card);
   });
 
@@ -1622,7 +1629,7 @@ const Game = (() => {
   function canAttack(key) {
     const s = S.players[S.active].slots[key];
     // the first player can't attack on their first turn (CR 10.3.2)
-    return S.phase === "battle" && S.turn > 1 && !S.battle && frontOf(S.active).includes(key) && !!s && !s.rest && !s.locked
+    return S.phase === "battle" && S.turn > 1 && !S.battle && (frontOf(S.active).includes(key) || (BACK.includes(key) && !!s && restricted(S.active, key, "canAttackBack"))) && !!s && !s.rest && !s.locked
       && !restricted(S.active, key, "cantAttack") && !lordBlocks(S.active, key);
   }
   // Lord: this unit can't attack while you have a unit of another clan / nation
@@ -1635,7 +1642,7 @@ const Game = (() => {
   }
   function boosterFor(pi, key) {
     const bk = BACK_OF[key], b = bk && P(pi).slots[bk];
-    return b && !b.rest && !b.locked && canBoostIcon(b.card) && !restricted(pi, bk, "cantBoost") ? bk : null;
+    return b && !b.rest && !b.locked && (canBoostIcon(b.card) || restricted(pi, bk, "canBoost")) && !restricted(pi, bk, "cantBoost") ? bk : null;
   }
   const attack = (att, useBoost, tgt) => run(async () => {
     if (!canAttack(att)) return err("That unit can't attack");
@@ -1652,6 +1659,7 @@ const Game = (() => {
     collect(ai, att, "attack");
     if (bk) { collect(ai, bk, "boost"); collect(ai, att, "boosted", { subject: p.slots[bk].card }); }
     collect(di, tgt, "attacked");
+    collectAll(di, "allyAttacked", { subject: P(di).slots[tgt].card, tgtKey: tgt }); // "when your (grade 3) vanguard is attacked" (also from hand)
     collectAll(ai, "allyAttacks", { subject: p.slots[att].card, attKey: att });
     collectZones(di, "oppAttacks", { subject: p.slots[att].card });
     await settle();
@@ -1697,7 +1705,7 @@ const Game = (() => {
     if (!b) return err("No attack");
     if (!["fl", "fr"].includes(key) || !s) return err("Only front row rear-guards can intercept");
     if (s.locked) return err("A locked card can't intercept");
-    if (!canInterceptIcon(s.card)) return err("This unit has no Intercept skill");
+    if (!canInterceptIcon(s.card) && !restricted(di, key, "canIntercept")) return err("This unit has no Intercept skill");
     if (key === b.tgt) return err("The attacked unit can't intercept");
     if (restricted(di, key, "cantIntercept") || ruleOn(di, "cantIntercept")) return err("This unit can't intercept now");
     b.guards.push(s.card);

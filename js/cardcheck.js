@@ -22,6 +22,17 @@ const CardCheck = (() => {
     [/heart card|heart with/, "heart conditions"],
   ];
   const lower = (s) => String(s || "").toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  // "[AUTO]…draw a card. [CONT](RC):…" on one line → two abilities (same rule as the reader; never inside quotes)
+  function splitLine(l) {
+    const out = [];
+    let q = false, start = 0;
+    for (let i = 0; i < l.length; i++) {
+      if (l[i] === '"') q = !q;
+      if (!q && i > start && /^\[(AUTO|ACT|CONT)\]/i.test(l.slice(i, i + 6)) && /[.!)\]]\s*$/.test(l.slice(start, i))) { out.push(l.slice(start, i).trim()); start = i; }
+    }
+    out.push(l.slice(start).trim());
+    return out.filter(Boolean);
+  }
   // one ability per line; bullet lines join the line before
   function textLines(text) {
     const out = [];
@@ -29,7 +40,7 @@ const CardCheck = (() => {
       const line = raw.trim();
       if (!line) continue;
       if (/^[・•]/.test(line) && out.length) out[out.length - 1] += " " + line;
-      else out.push(line);
+      else out.push(...splitLine(line));
     }
     return out;
   }
@@ -65,7 +76,9 @@ const CardCheck = (() => {
   const nums = (l, re) => [...l.matchAll(re)].map((m) => +m[1]);
   const sum = (a) => a.reduce((x, y) => x + y, 0);
   const costTotal = (ab, type) => sum((ab.costs || []).filter((r) => r.type === type).map((r) => +r.n || 1));
-  function compare(l, ab) {
+  function compare(full, ab) {
+    // numbers inside a quoted ability ("gets "[AUTO]…"") belong to the given ability, a block of its own
+    const l = full.replace(/"\[(auto|act|cont)\][^"]*"/gi, "");
     const notes = [];
     const want = (label, textN, blockN) => { if (textN !== blockN) notes.push(`${label}: text ${textN}, blocks ${blockN}`); };
     want("Counter-Blast", sum(nums(l, /counter-?blast\s*\(?(\d+)/g)), costTotal(ab, "CB"));
@@ -109,17 +122,20 @@ const CardCheck = (() => {
       const kind = kindOf(l, c);
       if (!kind) { items.push({ text: raw, kind: null, ab: null, state: "note", notes: ["no [AUTO]/[ACT]/[CONT] mark: check it by eye"] }); continue; }
       // pair with the next block of the same kind (orders: any order block)
-      let i = abs.findIndex((ab, k) => k >= next && !used.has(k) && !ab.granted && (ab.kind === kind || (kind === "ORDER" && ab.kind === "BLITZ") || (kind === "BLITZ" && ab.kind === "ORDER")));
-      if (i < 0) i = abs.findIndex((ab, k) => !used.has(k) && !ab.granted && ab.kind === kind);
+      let i = abs.findIndex((ab, k) => k >= next && !used.has(k) && !ab.granted && !ab.part && (ab.kind === kind || (kind === "ORDER" && ab.kind === "BLITZ") || (kind === "BLITZ" && ab.kind === "ORDER")));
+      if (i < 0) i = abs.findIndex((ab, k) => !used.has(k) && !ab.granted && !ab.part && ab.kind === kind);
       if (i < 0) { items.push({ text: raw, kind, ab: null, state: "missing", notes: ["No block for this ability yet", ...gapsIn(l).map((g) => "Needs: " + g)] }); continue; }
       used.add(i); next = i + 1;
-      const ab = abs[i];
+      // blocks marked "part" right after it belong to the same text line (effects written before a mid-sentence cost)
+      const parts = [];
+      for (let k = i + 1; k < abs.length && abs[k].part; k++) { parts.push(abs[k]); used.add(k); next = k + 1; }
+      const ab = parts.length ? { ...abs[i], costs: [...(abs[i].costs || []), ...parts.flatMap((x) => x.costs || [])], effects: [...(abs[i].effects || []), ...parts.flatMap((x) => x.effects || [])] } : abs[i];
       const notes = compare(l, ab);
       const manual = usesManual(ab);
       if (!manual) notes.push(...gapsIn(l).map((g) => "Needs a block the game doesn't have yet: " + g));
       items.push({ text: raw, kind, ab: i, state: notes.length ? "warn" : "ok", manual, notes });
     }
-    const extraBlocks = abs.map((_, i) => i).filter((i) => !used.has(i) && !abs[i].granted);
+    const extraBlocks = abs.map((_, i) => i).filter((i) => !used.has(i) && !abs[i].granted && !abs[i].part);
     let status;
     if (!items.some((it) => it.kind) && !abs.length) status = items.some((it) => it.state === "warn") ? "gaps" : "vanilla";
     else if (!abs.length) status = "none";
