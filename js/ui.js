@@ -351,7 +351,9 @@ function renderSide(root, pi, side) {
     placeCard(el, shown, s, pi, key);
     // gift markers on this circle (Force I/II, Protect II) and the accel bonus
     const m = (p.marks || {})[key] || {}, a = (p.accel || []).find((x) => x.key === key);
-    const badge = [m.forceI ? `F+${10 * m.forceI}k` : "", m.forceII ? "F★2" : "", m.protectII ? "P+10k" : "", a ? `A${a.variant}` : "",
+    // other named markers (Dragontree, Treasure, Cradle…): first letters ×count
+    const named = Object.entries(m).filter(([k, n]) => !["forceI", "forceII", "protectII"].includes(k) && +n > 0).map(([k, n]) => `${k.replace(/\b\w/g, (x) => x.toUpperCase())}${+n > 1 ? "×" + n : ""}`);
+    const badge = [m.forceI ? `F+${10 * m.forceI}k` : "", m.forceII ? "F★2" : "", m.protectII ? "P+10k" : "", ...named, a ? `A${a.variant}` : "",
       s && s.under && s.under.length ? `Dress${s.under.length > 1 ? "×" + s.under.length : ""}` : "", s && s.arms && s.arms.length ? `Arms×${s.arms.length}` : ""].filter(Boolean).join(" ");
     let mk = el.querySelector(":scope > .mk");
     if (badge && !mk) { mk = document.createElement("span"); mk.className = "mk"; el.appendChild(mk); }

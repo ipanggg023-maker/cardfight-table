@@ -164,6 +164,8 @@ const SCHEMA = {
     heart: { label: "Your heart card is … (Stride)", params: [["filter", "filter"]], text: (p) => `you have a heart card that is ${flt(p.filter)}` },
     ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
     byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
+    markers: { label: "Markers: count markers on circles", params: [["name", "text", "marker name (blank = any)"], ["where", "mwhere2", "on"], ["op", "op", "is"], ["n", "num"]],
+      text: (p) => `${({ self: "this unit's circle has", vc: "your (VC) has", rc: "your (RC) have", all: "you have" })[p.where || "all"]} ${OPS[p.op || "ge"]} ${p.n || 1} ${p.name || ""} marker(s)` },
     rodeFrom: { label: "Your vanguard was placed this turn by riding from …", params: [["filter", "filter", "the old vanguard"]], text: (p) => `your vanguard was placed this turn by riding from ${flt(p.filter)}` },
     onVC: { label: "This unit is on (VC)", params: [], text: () => "this unit is on (VC)" },
     onRC: { label: "This unit is on (RC)", params: [], text: () => "this unit is on (RC)" },
@@ -239,6 +241,8 @@ const SCHEMA = {
     unlock: { label: "Unlock your locked cards", params: [["n", "num", "up to"]], text: (p) => `unlock up to ${p.n || 1} of your locked cards` },
     delete: { label: "Delete the opponent's vanguard", params: [["target", "target"]], text: () => "delete your opponent's vanguard" },
     timeLeap: { label: "Time Leap (bind, call a unit 1 grade higher from the deck)", params: [["target", "target"], ["n", "num"]], text: (p) => `Time Leap ${TARGETS[p.target] || "your rear-guards"}` },
+    marker: { label: "Put a marker on a circle (Dragontree, Treasure, Cradle…)", params: [["name", "text", "marker name"], ["where", "mwhere", "on"], ["without", "bool", "only circles without this marker"], ["n", "num", "how many circles"], ["target", "target", "or on the chosen unit(s)"]],
+      text: (p) => `put a ${p.name || "marker"} marker on ${p.target ? TARGETS[p.target] || "the chosen unit" : ({ rc: "your (RC)", units: "your (VC) or (RC)", vc: "your (VC)", self: "this unit's circle" })[p.where || "rc"]}${p.without ? " without one" : ""}${+p.n > 1 ? " ×" + p.n : ""}` },
     dealDamage: { label: "Deal damage (damage checks, triggers too)", params: [["n", "num"], ["who", "side", "to"]], text: (p) => `deal ${p.n || 1} damage to ${p.who === "me" ? "yourself" : "your opponent"}` },
     payCost: { label: "Pay a cost mid-ability (you may; next steps with “only if you did” need it)", params: [],
       text: (p) => `you may pay ${(p.costs || []).map((c) => (SCHEMA.costs[c.type] ? SCHEMA.costs[c.type].text(c) : c.type)).join(" & ") || "a cost"}` },
@@ -250,6 +254,8 @@ const SCHEMA = {
 
   paramOptions: {
     gift: { force: "Force", accel: "Accel", protect: "Protect" },
+    mwhere: { rc: "one of your (RC)", units: "one of your (VC) or (RC)", vc: "your (VC)", self: "this unit's circle" },
+    mwhere2: { all: "your circles (total)", self: "this unit's circle", vc: "your (VC)", rc: "your (RC) (total)" },
     dur: { turn: "until end of turn", battle: "until end of battle", oppTurn: "until end of your opponent's turn", nextTurn: "until end of your next turn", game: "for the rest of the game (while on the field)" },
     restrict: { cantAttack: "cannot attack", cantBoost: "cannot boost", cantIntercept: "cannot intercept", cantBeAttacked: "cannot be attacked",
       cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantStand: "does not stand", canBoost: "gets [Boost]", canIntercept: "gets [Intercept]", canAttackBack: "can attack from the back row", canInterceptBack: "can intercept from the back row" },

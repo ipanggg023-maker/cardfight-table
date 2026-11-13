@@ -369,6 +369,17 @@ const Game = (() => {
     const base = m && m.forceII ? 2 : s.card.crit || 1; // Force II: the unit on that circle has original critical 2
     return Math.max(0, base + s.crit + s.critB + cont(pi, key, "crit"));
   }
+  // Named markers on circles (Dragontree, Treasure, Cradle…), kept in p.marks[circle][name] next to the gift markers.
+  // "force" counts Force I + II markers, "protect" counts Protect II markers; "" = any marker.
+  const markKey = (name) => String(name || "").toLowerCase().replace(/s$/, "").trim();
+  function markersOn(pi, key, name) {
+    const m = (P(pi).marks || {})[key] || {}, k = markKey(name);
+    if (!k) return Object.values(m).reduce((a, b) => a + (+b || 0), 0);
+    if (k === "force") return (+m.forceI || 0) + (+m.forceII || 0);
+    if (k === "protect") return +m.protectII || 0;
+    return +m[k] || 0;
+  }
+  const markerTotal = (pi, name, keys) => (keys || [...unitsOf(pi), ...Object.keys(P(pi).marks || {})].filter((k, i, a) => a.indexOf(k) === i)).reduce((n, k) => n + markersOn(pi, k, name), 0);
   // Gift bonuses during your turn: Force I +10000 per marker; accel circle +10000 (I) / +5000 (II) (CR 16.3)
   function giftPower(pi, key) {
     if (!S || S.active !== pi) return 0;
@@ -389,6 +400,10 @@ const Game = (() => {
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
       case "world": return String(c.text || "").toLowerCase().split("|").map((x) => x.trim()).includes((p.world || "").toLowerCase()); // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
+      case "markers": { // "if this unit is on a (RC) with a Dragontree marker", "if you have three or more Dragontree markers"
+        const keys = c.where === "self" ? (ctx.key ? [ctx.key] : []) : c.where === "vc" ? ["vc"] : c.where === "rc" ? rcOf(pi) : null;
+        return cmp(markerTotal(pi, c.name, keys), c.op || "ge", +c.n || 1);
+      }
       case "rodeFrom": { const vs = p.slots.vc; return vs.rodeTurn === S.turn && !!vs.rodeFrom && match(vs.rodeFrom, c.filter, { pi }); } // your vanguard was placed this turn by riding from …
       case "onRC": return !!ctx.key && ctx.key !== "vc" && rcOf(pi).includes(ctx.key);
       case "gradeVs": { const a = +p.slots.vc.card.grade, b = +P(1 - pi).slots.vc.card.grade; return ({ lt: a < b, le: a <= b, eq: a === b, ge: a >= b, gt: a > b })[c.op || "lt"]; }
@@ -1107,6 +1122,25 @@ const Game = (() => {
         break;
       }
       case "manual": await manualEffect(pi, ctx, e.text); break;
+      case "marker": { // "choose one of your (RC) without any Dragontree markers, put a Dragontree marker"
+        const k = markKey(e.name);
+        if (e.target) { // "choose one of your opponent's rear-guards, put a Cradle marker on it"
+          const us = await pickUnits(pi, e, ctx);
+          for (const u of us) { const q = P(u.pi); q.marks[u.key] = q.marks[u.key] || {}; q.marks[u.key][k] = (q.marks[u.key][k] || 0) + 1; log(`◆ a ${e.name} marker on ${q.name}'s ${slotName(u.key)}`); }
+          return { count: us.length, cards: [] };
+        }
+        let keys = e.where === "self" ? (ctx.key ? [ctx.key] : []) : e.where === "vc" ? ["vc"] : e.where === "units" ? unitsOf(pi) : rcOf(pi);
+        if (e.without) keys = keys.filter((x) => markersOn(pi, x, e.name) === 0);
+        if (e.where === "last" && ctx.last && ctx.last.cards) { keys = []; for (const side of [pi, 1 - pi]) for (const x of unitsOf(side)) if (P(side).slots[x] && ctx.last.cards.some((c) => c.uid === P(side).slots[x].card.uid)) keys.push(side + ":" + x); }
+        const count = Math.min(+e.n || 1, keys.length);
+        const picked = e.where === "last" || keys.length <= count ? keys.slice(0, count) : await choose(pi, `Put a ${e.name} marker on which circle?`, keys.map((x) => ({ id: x, label: `${slotName(x)}${P(pi).slots[x] ? ": " + P(pi).slots[x].card.name : " (empty)"}` })), count, count);
+        for (const id of picked) {
+          const [side, key] = String(id).includes(":") ? [+id.split(":")[0], id.split(":")[1]] : [pi, id];
+          const q = P(side); q.marks[key] = q.marks[key] || {}; q.marks[key][k] = (q.marks[key][k] || 0) + 1;
+          log(`◆ ${q.name}: a ${e.name} marker on ${slotName(key)}`);
+        }
+        return { count: picked.length, cards: [] };
+      }
       case "dealDamage": await dealDamage(e.who === "me" ? pi : 1 - pi, n); break; // "choose one of your opponent's vanguards, and deal one damage"
       case "payCost": { // a second cost in the middle of an ability: "If X, [COST][…], Y" (the next steps need it paid)
         const costs = e.costs || [];

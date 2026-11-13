@@ -675,6 +675,14 @@ const TextParse = (() => {
     if ((m = t.match(/if "([^"]+)" is in your (soul|drop|hand|damage zone|bind zone|order zone)/i))) add({ type: "count", what: zoneKey(m[2]), op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if it is your battle phase/i.test(t)) add({ type: "battlePhase" });
     if (/if this unit is (?:at )?\[rest\]/i.test(t)) add({ type: "unit", who: "self", filter: { restState: "rest" } });
+    // markers
+    if ((m = t.match(/if (?:this unit is on an? \(RC\) with an?|this unit'?s circle has an?|there is an?) ([A-Za-z ]+?) marker(?: on this unit'?s circle)?(?=,|$)/i)))
+      add({ type: "markers", name: m[1].trim(), where: "self", op: "ge", n: 1 });
+    else if ((m = t.match(/if there is an? ([A-Za-z ]+?) marker on your \(VC\)/i))) add({ type: "markers", name: m[1].trim(), where: "vc", op: "ge", n: 1 });
+    else if ((m = t.match(rx(`if (?:you have|your (\\(VC\\)|\\(RC\\)) (?:has|have)) ${N} or (more|less|fewer) ([A-Za-z ]+?) markers?(?: on your circles)?(?=,|$)`))))
+      add({ type: "markers", name: m[4].trim(), where: m[1] ? (/VC/.test(m[1]) ? "vc" : "rc") : "all", op: CMP(m[0]), n: toNum(m[2]) });
+    else if ((m = t.match(rx(`if there are ${N} or more markers`)))) add({ type: "markers", name: "", where: "all", op: "ge", n: toNum(m[1]) });
+    else if (/if there is a marker on this unit'?s circle/i.test(t)) add({ type: "markers", name: "", where: "self", op: "ge", n: 1 });
     if (/if this unit is (?:at )?\[stand\]/i.test(t)) add({ type: "unit", who: "self", filter: { restState: "stand" } });
     // "if this unit was placed by riding from "X" this turn", "if your vanguard was placed this turn by riding from a grade 3"
     if ((m = t.match(/if (?:this unit|your vanguard) was placed (?:this turn )?by riding from (?:a |an )?(.+?)(?: this turn)?(?=,|$)/i)))
@@ -816,6 +824,17 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
     if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
+    // markers: "choose one of your (RC) without any Dragontree markers, put a Dragontree marker", "choose two of your (RC), put a Dragontree marker on each of them",
+    // "choose one of your (VC) or (RC) without any Treasure markers, put a Treasures marker", "put a Cradle marker on it"
+    if ((m = t.match(rx(`^choose (up to )?${N} of your (\\(VC\\) or \\(RC\\)|\\(RC\\)|\\(VC\\)|circles?)(?: without any ([A-Za-z ]+?) markers?)?$`)))) { ctx.markCircle = { n: toNum(m[2]), where: /VC\) or/i.test(m[3]) ? "units" : /^\(VC\)/i.test(m[3]) ? "vc" : "rc", without: !!m[4] }; return []; }
+    if ((m = t.match(/^(?:and )?put an? ([A-Za-z ]+?) markers?(?: on (it|them|each of them|this unit'?s circle|that unit'?s circle|your \(VC\)))?$/i))) {
+      const name = m[1].trim().replace(/s$/, "");
+      if (ctx.markCircle) { const c = ctx.markCircle; ctx.markCircle = null; return [{ type: "marker", name, where: c.where, n: c.n, ...(c.without ? { without: true } : {}) }]; }
+      if (/this unit/i.test(m[2] || "")) return [{ type: "marker", name, where: "self" }];
+      if (/\(VC\)/i.test(m[2] || "")) return [{ type: "marker", name, where: "vc" }];
+      if (ctx.last && /it|them|each|that unit/i.test(m[2] || "")) return [{ type: "marker", name, ...useLast() }];
+      return [{ type: "marker", name, where: "rc" }];
+    }
     // round 7: [Stand] / [Rest] steps
     if ((m = t.match(rx(`^\\[stand\\] (up to )?${N} of your (other )?(.*?)rear-guards?$`)))) return [{ type: "stand", target: "chooseMyRC", n: toNum(m[2]), ...(m[1] ? { upTo: true } : {}), filter: { ...(filt(m[4] || "") || {}), ...(m[3] ? { other: true } : {}) } }];
     if ((m = t.match(/^(this unit|it|they|those units|that unit|all of your opponent'?s rear-guards) cannot \[stand\] during (?:the|your|your opponent'?s)?\s*(?:next )?stand phase$/i))) {

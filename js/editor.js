@@ -305,6 +305,8 @@ function rowHTML(path, row, lib, contOnly) {
       case "dest": return lab(sel(p, SCHEMA.paramOptions.dest, v || "hand"));
       case "restDest": return lab(sel(p, SCHEMA.paramOptions.restDest, v || "shuffle"));
       case "giftKind": return lab(sel(p, SCHEMA.paramOptions.gift, v || "force"));
+      case "mwhere": return lab(sel(p, SCHEMA.paramOptions.mwhere, v || "rc"));
+      case "mwhere2": return lab(sel(p, SCHEMA.paramOptions.mwhere2, v || "all"));
       case "count": return lab(sel(p, { ...(k === "per" ? { "": "— (no “for each”)" } : {}), ...SCHEMA.paramOptions.count }, v || (k === "per" ? "" : "mySoul")));
       case "op": return lab(sel(p, SCHEMA.paramOptions.op, v || "ge"));
       case "who": return lab(sel(p, SCHEMA.paramOptions.who, v || "vc"));
