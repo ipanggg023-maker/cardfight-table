@@ -44,6 +44,7 @@
     <div class="qnav">
       <button id="prevCard" title="Previous card in this list (Alt+↑)">↑ Prev</button><button id="nextCard" title="Next card in this list (Alt+↓)">↓ Next</button>
       <button id="boardBtn" title="Progress per set">📊 Progress</button>
+      <button id="trigBtn" title="Set the trigger type of trigger units that don't have one yet, from their pictures">⚠ Trigger types</button>
       <label class="chk" title="Pick many cards and change them together"><input type="checkbox" id="bulkMode"> Bulk edit</label>
     </div>
     <div id="bulkBox" class="bulkbox" hidden></div>
@@ -51,12 +52,14 @@
   </div>
   <div class="formcol" id="cardForm"></div>
   <div id="board" class="board" hidden></div>
+  <div id="trigPick" class="board trigpick" hidden></div>
   <aside id="histBox" class="histbox" hidden></aside>
 </section>
 
 <section id="tab-decks" class="tab" hidden>
   <div class="listcol">
     <div class="tools"><button id="newDeck" class="go">+ New deck</button><button id="quickDeck">✨ Quick deck</button></div>
+    <div class="tools fromset"><select id="deckSet" title="A trial deck or any set"><option value="">📦 Deck from a set…</option></select><button id="deckFromSet">Make deck</button></div>
     <ul id="deckList" class="clist"></ul>
   </div>
   <div class="formcol" id="deckForm"></div>
@@ -70,6 +73,13 @@
       <label class="field">Set <select id="cgsSets"><option value="">Loading sets…</option></select></label>
       <div class="btnrow"><button id="cgsAll">Load all sets</button></div>
       <p id="cgsStatus" class="muted"></p>
+    </div>
+    <div class="onl-box everything">
+      <h3>Import everything</h3>
+      <p class="muted">Every set at once: one card per game card (reprints merge; each card lists all the sets it was printed in), abilities read from the text, tickets, tokens and crests included. Cards you already have are updated, but abilities you changed, your pictures and trigger types you picked are kept. Pictures follow the two picture options below.</p>
+      <p class="muted">Not in the data: rarity, trigger icons when the text doesn't say (marked ⚠), how many copies a trial deck has. Your data stays in your own database, never in the GitHub repo.</p>
+      <div class="btnrow"><button id="cgsEverything" class="go">Import every set</button></div>
+      <p id="cgsEvStatus" class="muted"></p>
     </div>
     <div class="onl-box">
       <h3>Filter</h3>

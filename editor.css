@@ -233,3 +233,18 @@ table.bd tr[data-set]:hover { background: #ffffff08; cursor: pointer; }
 .abil .evdetail { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; padding: 4px 0 6px; border-bottom: 1px dashed #29446a; margin-bottom: 4px; }
 
 .prow .flow .ifcond { font-size: .76rem; color: #ffd28a; display: inline-flex; gap: 4px; align-items: center; }
+
+/* trigger picker */
+.trigpick .tp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.tp-card { display: grid; gap: 4px; font-size: .74rem; background: var(--mat2); border: 1px solid var(--line); border-radius: 10px; padding: 6px; transition: opacity .25s, transform .25s; }
+.tp-card.done { opacity: 0; transform: scale(.9); }
+.tp-card small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-btns { display: flex; flex-wrap: wrap; gap: 3px; }
+.tp-btns button { padding: 2px 6px; font-size: .9rem; }
+.trigpick .bd-head select { margin-left: auto; }
+.trigpick .bd-head button { margin-left: 6px; }
+
+.tools.fromset select { flex: 1; min-width: 0; }
+.tp-card { align-content: start; }
+.tp-card img, .tp-card .noimg, .tp-card .ph { width: 100%; aspect-ratio: 5 / 7; height: auto; object-fit: cover; border-radius: 6px; display: block; }
+.trigpick .tp-grid { align-items: start; }

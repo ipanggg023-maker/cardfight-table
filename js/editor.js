@@ -95,7 +95,7 @@ function renderList() {
   const LIMIT = 400; // drawing thousands of rows at once stalls the page; search to narrow down
   const qs = $("#qs").value;
   const qset = $("#qset") ? $("#qset").value : "", sort = $("#qsort") ? $("#qsort").value : "";
-  const found = cards.filter((c) => cardMatches(c, f) && (!qs || CardCheck.analyze(c).status === qs) && (!qset || Tools.setOf(c) === qset));
+  const found = cards.filter((c) => cardMatches(c, f) && (!qs || CardCheck.analyze(c).status === qs) && (!qset || Tools.setsOf(c).includes(qset)));
   const rank = { gaps: 0, none: 1, manual: 2, auto: 3, vanilla: 4 };
   if (sort === "name") found.sort((a, b) => a.name.localeCompare(b.name));
   if (sort === "status") found.sort((a, b) => rank[CardCheck.analyze(a).status] - rank[CardCheck.analyze(b).status]);
@@ -439,6 +439,7 @@ $("#cardForm").addEventListener("click", async (e) => {
       if (!cur.name.trim()) return toast("Name is required", true);
       if (cur.type === "order") { cur.power = 0; cur.shield = 0; }
       if (cur.type !== "trigger") cur.trigger = null;
+      if (cur.source && cur.source.from === "cgs") cur.source = { ...cur.source, edited: true }; // a later import keeps your abilities
       await DB.put("cards", cur);
       let re = 0;
       if ($("#syncReprints") && $("#syncReprints").checked) re = await Tools.syncReprints(cur);
@@ -1324,6 +1325,60 @@ $("#cgsResults").addEventListener("click", async (e) => {
   } catch (err) { toast(err.message, true); b.disabled = false; b.textContent = "Import"; }
 });
 // Imports every card in the current list (set / search / type filter). Click again while running to stop.
+// ---------- Import everything: all sets → game cards with their printings ----------
+$("#cgsEverything").addEventListener("click", async () => {
+  const btn = $("#cgsEverything"), st = $("#cgsEvStatus");
+  if (cgs.busy) { cgs.stop = true; btn.textContent = "Stopping…"; return; }
+  if (!window.confirm("Import every set (about 14,600 cards)? It takes a few minutes. You can keep using the page; the button stops it.")) return;
+  Object.assign(cgs, { busy: true, stop: false });
+  const say = (t) => (st.textContent = t);
+  try {
+    btn.textContent = "Stop";
+    say("Loading the card list…");
+    const sets = await Cgs.allSets();
+    const entries = await Cgs.everything((n, total) => say(`Loading sets ${n}/${total}…`));
+    const groups = cgsGameCards(entries, Object.fromEntries(sets.map((s) => [s.code, s.name])));
+    // match cards you already have: same game key (name + text) first, then the same name with the same text
+    const norm = (s) => String(s || "").toLowerCase().replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
+    const byKey = new Map(allCards.map((c) => [(c.source && c.source.gameKey) || norm(c.name) + "|" + norm(c.text), c]));
+    const out = [];
+    let made = 0, updated = 0, kept = 0, needTrig = 0;
+    for (let i = 0; i < groups.length; i++) {
+      if (cgs.stop) break;
+      const g = groups[i];
+      const old = byKey.get(g.key);
+      const c = cgsGameCard(g, old && old.trigger ? old.trigger : undefined);
+      // pictures: your choice in the options below; the web picture stays as a backup
+      const web = g.prints[0].image;
+      if (!$("#cgsImages").checked) c.image = "";
+      else if ($("#cgsLocal").checked) c.image = cgsLocalImage(g.prints[0].setCode, g.prints[0].number);
+      if (web) c.source.imageWeb = web;
+      let saved;
+      if (old) {
+        const mine = { id: old.id };
+        if ((old.abilities || []).length && JSON.stringify(old.abilities) !== JSON.stringify(c.abilities) && old.source && old.source.edited) { mine.abilities = old.abilities; kept++; }
+        else if ((old.abilities || []).length && !(old.source && old.source.from === "cgs")) { mine.abilities = old.abilities; kept++; } // made by hand: keep
+        if (old.image && !/^https?:\/\/en\.cf-vanguard\.com/i.test(old.image)) mine.image = old.image; // your own picture
+        if (old.trigger && !c.trigger) mine.trigger = old.trigger;
+        if (old.notes) mine.notes = old.notes;
+        saved = { ...old, ...c, ...mine };
+        updated++;
+      } else { saved = { ...c, id: DB.newId() }; made++; }
+      if (saved.type === "trigger" && !saved.trigger) { saved.needsTrigger = true; needTrig++; }
+      out.push(saved);
+      if (i % 200 === 199) { say(`Reading abilities ${i + 1}/${groups.length}…`); await new Promise((r) => setTimeout(r, 0)); }
+    }
+    for (let i = 0; i < out.length && !cgs.stop; i += 500) {
+      say(`Saving ${Math.min(i + 500, out.length)}/${out.length}…`);
+      await DB.putMany("cards", out.slice(i, i + 500));
+    }
+    await reload(); renderList(); renderCgs();
+    const msg = `${cgs.stop ? "Stopped. " : ""}${made.toLocaleString()} new, ${updated.toLocaleString()} updated${kept ? ` (${kept} kept your abilities)` : ""}. ${needTrig ? needTrig + " trigger(s) need their type (⚠). " : ""}Check cards with the ⚠ / ✋ filters and the 📊 Progress board.`;
+    say(msg);
+    toast(msg);
+  } catch (err) { say("Stopped: " + (err.message || err)); toast(err.message || String(err), true); }
+  finally { Object.assign(cgs, { busy: false, stop: false }); btn.textContent = "Import every set"; }
+});
 $("#cgsImportAll").addEventListener("click", async () => {
   const btn = $("#cgsImportAll");
   if (cgs.busy) { cgs.stop = true; btn.textContent = "Stopping…"; return; }

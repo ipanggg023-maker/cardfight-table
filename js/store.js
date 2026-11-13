@@ -171,6 +171,7 @@ $("#mineMissing").addEventListener("change", renderMine);
 
 // ---------- admin: boxes ----------
 function renderBoxList() {
+  if ($("#boxSet") && $("#boxSet").options.length <= 1) fillBoxSets();
   $("#boxList").innerHTML = st.boxes.map((b) => `<button class="${st.edit && st.edit.box.id === b.id ? "on" : ""}" data-box="${b.id}"><b>${esc(b.name)}</b><small>${b.active ? "In the Store" : "Hidden"} · ◈ ${b.price} · ${(st.boxCards[b.id] || []).length} cards</small></button>`).join("") || `<p class="muted">No boxes yet.</p>`;
   renderBoxEdit();
 }
@@ -180,6 +181,25 @@ $("#boxList").addEventListener("click", (e) => {
   const box = st.boxes.find((x) => x.id === +b.dataset.box);
   st.edit = { box: { ...box, rates: { ...box.rates } }, cards: (st.boxCards[box.id] || []).map((r) => ({ ...r })), q: "" };
   renderBoxList();
+});
+// ---------- box from a set: every card printed in it (rarity C until you set it) ----------
+const setLabel = (name, code) => { const m = String(name || "").match(/^\[(?:VGE-)?([^\]]+)\]/); return m ? m[1].trim() : String(name || code || "").slice(0, 40); };
+const setsOfCard = (c) => (c.prints && c.prints.length ? [...new Set(c.prints.map((p) => setLabel(p.set, p.setCode)))] : c.source && (c.source.set || c.source.setCode) ? [setLabel(c.source.set, c.source.setCode)] : []);
+function fillBoxSets() {
+  const el = $("#boxSet");
+  const sets = [...new Set(Object.values(st.cards).flatMap(setsOfCard))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  el.innerHTML = `<option value="">📦 Box from a set…</option>` + sets.map((s) => `<option>${esc(s)}</option>`).join("");
+}
+$("#boxFromSet").addEventListener("click", () => {
+  const lab = $("#boxSet").value;
+  if (!lab) return toast("Pick a set first", true);
+  const list = Object.values(st.cards).filter((c) => setsOfCard(c).includes(lab) && !c.token && !c.ticket && c.type !== "crest");
+  if (!list.length) return toast("No cards from that set", true);
+  const full = (list[0].prints || []).find((p) => setLabel(p.set, p.setCode) === lab);
+  st.edit = { box: { id: null, name: (full && full.set ? full.set.replace(/^\[[^\]]*\]\s*/, "") : lab).slice(0, 60), description: "", cover: "", price: 100, cards_per_pack: 5,
+    rates: { C: 70, R: 20, RR: 7, RRR: 2.5, SP: 0.5, SEC: 0 }, guarantee: "R", active: false, sort: st.boxes.length }, cards: list.map((c) => ({ card_id: c.id, rarity: "C" })), q: "" };
+  renderBoxList();
+  toast(`${list.length} cards added as C. Set each card's rarity, then Save box.`);
 });
 $("#newBox").addEventListener("click", () => {
   st.edit = { box: { id: null, name: "New box", description: "", cover: "", price: 100, cards_per_pack: 5, rates: { C: 70, R: 20, RR: 7, RRR: 2.5, SP: 0.5, SEC: 0 }, guarantee: "R", active: false, sort: st.boxes.length }, cards: [], q: "" };

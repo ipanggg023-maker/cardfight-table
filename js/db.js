@@ -211,6 +211,21 @@ const DB = (() => {
     await lput(s, val);
     queue(s, val.id, "put");
   }
+  // many records in one transaction (big imports); for accounts they all join the outbox at once
+  async function putMany(s, list) {
+    noEdit(s);
+    if (!list.length) return;
+    const vals = list.map((v) => (s === "cards" && v && v.image ? { ...v, image: unsign(v.image) } : v));
+    const d = await open();
+    await new Promise((res, rej) => {
+      const t = d.transaction(s, "readwrite");
+      const o = t.objectStore(s);
+      vals.forEach((v) => o.put(v));
+      t.oncomplete = res;
+      t.onerror = () => rej(t.error);
+    });
+    if (me()) { const b = outbox(); vals.forEach((v) => (b[s + ":" + v.id] = "put")); saveBox(b); scheduleFlush(); }
+  }
   async function del(s, id) {
     noEdit(s);
     await ldel(s, id);
@@ -254,7 +269,7 @@ const DB = (() => {
   }
   // token / ticket / crest cards: effects create copies of them by name during a game
   async function extras() { return (await all("cards")).filter((c) => c.token || c.ticket || c.type === "crest"); }
-  return { extras, all, put, del, newId, removeSamples, exportAll, importAll, loadDeck, sync, flush, canEditCards: () => !me() || admin() };
+  return { extras, all, put, putMany, del, newId, removeSamples, exportAll, importAll, loadDeck, sync, flush, canEditCards: () => !me() || admin() };
 })();
 
 // Deck rule checks live in js/formats.js (validateDeck), one profile per play format.

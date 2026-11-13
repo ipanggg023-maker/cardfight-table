@@ -10,6 +10,7 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Card library import (CGS GitHub data, 21k cards), tcgapi.dev import (needs key + relay)
 - Local pictures: `vanguard_images` (Edit.py) + "Link pictures" folder matcher
 - Playmats per player (Classic / overDress Red / Blue / custom upload), DD2-style HUD, phase banner
+- Import everything: all sets → 14,718 game cards with printings, tickets/tokens/crests, keeps your edits on re-import; trigger type picker; deck from a set; Store box from a set (2026-11-13)
 - Reader round 2: 44.5% fully read (from 38.2%), sentence-scoped conditions, cost-free parts before a mid-sentence cost, aliases, all clans, stride grade, gained Boost/Intercept, back-row attacks, count comparisons, text check fixes (2026-11-13)
 - Phase 4 text reader v2: new blocks, choose → it / that unit, if you did, mid-sentence conditions, end of battle/turn steps, choose-one bullets, granted abilities, safe fallbacks, reader-check tool (2026-11-13)
 - Phase 3 keywords: tokens, tickets, crests, Forerunner, Harmony, named states, columns, Success power condition, Prison, Music, cannot be called, keyword templates (2026-11-13)

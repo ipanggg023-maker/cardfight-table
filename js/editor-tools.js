@@ -4,7 +4,13 @@
 const Tools = (() => {
   const isAccount = () => { const u = Auth.get(); return !!u && !u.guest; };
   const norm = (s) => String(s || "").toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
-  const setOf = (c) => (c.source && (c.source.setCode || c.source.set)) || (c.number ? String(c.number).split("/")[0] : "") || "";
+  // a short set label: "[VGE-DZ-BT09] Booster Pack 09: …" → "DZ-BT09"; "[TD01]Blaster Blade" → "TD01"
+  const label = (name, code) => { const m = String(name || "").match(/^\[(?:VGE-)?([^\]]+)\]/); return m ? m[1].trim() : String(name || code || "").slice(0, 40); };
+  // every set a card was printed in (Import everything keeps them in card.prints)
+  const setsOf = (c) => (c.prints && c.prints.length ? [...new Set(c.prints.map((p) => label(p.set, p.setCode)))] : [c.source && (c.source.set || c.source.setCode) ? label(c.source.set, c.source.setCode) : (c.number ? String(c.number).split("/")[0] : "")].filter(Boolean));
+  const setOf = (c) => setsOf(c)[0] || "";
+  // set label → the full set name (for box / deck names)
+  const setName = (lab) => { for (const c of allCards) for (const p of c.prints || []) if (label(p.set, p.setCode) === lab) return p.set || lab; return lab; };
 
   // ---------- reprints: same name + same official text = the same game card ----------
   const reprintKey = (c) => norm(c.name) + "|" + norm(c.text);
@@ -117,14 +123,14 @@ const Tools = (() => {
   }
   const inBox = (id) => !!(boxIds && boxIds.has(id));
 
-  return { reprintsOf, syncReprints, gameFields, loadTemplates, saveTemplate, deleteTemplate, allTemplates, history, diff, setOf, loadBoxCards, inBox, isAccount };
+  return { setsOf, setName, setLabel: label, reprintsOf, syncReprints, gameFields, loadTemplates, saveTemplate, deleteTemplate, allTemplates, history, diff, setOf, loadBoxCards, inBox, isAccount };
 })();
 
 // ================= editor wiring =================
 // ---------- set filter, sort, progress board ----------
 function fillSets() {
   const el = $("#qset"), v = el.value;
-  const sets = [...new Set(cards.map(Tools.setOf).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const sets = [...new Set(cards.flatMap(Tools.setsOf).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   el.hidden = !sets.length;
   const html = `<option value="">All sets</option>` + sets.map((s) => `<option ${s === v ? "selected" : ""}>${esc(s)}</option>`).join("");
   if (el._h !== html) { el.innerHTML = html; el._h = html; }
@@ -134,9 +140,11 @@ function renderBoard() {
   if (box.hidden) return;
   const rows = {};
   for (const c of cards) {
-    const s = Tools.setOf(c) || "(no set)", st = CardCheck.analyze(c).status;
-    (rows[s] = rows[s] || { n: 0 })[st] = (rows[s][st] || 0) + 1;
-    rows[s].n++;
+    const st = CardCheck.analyze(c).status;
+    for (const s of Tools.setsOf(c).length ? Tools.setsOf(c) : ["(no set)"]) {
+      (rows[s] = rows[s] || { n: 0 })[st] = (rows[s][st] || 0) + 1;
+      rows[s].n++;
+    }
   }
   const keys = Object.keys(rows).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const pct = (r) => Math.round((((r.auto || 0) + (r.manual || 0) + (r.vanilla || 0)) / r.n) * 100);
@@ -153,6 +161,68 @@ $("#board").addEventListener("click", (e) => {
   if (tr && tr.dataset.set) { $("#qset").value = tr.dataset.set; $("#board").hidden = true; renderList(); }
 });
 
+// ---------- deck from a set (trial decks): every card of the set once; you set the copies ----------
+function fillDeckSets() {
+  const el = $("#deckSet");
+  if (!el) return;
+  const sets = [...new Set(allCards.flatMap(Tools.setsOf))].sort((a, b) => (/TD/.test(b) - /TD/.test(a)) || a.localeCompare(b, undefined, { numeric: true }));
+  const html = `<option value="">📦 Deck from a set…</option>` + sets.map((s) => `<option value="${esc(s)}">${esc(s)}${/TD|SD|PS|SS/.test(s) ? "" : " (pack)"}</option>`).join("");
+  if (el._h !== html) { el.innerHTML = html; el._h = html; }
+}
+$("#deckFromSet").addEventListener("click", async () => {
+  const lab = $("#deckSet").value;
+  if (!lab) return toast("Pick a set first", true);
+  const inSet = allCards.filter((c) => Tools.setsOf(c).includes(lab) && !c.token && !c.ticket && c.type !== "crest");
+  if (!inSet.length) return toast("No cards from that set", true);
+  const icon = inSet.map(iconOf).find(Boolean);
+  const format = icon === "D" ? "standard" : icon === "V" ? "vpremium" : "premium";
+  const main = inSet.filter((c) => c.type !== "g").map((c) => c.id);
+  const g = inSet.filter((c) => c.type === "g").map((c) => c.id);
+  const units = inSet.filter((c) => c.type === "unit" || c.type === "trigger");
+  // ride deck guess for Standard: the set's only unit of each grade 0–3, otherwise left empty for you to pick
+  const ride = [0, 1, 2, 3].map((gr) => { const u = units.filter((c) => c.grade === gr && c.type === "unit"); return u.length === 1 ? u[0].id : ""; });
+  const deck = { id: DB.newId(), name: Tools.setName(lab).replace(/^\[[^\]]*\]\s*/, "") || lab, format, energy: format === "standard", ride: format === "standard" ? ride : ["", "", "", ""],
+    starter: "", main, g, note: "Made from a set: each card once. Set the copy counts from the deck list." };
+  await DB.put("decks", deck);
+  await reload();
+  curDeck = JSON.parse(JSON.stringify(deck));
+  renderDecks();
+  toast(`Deck made with ${main.length} different cards. Set the copies (+ / −) and the ride deck from the deck list.`);
+});
+document.querySelector('[data-tab="decks"]').addEventListener("click", fillDeckSets);
+// ---------- trigger picker: trigger units without a type, one click each (from their pictures) ----------
+const TP = { set: "", shown: 120 };
+function renderTrigPick() {
+  const box = $("#trigPick");
+  if (box.hidden) return;
+  const todo = cards.filter((c) => c.type === "trigger" && !c.trigger);
+  const sets = [...new Set(todo.flatMap(Tools.setsOf).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const list = todo.filter((c) => !TP.set || Tools.setsOf(c).includes(TP.set));
+  box.innerHTML = `<div class="bd-head"><b>⚠ Trigger types</b><span class="muted">${todo.length.toLocaleString()} trigger units without a type. Look at the icon on the picture and click its type.</span>
+      <select id="tpSet"><option value="">All sets</option>${sets.map((s) => `<option ${s === TP.set ? "selected" : ""}>${esc(s)}</option>`).join("")}</select><button data-tp="close">✕</button></div>
+    <div class="tp-grid">${list.slice(0, TP.shown).map((c) => `<div class="tp-card" data-id="${esc(c.id)}">${face(c)}<small>${esc(c.name)}</small><span class="tp-btns">${Object.entries(TRIG).map(([k, x]) => `<button data-tpk="${k}" title="${esc(x.name)}">${x.icon}</button>`).join("")}</span></div>`).join("") || '<p class="muted">Nothing left here.</p>'}</div>
+    ${list.length > TP.shown ? `<div class="btnrow"><button data-tp="more">Show more (${(list.length - TP.shown).toLocaleString()} left)</button></div>` : ""}`;
+  pumpImages();
+}
+$("#trigBtn").addEventListener("click", () => { $("#trigPick").hidden = !$("#trigPick").hidden; renderTrigPick(); });
+$("#trigPick").addEventListener("change", (e) => { if (e.target.id === "tpSet") { TP.set = e.target.value; TP.shown = 120; renderTrigPick(); } });
+$("#trigPick").addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.tp === "close") { $("#trigPick").hidden = true; renderList(); return; }
+  if (b.dataset.tp === "more") { TP.shown += 120; return renderTrigPick(); }
+  if (b.dataset.tpk) {
+    const el = b.closest("[data-id]"), c = allCards.find((x) => x.id === el.dataset.id);
+    if (!c) return;
+    const k = b.dataset.tpk;
+    const saved = { ...c, trigger: k, needsTrigger: false, ...(k === "over" ? { trigPower: 100000000 } : {}) };
+    await DB.put("cards", saved);
+    Object.assign(c, saved);
+    const ci = cards.findIndex((x) => x.id === c.id); if (ci >= 0) cards[ci] = c;
+    el.classList.add("done");
+    setTimeout(() => el.remove(), 250);
+  }
+});
 // ---------- review queue: next / previous card in the current list + shortcuts ----------
 function goCard(step) {
   const ids = [...document.querySelectorAll("#cardList li[data-id]")].map((li) => li.dataset.id);

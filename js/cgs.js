@@ -105,6 +105,51 @@ function cgsToCard(d, trigger) {
   return card;
 }
 
+// ---------- Import everything ----------
+// One game card per name + text (reprints merge); every printing is kept in card.prints [{setCode, set, number, image}].
+// Card types: units, triggers, G units, orders; tickets ("This card is a ticket card") and tokens (type "Others" named "… Token"
+// or with stats and no text) become ticket / token cards. Markers and ride deck crests are skipped.
+const cgsGameKey = (d) => String(d.name || "").trim().toLowerCase() + "|" + String(d.effect || "").toLowerCase().replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
+function cgsKind(d) {
+  const text = String(d.effect || "");
+  if (CGS_PLAYABLE.test(d.type)) return "card";
+  if (!d.type) return d.power != null || d.grade != null ? "card" : null; // a few real cards have no type in the data
+  if (d.type !== "Others") return null; // ride deck crests (Energy Generator is built in), markers…
+  if (/ticket card/i.test(text) || /^quick shield$/i.test(d.name || "")) return "ticket";
+  if (/represents an? .*?token/i.test(text) || (d.grade != null && d.power != null)) return "token";
+  if (d.grade == null && d.power == null && /^\[CONT\]/i.test(text.trim())) return "crest";
+  return null; // markers (Imaginary Gift, Treasure, Cradle…)
+}
+// the editor card for one game card from the library (all printings in card.prints)
+function cgsGameCard(g, trigger) {
+  const d = g.d;
+  const type = d.type || (d.power == null && /play this|order/i.test(d.effect || "") ? "Normal Order" : "Normal Unit");
+  const card = cgsToCard({ ...d, type: g.kind === "ticket" ? "Blitz Order" : g.kind === "card" ? type : "Normal Unit" }, trigger);
+  if (g.kind === "ticket") Object.assign(card, { type: "order", ticket: true, grade: card.grade || 0 });
+  if (g.kind === "ticket") card.abilities.forEach((ab) => { if (ab.kind === "ORDER") ab.kind = "BLITZ"; }); // tickets are played while guarding (blitz)
+  if (g.kind === "token") Object.assign(card, { type: "unit", token: true, power: d.power || 0, grade: d.grade || 0 });
+  if (g.kind === "crest") { Object.assign(card, { type: "crest", grade: 0, power: 0, shield: 0 }); card.abilities.forEach((a) => { a.zone = "crest"; }); }
+  card.abilities.forEach((a) => delete a.unread);
+  // over triggers are the only grade 0 triggers with 50000 shield (D / DZ era): certain without the icon
+  if (card.type === "trigger" && !card.trigger && +d.shield >= 50000 && (d.grade || 0) === 0) { card.trigger = "over"; card.trigPower = 100000000; delete card.needsTrigger; }
+  card.prints = g.prints;
+  card.source = { ...card.source, setCode: g.prints[0].setCode, set: g.prints[0].set, number: g.prints[0].number, gameKey: g.key };
+  return card;
+}
+// entries: all set files' rows (with _set). Returns [{key, card, prints}] in set order.
+function cgsGameCards(entries, setNames) {
+  const map = new Map();
+  for (const d of entries) {
+    const kind = cgsKind(d);
+    if (!kind) continue;
+    const key = cgsGameKey(d);
+    const print = { setCode: d._set, set: setNames[d._set] || d.productName || "", number: d.number || "", image: d.image_url || "", url: d.url || "" };
+    const g = map.get(key);
+    if (g) { if (!g.prints.some((p) => p.number === print.number && p.setCode === print.setCode)) g.prints.push(print); continue; }
+    map.set(key, { key, d, kind, prints: [print] });
+  }
+  return [...map.values()];
+}
 // Pictures saved on this computer by Edit.py: vanguard_images/<set code>/<card number with / → _>.png
 // (run Edit.py from the Vanguard folder so the path is relative to editor.html / index.html)
 const cgsLocalImage = (setCode, number) => setCode && number ? `vanguard_images/${setCode}/${String(number).replace(/\//g, "_")}.png` : "";
