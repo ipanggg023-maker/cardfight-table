@@ -7,7 +7,7 @@ Each row is one pattern that appears in card text: a kind of ability, where it w
 a cost, a condition, an effect or a keyword. "Cards" = how many unique cards use it at least once.
 "Engine" = whether the ability blocks in `js/schema.js` + `js/engine.js` can build it today.
 
-**Cards that only use ✅ patterns today: 7,686 (51.6%).**
+**Cards that only use ✅ patterns today: 10,208 (68.5%).**
 Everything else needs at least one 🟡/❌ pattern (or the ✋ Manual block). The plan to close the gap is in
 `docs/abilities/PLAN.md`.
 
@@ -28,15 +28,15 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 |---|---:|---:|---:|---:|---:|---:|---|---|---|
 | Works on (RC) | 7354 | 1327 | 1505 | 1700 | 1929 | 893 | ✅ yes |  | Battle Sister, Panettone; Dead Armor Dragon; Stealth Fiend, Kurobane Tengu |
 | Works on (VC) | 4019 | 991 | 1019 | 1025 | 742 | 242 | ✅ yes |  | Harmonics Messiah; Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena |
-| Works from hand | 551 | 21 | 77 | 112 | 257 | 84 | ❌ no | abilities that start in the hand (discard → effect, ACT from hand) | Hard Tile Breaker; Curiophase Dragon; Neatness Meteor Shower |
+| Works from hand | 551 | 21 | 77 | 112 | 257 | 84 | ✅ yes | abilities that start in the hand (discard → effect, ACT from hand) | Hard Tile Breaker; Curiophase Dragon; Neatness Meteor Shower |
 | Works on (GC) | 547 | 9 | 58 | 176 | 172 | 132 | ✅ yes |  | Aurora Battle Princess, Agra Rouge; Ardor Hatchet Dragon; Impediment Slicer |
-| Works from the G zone | 484 | 58 | 374 | 10 | 37 | 5 | 🟡 partly | G zone CONT/AUTO while face up | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Harmonics Messiah |
-| Works from the drop zone | 140 | 3 | 26 | 23 | 23 | 65 | ❌ no |  | Mage of Entwined Roots, Amergin; Blaze Maiden, Cindi; Examination Monster, Imigrar |
-| Works from the soul | 87 |  | 18 | 19 | 35 | 15 | ❌ no |  | Direful Doll, Violetta; Squalid Freaks; Flaming Pony |
-| Revealed from the deck / damage check | 56 |  | 24 | 1 | 31 |  | 🟡 partly |  | Heart Thump Worker; Stealth Dragon, Noroi; Blink Messiah |
+| Works from the G zone | 484 | 58 | 374 | 10 | 37 | 5 | ✅ yes | G zone CONT/AUTO while face up | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Harmonics Messiah |
+| Works from the drop zone | 140 | 3 | 26 | 23 | 23 | 65 | ✅ yes |  | Mage of Entwined Roots, Amergin; Blaze Maiden, Cindi; Examination Monster, Imigrar |
+| Works from the soul | 87 |  | 18 | 19 | 35 | 15 | ✅ yes |  | Direful Doll, Violetta; Squalid Freaks; Flaming Pony |
+| Revealed from the deck / damage check | 56 |  | 24 | 1 | 31 |  | ✅ yes |  | Heart Thump Worker; Stealth Dragon, Noroi; Blink Messiah |
 | Works from the order zone (set orders) | 30 |  |  |  | 3 | 27 | ✅ yes |  | For Now, Forget the Passage of Time; Pollution Monster, Polpollute; Extreme Satellite Weaponry, Euryanthe |
-| Works from the bind zone | 18 | 1 | 7 |  | 9 | 1 | ❌ no |  | Protector of Memories, Gear Puppy; Stealth Dragon, Tsukuyodachi; Stealth Dragon, Raidon Kunai |
-| Works from the damage zone | 10 |  | 6 | 3 | 1 |  | ❌ no |  | Black Prepare, Arakiba; Black Carve, Ezezel; Doctoroid Radlas |
+| Works from the bind zone | 18 | 1 | 7 |  | 9 | 1 | ✅ yes |  | Protector of Memories, Gear Puppy; Stealth Dragon, Tsukuyodachi; Stealth Dragon, Raidon Kunai |
+| Works from the damage zone | 10 |  | 6 | 3 | 1 |  | ✅ yes |  | Black Prepare, Arakiba; Black Carve, Ezezel; Doctoroid Radlas |
 
 ## Limit
 
@@ -47,9 +47,9 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | Generation Break N | 1579 | 93 | 1265 | 107 | 82 | 32 | ✅ yes |  | Chrono Dran G; Supremacy Dragon, Claret Sword Dragon; Chronojet Dragon |
 | Limit Break N | 351 | 279 | 61 | 2 |  | 9 | ✅ yes |  | Beast Deity, Frog Master; Eradicator, Spark Horn Dragon; Goshawk Liberator, Cadeau |
 | If you went second / first | 151 | 7 |  |  | 112 | 32 | ✅ yes |  | Sunrise Egg; Harmonics Messiah; Energy Generator |
-| Only once a turn by a card with the same name | 64 | 1 |  | 50 | 13 |  | ❌ no | limit shared by every copy of the card | Pirate Swordsman, Colombard; Top Idol, Aqua; Skull Witch, Nemain |
+| Only once a turn by a card with the same name | 64 | 1 |  | 50 | 13 |  | ✅ yes | limit shared by every copy of the card | Pirate Swordsman, Colombard; Top Idol, Aqua; Skull Witch, Nemain |
 | Divine Skill / Unique / Dangerous | 62 |  |  |  | 2 | 60 | ✅ yes |  | Fated One of Time, Liael=Amorta; High Five!; Fated One of Unparalleled, Varga Dragres |
-| Ritual N (grade 1s in drop) | 60 | 4 | 35 | 5 | 15 | 1 | ❌ no |  | Dragheart, Luard; Journey to be a Dragon; Dragwizard, Cian |
+| Ritual N (grade 1s in drop) | 60 | 4 | 35 | 5 | 15 | 1 | ✅ yes |  | Dragheart, Luard; Journey to be a Dragon; Dragwizard, Cian |
 | Once per fight / per game | 10 |  |  |  |  | 10 | ✅ yes |  | Fated One of Unparalleled, Varga Dragres; Fated One of Guiding Star, Welstra "Blitz Arms"; Fated One of Miracles, Rezael |
 
 ## Timing
@@ -60,32 +60,32 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | When this unit attacks | 2277 | 522 | 497 | 391 | 575 | 292 | ✅ yes |  | Harmonics Messiah; Pile Deletor, Jaluel; Dragontree of Ecliptic Decimation, Griphogila |
 | At the end of the battle | 1185 | 85 | 222 | 207 | 432 | 239 | ✅ yes |  | Harmonics Messiah; Dragonic Overlord the End; Protector of Memories, Gear Puppy |
 | When your G unit strides / when this strides | 1111 | 83 | 695 | 112 | 169 | 52 | ✅ yes |  | Progenitor Dragon of Lightning Flame, Gilgal; Progenitor Dragon of Deep Sea, Balanerena; Zeroth Dragon of Distant Sea, Megiddo |
-| When it attacks a vanguard / rear-guard | 955 | 252 | 345 | 120 | 163 | 75 | 🟡 partly | target filter on the attack event | Dragontree of Ecliptic Decimation, Griphogila; Perfect Performance, Ange; Dragonic Overlord "The Яe-birth" |
+| When it attacks a vanguard / rear-guard | 955 | 252 | 345 | 120 | 163 | 75 | ✅ yes | target filter on the attack event | Dragontree of Ecliptic Decimation, Griphogila; Perfect Performance, Ange; Dragonic Overlord "The Яe-birth" |
 | When the attack hits | 839 | 335 | 281 | 87 | 120 | 16 | ✅ yes |  | Progenitor Dragon of Lightning Flame, Gilgal; Knight of War Damage, Fosado; Slow Kiss ―♡→, Nonna |
 | When ridden / rode upon | 628 | 3 | 1 | 191 | 331 | 102 | ✅ yes |  | Sunrise Egg; Barcgal; BCS24/25 World Finals, Akina Myodo |
 | When your unit rides this / persona ride | 601 | 241 | 229 | 22 | 78 | 31 | 🟡 partly |  | Dragheart, Luard; Energy Generator; Supremacy Dragon, Claret Sword Dragon |
-| At the beginning of the guard step / when you guard | 591 | 111 | 288 | 61 | 100 | 31 | 🟡 partly |  | Maiden of Blossom Rain; Steam Guard, Kastilia; Lizard Soldier, Bellog |
-| When placed from hand / from deck / from drop | 534 | 40 | 79 | 124 | 172 | 119 | ❌ no | the source zone of the call | Nightmare Doll, Tosca; Knight of Thriving, Palsolo; Giant Deity of Distant World, Valkerion |
-| When this unit boosts / is boosted | 466 | 159 | 73 |  | 163 | 71 | 🟡 partly | 'is boosted' missing | Trickmoon; Rapid Charger; Swell Assault |
+| At the beginning of the guard step / when you guard | 591 | 111 | 288 | 61 | 100 | 31 | ✅ yes |  | Maiden of Blossom Rain; Steam Guard, Kastilia; Lizard Soldier, Bellog |
+| When placed from hand / from deck / from drop | 534 | 40 | 79 | 124 | 172 | 119 | ✅ yes | the source zone of the call | Nightmare Doll, Tosca; Knight of Thriving, Palsolo; Giant Deity of Distant World, Valkerion |
+| When this unit boosts / is boosted | 466 | 159 | 73 |  | 163 | 71 | ✅ yes | 'is boosted' missing | Trickmoon; Rapid Charger; Swell Assault |
 | At the beginning of your turn / ride / main / battle phase | 285 | 54 | 57 | 55 | 79 | 40 | ✅ yes |  | Harmonics Messiah; Dragheart, Luard; Energy Generator |
-| When this unit / another unit is retired | 277 | 8 | 66 | 52 | 91 | 60 | ❌ no |  | Knight of Grief, Grania; King of Masks, Dantarian; Knight of Instant Slash, Greete |
+| When this unit / another unit is retired | 277 | 8 | 66 | 52 | 91 | 60 | ✅ yes |  | Knight of Grief, Grania; King of Masks, Dantarian; Knight of Instant Slash, Greete |
 | At the end of your / your opponent's turn | 257 | 18 | 102 | 27 | 66 | 44 | ✅ yes |  | Blue Artillery Dragon, Inlet Pulse Dragon; Chronojet Dragon; Desert Gunner, Goudan |
 | When another unit / your other rear-guard is placed | 236 | 27 | 117 | 30 | 39 | 23 | ✅ yes |  | Chrono Dran G; Practicing in Secret, Mayzie; Molecular Clause Dragon |
-| When this card is discarded | 234 | 5 | 56 | 6 | 112 | 55 | ❌ no |  | Hard Tile Breaker; Big Snake Witch, Solaria; Adhesive Monster, Nelbetron |
+| When this card is discarded | 234 | 5 | 56 | 6 | 112 | 55 | ✅ yes |  | Hard Tile Breaker; Big Snake Witch, Solaria; Adhesive Monster, Nelbetron |
 | When you pay Counter-Blast / Soul-Blast | 156 | 29 | 70 | 2 | 52 | 3 | ❌ no |  | Laurel Knight, Sicilus; Divine Sword, Ame-no-Murakumo; Lava Flow Dragon |
-| When the attack does not hit | 152 | 13 | 61 | 29 | 45 | 4 | ❌ no |  | Interdimensional Dragon, Lost Age Dragon; Super Cosmic Hero, X-rogue; Fast Chase Golden Knight, Cambell |
-| When this card is put into the soul / drop / bind / damage | 148 | 48 | 57 | 10 | 21 | 12 | ❌ no |  | Neatness Meteor Shower; Stealth Dragon, Tsukuyodachi; Steam Performer, Tougue |
+| When the attack does not hit | 152 | 13 | 61 | 29 | 45 | 4 | ✅ yes |  | Interdimensional Dragon, Lost Age Dragon; Super Cosmic Hero, X-rogue; Fast Chase Golden Knight, Cambell |
+| When this card is put into the soul / drop / bind / damage | 148 | 48 | 57 | 10 | 21 | 12 | ✅ yes |  | Neatness Meteor Shower; Stealth Dragon, Tsukuyodachi; Steam Performer, Tougue |
 | When a trigger effect / heal / stand trigger happens | 140 | 5 | 17 | 52 | 53 | 13 | ❌ no |  | Battle Sister, Panettone; Dragontree of Ecliptic Decimation, Griphogila; Exquisite Knight, Olwein |
-| When a drive check reveals … | 134 | 41 | 32 | 31 | 26 | 4 | ❌ no |  | Exquisite Knight, Olwein; Divine Sister, Lepisto; Knight of Endurance, Lucan |
+| When a drive check reveals … | 134 | 41 | 32 | 31 | 26 | 4 | ✅ yes |  | Exquisite Knight, Olwein; Divine Sister, Lepisto; Knight of Endurance, Lucan |
 | When this card is unlocked | 106 | 49 | 38 | 6 | 8 | 5 | ✅ yes |  | Star-vader, Chaos Breaker Dragon; Star-vader, Dust Tail Unicorn; Knight of Entropy |
-| When your opponent calls / their unit is placed | 105 | 2 |  | 40 | 39 | 24 | ❌ no |  | Dead Armor Dragon; Dragon Knight, Barkil; Fleet Swallower |
+| When your opponent calls / their unit is placed | 105 | 2 |  | 40 | 39 | 24 | ✅ yes |  | Dead Armor Dragon; Dragon Knight, Barkil; Fleet Swallower |
 | When this unit is attacked | 91 | 3 | 20 | 11 | 38 | 19 | ✅ yes |  | Prescription Angel; Invasion Monster, Azuzuradon; Stealth Dragon, Raidon Kunai |
 | When put into the drop from the GC | 84 | 10 | 19 | 20 | 16 | 19 | ❌ no |  | Defensing Roar; Giro; Lizard Soldier, Barja |
 | When placed with overDress | 61 | 1 |  |  | 55 | 5 | ✅ yes |  | Vairina Exspecta; Prayers That Will Reach Someday; Blaze Maiden, Cindi |
-| When a damage check reveals … | 53 |  | 24 | 2 | 25 | 2 | ❌ no |  | Heart Thump Worker; Stealth Dragon, Noroi; Blink Messiah |
-| When you play an order / set order | 25 |  |  |  | 14 | 11 | ❌ no |  | Roughkur Hammer Dragon; Cardinal Deus, Orfist; Proof of Hard Work, Wilista |
+| When a damage check reveals … | 53 |  | 24 | 2 | 25 | 2 | ✅ yes |  | Heart Thump Worker; Stealth Dragon, Noroi; Blink Messiah |
+| When you play an order / set order | 25 |  |  |  | 14 | 11 | ✅ yes |  | Roughkur Hammer Dragon; Cardinal Deus, Orfist; Proof of Hard Work, Wilista |
 | At the close step / end of the close step | 10 | 10 |  |  |  |  | ❌ no |  | Spectral Duke Dragon; Reckless Express; Fierce Leader, Zachary |
-| When you call a card / a unit is called | 5 | 1 |  | 3 | 1 |  | 🟡 partly |  | Furyminute Dragon; Heavy Armament Dragon, Fusillaider; Jocular Cicada |
+| When you call a card / a unit is called | 5 | 1 |  | 3 | 1 |  | ✅ yes |  | Furyminute Dragon; Heavy Armament Dragon, Fusillaider; Jocular Cicada |
 | When you draw / your opponent draws | 5 | 1 |  | 4 |  |  | ❌ no |  | Weather Girl, Saft; Miko of Spiritual Light, Kinuka; Weal Crane |
 | When you heal / damage is recovered | 0 |  |  |  |  |  | ❌ no |  |  |
 
@@ -133,7 +133,7 @@ Re-run: `node tools/card-census/fetch.mjs && node tools/card-census/analyze.js &
 | If you persona rode this turn | 134 |  |  |  | 79 | 55 | ✅ yes |  | Spiral Cutie Angel; Everspring Hunter, Emerence; Stealth Fiend, Kawasohime |
 | If this unit's / your vanguard's power is N+ | 115 | 17 | 50 | 24 | 22 | 2 | ❌ no |  | Luster Impact Dragon; Dragon Undead, Malefic Dragon; Label Pangolin |
 | If it is the Nth battle | 86 | 35 | 21 | 23 | 7 |  | ✅ yes |  | Couple Dagger Sailor; Light Elemental, Honoly; Light Signals Penguin Soldier |
-| If this unit is boosted / rested / in a state | 53 | 6 | 31 | 5 | 10 | 1 | ❌ no |  | Aegir-roll Dragon; Admired Sparkle, Spica; Brisk Medical, Iruel |
+| If this unit is boosted / rested / in a state | 53 | 6 | 31 | 5 | 10 | 1 | ✅ yes |  | Aegir-roll Dragon; Admired Sparkle, Spica; Brisk Medical, Iruel |
 | If you are in Dark Night / Abyssal Dark Night | 50 |  |  |  | 47 | 3 | ✅ yes |  | Cardinal Principle, Cagula; Eclipsed Moonlight; Cardinal Fang, Raphilogg |
 | If a trigger / grade N was revealed | 34 | 4 | 1 | 4 | 18 | 7 | ✅ yes |  | Almajestar, Schwart=Sparda; Sheltered Girl of the Pharmacy, Mediell; Confident Aqua, Musette |
 | If the attacking unit is a vanguard / rear-guard | 7 |  | 1 |  | 6 |  | ❌ no |  | Prepared for the Heat, Siana; Second Snake's Opinion, Siana; Hidden in Darkness |

@@ -24,17 +24,9 @@ const CardCheck = (() => {
     [/ticket|quick shield/, "tickets"],
     [/\bforerunner\b/, "Forerunner"],
     [/\bglitter\b/, "Glitter"],
-    [/\britual \d/, "Ritual"],
     [/\[[a-z ]+ state\]|mental pollution|\bharmony\b|\bmelody\b/, "named states"],
     [/grade \+\d|is (also )?regarded as/, "grade change / regarded as"],
     [/deal \d+ damage|into (your|their|your opponent's) damage zone/, "deal damage"],
-    [/when this card is discarded|when (this card is )?discarded from/, "timing: discarded"],
-    [/is retired|are retired/, "timing: retired"],
-    [/when (it|this unit) is boosted|when this unit is boosted/, "timing: is boosted"],
-    [/drive check reveals|damage check reveals|revealed (for|in) a (drive|damage) check/, "timing: drive / damage check reveals"],
-    [/does not hit|did not hit/, "timing: attack does not hit"],
-    [/placed (on \(rc\) )?from (hand|your hand|deck|drop|soul)|other than from your hand/, "timing: placed from a zone"],
-    [/when your opponent('s)? (calls?|would call|rear-guard is placed)/, "timing: opponent calls"],
     [/heart card|heart with/, "heart conditions"],
   ];
   const lower = (s) => String(s || "").toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
@@ -91,9 +83,10 @@ const CardCheck = (() => {
     if (/soul-?charge/.test(l) && !(ab.effects || []).some((r) => r.type === "SC")) notes.push("Soul-Charge in the text, not in the blocks");
     // where it works and how often
     const z = (l.match(/^\[(?:auto|act|cont)\]\(([^)]*)\)/) || [])[1];
-    const zone = { vc: "VC", rc: "RC", "vc/rc": "VC/RC", gc: "GC", "vc/rc/gc": "VC/RC" }[z || ""];
+    const zone = { vc: "VC", rc: "RC", "vc/rc": "VC/RC", gc: "GC", "vc/rc/gc": "VC/RC", hand: "hand", drop: "drop", "drop zone": "drop", soul: "soul", damage: "damage", "damage zone": "damage", bind: "bind", "bind zone": "bind", "g zone": "G" }[z || ""];
     if (zone && ab.zone && ab.zone !== zone && ab.zone !== "any") notes.push(`Zone: text (${z.toUpperCase()}), block ${ab.zone}`);
     if (/\[1\/turn\]/.test(l) && ab.once !== "turn") notes.push("Text says [1/Turn]; set Limit to 1/Turn");
+    if (/same card name once a turn|same name (may|can) only/.test(l) && ab.once !== "nameTurn") notes.push("Text says once a turn for cards with the same name; set Limit to “Same-name cards 1/Turn”");
     if (/\[1\/fight\]|once per fight/.test(l) && ab.once !== "game") notes.push("Text says once per fight; set Limit to 1/Game");
     if (/\[divine skill\]/.test(l) && ab.once !== "divine") notes.push("Text says Divine Skill; set the Limit");
     if (ab.kind === "AUTO" && ab.mandatory && /you may/.test(l)) notes.push("Text says “you may” but the block is Mandatory");

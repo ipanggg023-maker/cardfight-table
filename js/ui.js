@@ -535,6 +535,7 @@ function actionsHTML(S, v) {
     if (selCard && selCard.type === "order") h += b("play", `Play ${esc(selCard.name)}`, "go");
     if (selCard && selCard.dress && Game.dressTargets(S.active, selCard).length) h += b("dress", ui.mode === "dress" ? "Tap a rear-guard to overDress" : `overDress ${esc(selCard.name)}`, ui.mode === "dress" ? "on" : "go");
     if (selCard && selCard.xoverDress) h += b("xdress", `XoverDress ${esc(selCard.name)}`, "go");
+    Game.zoneActs(S.active).forEach((a) => (h += b("zact", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-uid="${a.uid}" data-i="${a.i}" title="${esc(a.text)}"`)));
     Game.orderZoneActs(S.active).forEach((a) => (h += b("ozact", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-uid="${a.uid}" data-i="${a.i}" title="${esc(a.text)}"`)));
     if (ui.unitSel) {
       Game.actList(S.active, ui.unitSel).forEach((a) => (h += b("actv", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-i="${a.i}" data-src="${a.src || 0}" title="${esc(a.text)}"`)));
@@ -644,7 +645,8 @@ function onAction(a, el) {
     case "skipRide": return act(Game.skipRide());
     case "cancel": ui.mode = null; ui.attacker = null; return render();
     case "play": { const id = ui.sel; ui.sel = null; return act(Game.playOrder(id)); }
-    case "actv": return act(Game.activate(ui.unitSel, +el.dataset.i, +(el.dataset.src || 0)));
+    case "actv": return act(Game.activate(ui.unitSel, /^\d+$/.test(el.dataset.i) ? +el.dataset.i : el.dataset.i, +(el.dataset.src || 0)));
+    case "zact": return act(Game.activateZone(+el.dataset.uid, +el.dataset.i));
     case "ozact": return act(Game.activateOrderZone(+el.dataset.uid, +el.dataset.i));
     case "dress": ui.mode = ui.mode === "dress" ? null : "dress"; return render();
     case "xdress": { const id = ui.sel; ui.sel = null; ui.mode = null; return act(Game.xoverDress(id)); }

@@ -229,3 +229,5 @@ table.bd tr[data-set]:hover { background: #ffffff08; cursor: pointer; }
 .flt details.fmore summary { cursor: pointer; color: var(--muted); font-size: .76rem; }
 .flt details.fmore[open] { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; }
 .flt details.fmore[open] summary { width: 100%; }
+
+.abil .evdetail { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; padding: 4px 0 6px; border-bottom: 1px dashed #29446a; margin-bottom: 4px; }

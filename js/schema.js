@@ -33,7 +33,7 @@ const SCHEMA = {
     ORDER: "Normal Order (play from hand, main phase)",
     BLITZ: "Blitz Order (play from hand while guarding)",
   },
-  zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", any: "Anywhere" },
+  zones: { VC: "VC", RC: "RC", "VC/RC": "VC/RC", GC: "GC (guardian)", OZ: "Order zone (set orders)", hand: "Hand", drop: "Drop", soul: "Soul", damage: "Damage zone (face up)", bind: "Bind zone", G: "G zone (face up)", any: "Anywhere" },
   events: {
     placedVC: "When placed on VC (ridden)",
     riddenUpon: "When this unit is ridden upon",
@@ -55,7 +55,28 @@ const SCHEMA = {
     onStride: "When this G unit strides",
     dressed: "When this unit is put on RC with overDress / XoverDress",
     unlocked: "When this card is unlocked",
+    boosted: "When this unit is boosted",
+    allyAttacks: "When your unit attacks (any of yours)",
+    oppAttacks: "When your opponent's unit attacks (e.g. from hand)",
+    guardStart: "At the beginning of the guard step (you are attacked)",
+    attackNoHit: "When this unit's attack does not hit",
+    retired: "When this unit is retired",
+    allyRetired: "When your rear-guard is retired",
+    oppRetired: "When your opponent's rear-guard is retired",
+    oppPlacedRC: "When your opponent's rear-guard is placed",
+    discarded: "When this card is discarded from hand",
+    toSoul: "When this card is put into the soul",
+    driveReveal: "When your drive check reveals a card",
+    revealedDrive: "When this card is revealed in a drive check",
+    damageReveal: "When your damage check reveals a card",
+    revealedDamage: "When this card is revealed in a damage check",
+    orderPlayed: "When you play an order",
   },
+  // events that are about another card: the AUTO ability may filter it ("when your grade 3 rear-guard is placed…")
+  eventSubject: { placedRC: "the placed card", allyPlacedRC: "the placed card", oppPlacedRC: "the placed card", boosted: "the booster", allyAttacks: "the attacking unit",
+    oppAttacks: "the attacking unit", guardStart: "the attacking unit", allyRetired: "the retired card", oppRetired: "the retired card", driveReveal: "the revealed card",
+    damageReveal: "the revealed card", orderPlayed: "the order" },
+  fromEvents: { placedRC: 1, allyPlacedRC: 1, oppPlacedRC: 1 },
 
   conds: {
     myTurn: { label: "It is your turn", params: [], text: () => "it is your turn" },
@@ -86,6 +107,8 @@ const SCHEMA = {
       text: (p) => `${SCHEMA.paramOptions.who[p.who || "vc"]} is ${flt(p.filter)}` },
     wentFirst: { label: "You went first", params: [], text: () => "you went first" },
     wentSecond: { label: "You went second", params: [], text: () => "you went second" },
+    ritual: { label: "Ritual N (N+ grade 1 cards in your drop)", params: [["n", "num"]], text: (p) => `[Ritual ${p.n}]` },
+    byOpp: { label: "It was retired by your opponent's card", params: [], text: () => "it was retired by your opponent's card" },
   },
 
   costs: {
@@ -226,9 +249,16 @@ function describeAbility(ab) {
   if (ab.once === "game") s += "[1/Game]";
   if (ab.once === "divine") s += "[Divine Skill]";
   if (ab.once === "unique") s += "[Unique Skill]";
+  if (ab.once === "nameTurn") s += "[same name 1/Turn]";
+  if (ab.granted) s += "[given]";
   if (ab.kind === "AUTO" && ab.mandatory) s += "[Mandatory]";
   s += ": ";
-  if (ab.kind === "AUTO") s += (SCHEMA.events[ab.when] || "?") + ", ";
+  if (ab.kind === "AUTO") {
+    s += SCHEMA.events[ab.when] || "?";
+    if (ab.whenFrom) s += ` (${ab.whenFrom === "notHand" ? "not from hand" : "from " + ab.whenFrom})`;
+    if (ab.whenFilter && Object.keys(ab.whenFilter).some((k) => ab.whenFilter[k] !== "" && ab.whenFilter[k] !== false && ab.whenFilter[k] !== "any")) s += ` (${SCHEMA.eventSubject[ab.when] || "card"}: ${flt(ab.whenFilter)})`;
+    s += ", ";
+  }
   const conds = (ab.conds || []).map((c) => SCHEMA.conds[c.type]?.text(c)).filter(Boolean);
   if (conds.length) s += "if " + conds.join(" and ") + ", ";
   const costs = (ab.costs || []).map((c) => SCHEMA.costs[c.type]?.text(c)).filter(Boolean);
