@@ -50,7 +50,11 @@ async function load() {
   st.cards = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
   st.boxes = await every(() => cl.from("boxes").select("*").order("sort").order("id"));
   st.boxCards = {};
-  for (const r of await every(() => cl.from("box_cards").select("box_id, card_id, rarity"))) (st.boxCards[r.box_id] = st.boxCards[r.box_id] || []).push(r);
+  let bcRows;
+  try { bcRows = await every(() => cl.from("box_cards").select("box_id, card_id, rarity, qty")); }
+  catch { bcRows = await every(() => cl.from("box_cards").select("box_id, card_id, rarity")); st.noDecks = true; } // 007_store_decks.sql not run yet
+  for (const r of bcRows) (st.boxCards[r.box_id] = st.boxCards[r.box_id] || []).push(r);
+  st.myDecks = await DB.all("decks").catch(() => []);
   st.owned = Object.fromEntries((await every(() => cl.from("collection").select("card_id, count").eq("owner", me.id))).map((r) => [r.card_id, r.count]));
   const { data: set } = await cl.from("app_settings").select("*").eq("id", 1).maybeSingle();
   st.settings = set;
@@ -74,11 +78,37 @@ function odds(box) {
   const total = rs.reduce((a, r) => a + Math.max(0, +box.rates[r] || 0), 0);
   return rs.map((r) => [r, total ? (Math.max(0, +box.rates[r] || 0) / total) * 100 : 100 / rs.length]);
 }
+const kindOf = (b) => (b.kind === "deck" ? "deck" : "booster");
 function renderShop() {
   paintCoins();
   const list = st.boxes.filter((b) => b.active || isAdmin());
-  if (!list.length) { $("#boxGrid").innerHTML = `<p class="muted">No boxes in the Store yet.${isAdmin() ? " Make one in Manage boxes." : ""}</p>`; return; }
-  $("#boxGrid").innerHTML = list.map((b) => {
+  if (!list.length) { $("#boxGrid").innerHTML = `<p class="muted">Nothing in the Store yet.${isAdmin() ? " Make a product in Manage boxes." : ""}</p>`; return; }
+  const boosters = list.filter((b) => kindOf(b) === "booster"), decks = list.filter((b) => kindOf(b) === "deck");
+  $("#boxGrid").innerHTML = `<section class="shop-sec"><h2>Booster packs <small class="muted">${boosters.length}</small></h2>
+      <div class="box-row">${boosters.map(boosterHTML).join("") || `<p class="muted">No booster packs yet.</p>`}</div></section>
+    <section class="shop-sec"><h2>Decks <small class="muted">${decks.length}</small></h2>
+      <div class="box-row">${decks.map(deckHTML).join("") || `<p class="muted">No decks for sale yet.</p>`}</div></section>`;
+}
+// a deck product: the whole deck at once (every card added to your collection, and the deck copied into your decks)
+function deckHTML(b) {
+  const cs = st.boxCards[b.id] || [];
+  const total = cs.reduce((n, r) => n + (+r.qty || 1), 0);
+  const d = b.deck || {};
+  const cover = b.cover && st.cards[b.cover] ? b.cover : (d.ride && d.ride[3]) || (cs[0] && cs[0].card_id);
+  const fmtName = (typeof FORMATS !== "undefined" && FORMATS[d.format] && FORMATS[d.format].label) || d.format || "";
+  const list = cs.slice().sort((a, c) => (st.cards[c.card_id] ? st.cards[c.card_id].grade : 0) - (st.cards[a.card_id] ? st.cards[a.card_id].grade : 0))
+    .map((r) => `<li><span>${+r.qty || 1}×</span> ${esc(cardName(r.card_id))}</li>`).join("");
+  return `<article class="box deckbox${b.active ? "" : " off"}">
+      <div class="box-cover">${cover ? pic(cover) : `<span class="pic"><span class="noimg">${esc(b.name)}</span></span>`}<span class="tag deck">DECK</span>${b.active ? "" : `<span class="tag">Hidden from players</span>`}</div>
+      <div class="box-info">
+        <h3>${esc(b.name)}</h3>
+        ${b.description ? `<p class="muted">${esc(b.description)}</p>` : ""}
+        <p class="box-meta">${total} cards${d.ride && d.ride.filter(Boolean).length ? " · ride deck included" : ""}${fmtName ? " · " + esc(fmtName) : ""}</p>
+        <details class="rates"><summary>Deck list</summary><ul class="decklist">${list}</ul></details>
+        <div class="box-buy"><button class="go" data-buydeck="${b.id}" ${coins() < b.price || !cs.length ? "disabled" : ""}>Buy deck · ◈ ${b.price.toLocaleString()}</button></div>
+      </div></article>`;
+}
+function boosterHTML(b) {
     const cs = st.boxCards[b.id] || [];
     const have = cs.filter((r) => st.owned[r.card_id]).length;
     const cover = b.cover && st.cards[b.cover] ? b.cover : cs[0] && cs[0].card_id;
@@ -97,12 +127,31 @@ function renderShop() {
           <button data-open="${b.id}" data-n="10" ${coins() < b.price * 10 || !cs.length ? "disabled" : ""}>Open 10 · ◈ ${(b.price * 10).toLocaleString()}</button>
         </div>
       </div></article>`;
-  }).join("");
 }
 $("#boxGrid").addEventListener("click", (e) => {
   const b = e.target.closest("[data-open]");
   if (b) openPacks(+b.dataset.open, +b.dataset.n);
+  const d = e.target.closest("[data-buydeck]");
+  if (d) buyDeck(+d.dataset.buydeck);
 });
+async function buyDeck(boxId) {
+  if (st.busy) return;
+  const box = st.boxes.find((b) => b.id === boxId);
+  if (!box || !window.confirm(`Buy "${box.name}" for ◈ ${box.price.toLocaleString()}? Every card is added to your collection and the deck is copied into your decks.`)) return;
+  st.busy = true;
+  try {
+    const res = await Cloud.rpc("buy_deck", { box: boxId });
+    Auth.set({ ...Auth.get(), coins: res.coins });
+    for (const r of res.cards || []) st.owned[r.card] = (st.owned[r.card] || 0) + (+r.qty || 1);
+    let saved = false;
+    if (res.deck && Array.isArray(res.deck.main)) {
+      await DB.put("decks", { ...res.deck, id: DB.newId(), name: res.deck.name || box.name, note: `Bought in the Store: ${box.name}` });
+      saved = true;
+    }
+    renderShop();
+    toast(`${box.name}: ${(res.cards || []).reduce((n, r) => n + (+r.qty || 1), 0)} cards added${saved ? " · the deck is in your decks (Deck builder)" : ""}`);
+  } catch (e) { fail(e); } finally { st.busy = false; }
+}
 async function openPacks(boxId, n) {
   if (st.busy) return;
   st.busy = true;
@@ -172,7 +221,7 @@ $("#mineMissing").addEventListener("change", renderMine);
 // ---------- admin: boxes ----------
 function renderBoxList() {
   if ($("#boxSet") && $("#boxSet").options.length <= 1) fillBoxSets();
-  $("#boxList").innerHTML = st.boxes.map((b) => `<button class="${st.edit && st.edit.box.id === b.id ? "on" : ""}" data-box="${b.id}"><b>${esc(b.name)}</b><small>${b.active ? "In the Store" : "Hidden"} · ◈ ${b.price} · ${(st.boxCards[b.id] || []).length} cards</small></button>`).join("") || `<p class="muted">No boxes yet.</p>`;
+  $("#boxList").innerHTML = st.boxes.map((b) => `<button class="${st.edit && st.edit.box.id === b.id ? "on" : ""}" data-box="${b.id}"><b>${b.kind === "deck" ? "🃏" : "📦"} ${esc(b.name)}</b><small>${b.active ? "In the Store" : "Hidden"} · ◈ ${b.price} · ${(st.boxCards[b.id] || []).length} cards</small></button>`).join("") || `<p class="muted">No boxes yet.</p>`;
   renderBoxEdit();
 }
 $("#boxList").addEventListener("click", (e) => {
@@ -210,7 +259,10 @@ function renderBoxEdit() {
   if (!E) { $("#boxEdit").innerHTML = `<p class="muted">Pick a box or make a new one.</p>`; return; }
   const b = E.box;
   const count = (r) => E.cards.filter((x) => x.rarity === r).length;
+  const isDeck = b.kind === "deck";
+  if (isDeck) return renderDeckEdit(E, b);
   $("#boxEdit").innerHTML = `
+    <div class="be-kind"><span class="muted">Product:</span><button class="on">📦 Booster pack</button><button data-kind="deck" ${st.noDecks ? "disabled title=\"Run supabase/007_store_decks.sql first\"" : ""}>🃏 Deck</button></div>
     <div class="be-grid">
       <label class="field">Name <input data-f="name" value="${esc(b.name)}" maxlength="60"></label>
       <label class="field">Price per pack (coins) <input data-f="price" type="number" min="0" value="${b.price}"></label>
@@ -265,6 +317,7 @@ $("#boxEdit").addEventListener("click", async (e) => {
   if (t.dataset.add) { E.cards.push({ card_id: t.dataset.add, rarity: rar }); return renderBoxEdit(); }
   if (t.dataset.rm !== undefined) { E.cards.splice(+t.dataset.rm, 1); return renderBoxEdit(); }
   if (t.id === "beAddAll") { searchLib().forEach((c) => E.cards.push({ card_id: c.id, rarity: rar })); E.q = ""; return renderBoxEdit(); }
+  if (t.dataset.kind) { E.box.kind = t.dataset.kind; if (t.dataset.kind === "booster") E.cards.forEach((x) => delete x.qty); return renderBoxEdit(); }
   if (t.id === "beSave") return saveBox();
   if (t.id === "beDel") {
     if (!window.confirm(`Delete the box "${E.box.name}"? Cards players already own stay theirs.`)) return;
@@ -280,11 +333,46 @@ $("#boxEdit").addEventListener("click", async (e) => {
     } catch (err) { fail(err); }
   }
 });
+// a deck product: pick one of your decks; its cards (with copies) and layout are what the buyer gets
+function renderDeckEdit(E, b) {
+  const total = E.cards.reduce((n, x) => n + (+x.qty || 1), 0);
+  const decks = st.myDecks || [];
+  $("#boxEdit").innerHTML = `
+    <div class="be-kind"><span class="muted">Product:</span><button data-kind="booster">📦 Booster pack</button><button class="on">🃏 Deck</button></div>
+    <div class="be-grid">
+      <label class="field">Name <input data-f="name" value="${esc(b.name)}" maxlength="60"></label>
+      <label class="field">Price (coins) <input data-f="price" type="number" min="0" value="${b.price}"></label>
+      <label class="field">Order in the Store <input data-f="sort" type="number" value="${b.sort}"></label>
+      <label class="field wide">Description <input data-f="description" value="${esc(b.description)}" maxlength="200"></label>
+      <label class="field wide">Deck to sell <select id="beDeck"><option value="">Pick one of your decks…</option>${decks.map((d) => `<option value="${esc(d.id)}" ${E.deckId === d.id ? "selected" : ""}>${esc(d.name)} · ${(d.main || []).length} + ${(d.ride || []).filter(Boolean).length} ride${(d.g || []).length ? " + " + d.g.length + " G" : ""}</option>`).join("")}</select></label>
+      <label class="field">Cover card <select data-f="cover"><option value="">its grade 3</option>${E.cards.map((x) => `<option value="${esc(x.card_id)}" ${b.cover === x.card_id ? "selected" : ""}>${esc(cardName(x.card_id))}</option>`).join("")}</select></label>
+      <label class="chk wide"><input type="checkbox" data-f="active" ${b.active ? "checked" : ""}> In the Store (players can see and buy it)</label>
+    </div>
+    <h3>Deck list (${total} cards)</h3>
+    <div class="be-cards">${E.cards.map((x) => `<div class="be-card">${pic(x.card_id)}<span>${+x.qty || 1}× ${esc(cardName(x.card_id))}</span></div>`).join("") || `<p class="muted">Pick a deck above.</p>`}</div>
+    <div class="be-save"><button class="go" id="beSave">Save deck product</button>${b.id ? `<button id="beDel" class="danger">Delete</button>` : ""}</div>`;
+}
+$("#boxEdit").addEventListener("change", (e) => {
+  if (e.target.id !== "beDeck" || !st.edit) return;
+  const d = (st.myDecks || []).find((x) => x.id === e.target.value);
+  if (!d) return;
+  st.edit.deckId = d.id;
+  const all = [...(d.ride || []).filter(Boolean), ...(d.main || []), ...(d.g || [])];
+  const qty = {};
+  all.forEach((id) => (qty[id] = (qty[id] || 0) + 1));
+  st.edit.cards = Object.entries(qty).map(([card_id, q]) => ({ card_id, rarity: "C", qty: q }));
+  st.edit.box.deck = { name: d.name, format: d.format, energy: !!d.energy, ride: d.ride || [], starter: d.starter || "", main: d.main || [], g: d.g || [], gUnlock: !!d.gUnlock };
+  if (!st.edit.box.name || st.edit.box.name === "New box") st.edit.box.name = d.name.slice(0, 60);
+  renderBoxEdit();
+});
 async function saveBox() {
   const E = st.edit, b = E.box;
   if (!b.name.trim()) return toast("Give the box a name", true);
-  if (b.cards_per_pack < 1 || b.cards_per_pack > 20) return toast("Cards per pack: 1 to 20", true);
-  const row = { name: b.name.trim(), description: b.description || "", cover: b.cover || "", price: Math.max(0, b.price | 0), cards_per_pack: b.cards_per_pack | 0, rates: b.rates, guarantee: b.guarantee || null, active: !!b.active, sort: b.sort | 0 };
+  const isDeck = b.kind === "deck";
+  if (isDeck && !b.deck) return toast("Pick the deck to sell", true);
+  if (!isDeck && (b.cards_per_pack < 1 || b.cards_per_pack > 20)) return toast("Cards per pack: 1 to 20", true);
+  const row = { name: b.name.trim(), description: b.description || "", cover: b.cover || "", price: Math.max(0, b.price | 0), cards_per_pack: Math.min(20, Math.max(1, b.cards_per_pack | 0)), rates: b.rates, guarantee: isDeck ? null : b.guarantee || null, active: !!b.active, sort: b.sort | 0 };
+  if (!st.noDecks) Object.assign(row, { kind: isDeck ? "deck" : "booster", deck: isDeck ? b.deck : null });
   try {
     const cl = await Cloud.client();
     let id = b.id;
@@ -292,7 +380,7 @@ async function saveBox() {
     else { const { data, error } = await cl.from("boxes").insert(row).select("id").single(); if (error) throw error; id = data.id; }
     const { error: delErr } = await cl.from("box_cards").delete().eq("box_id", id);
     if (delErr) throw delErr;
-    const rows = [...new Map(E.cards.map((x) => [x.card_id, { box_id: id, card_id: x.card_id, rarity: x.rarity }])).values()];
+    const rows = [...new Map(E.cards.map((x) => [x.card_id, { box_id: id, card_id: x.card_id, rarity: x.rarity || "C", ...(st.noDecks ? {} : { qty: Math.max(1, +x.qty || 1) }) }])).values()];
     for (let i = 0; i < rows.length; i += 500) { const { error } = await cl.from("box_cards").insert(rows.slice(i, i + 500)); if (error) throw error; }
     const saved = { ...b, ...row, id };
     st.boxes = st.boxes.filter((x) => x.id !== id).concat(saved).sort((a, c) => a.sort - c.sort || a.id - c.id);
