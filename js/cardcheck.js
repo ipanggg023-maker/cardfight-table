@@ -47,6 +47,7 @@ const CardCheck = (() => {
   // keyword lines that card fields (not blocks) cover
   function flagLine(l, c) {
     if (/^\(.*\)$/.test(l)) return { note: "reminder text" };
+    if (/^(<[^>]+>\s*)?((right|left) deity )?arms\s*[-–－]\s*("[^"]+"|vanguard)/.test(l)) return c.arms ? { ok: "Arms field" + (c.armsName ? ` (${c.armsName})` : "") } : { warn: "Tick “Arms” and fill the vanguard name" };
     // more card fields (not blocks)
     if (/^while (you are )?paying the cost for \[stride\],? this card gets grade \+\d/.test(l)) return +c.strideGrade ? { ok: "Stride cost grade + field" } : { warn: "Fill “Stride cost grade +”" };
     if (/^you may (only )?have (up to )?[^.]* in (a|your) deck\.?$/.test(l)) return +c.deckMax ? { ok: "deck limit field (" + c.deckMax + ")" } : { note: "deck-building rule (copies per deck)" };
