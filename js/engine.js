@@ -281,6 +281,8 @@ const Game = (() => {
       case "oppLocked": return rcOf(1 - pi).filter((k) => o.slots[k] && o.slots[k].locked).length;
       case "oppFrontRC": return units(o, frontOf(1 - pi).filter((k) => k !== "vc"));
       case "lastCount": return ctx.last ? ctx.last.count : 0;
+      case "paidCount": return m(ctx.paid); // "the number of cards [Soul-Blast] / discarded for this cost"
+      case "myOZGradeSum": return (p.orderZone || []).filter((c) => !c.faceDown && match(c, f, env)).reduce((t, c) => t + (+c.grade || 0), 0); // "the sum of the grades of set orders in your order zone"
       case "lastMatch": return (ctx.last && ctx.last.cards ? ctx.last.cards : []).filter((c) => match(c, f, env)).length;
       default: return 0;
     }
@@ -652,6 +654,7 @@ const Game = (() => {
       case "EB": p.energy -= n; break;
       case "discard": {
         const picked = await chooseCards(pi, `Discard ${n} card(s)`, p.hand.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
+        ctx.paid = [...(ctx.paid || []), ...picked];
         picked.forEach((x) => { p.hand.splice(p.hand.indexOf(x), 1); p.drop.push(x); discarded(pi, x); });
         break;
       }
@@ -670,7 +673,7 @@ const Game = (() => {
         picked.forEach((x) => { p.drop.splice(p.drop.indexOf(x), 1); p.deck.push(x); });
         break;
       }
-      case "move": { const r = await moveCards(pi, { ...c, upTo: false }, ctx); if (r && r.cards && r.cards.length) ctx.revealed = r.cards; break; }
+      case "move": { const r = await moveCards(pi, { ...c, upTo: false }, ctx); if (r && r.cards && r.cards.length) { ctx.revealed = r.cards; ctx.paid = [...(ctx.paid || []), ...r.cards]; } break; }
       case "gFaceUp": {
         const picked = await chooseCards(pi, `Turn ${n} face-down card(s) in your G zone face up`, p.gDeck.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
         picked.forEach((x) => { p.gDeck.splice(p.gDeck.indexOf(x), 1); p.gUp.push(x); });
@@ -851,7 +854,7 @@ const Game = (() => {
   }
   async function callAnywhere(pi, card, from = "", row = "") {
     if (card.cantBeCalled) { log(`${card.name} can't be called; it goes to the drop`); P(pi).drop.push(card); return; }
-    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : row && row.startsWith("col:") ? rcOf(pi).filter((k) => COL[k] && COL[k] === COL[row.slice(4)]) : row && row.startsWith("key:") ? rcOf(pi).filter((k) => k === row.slice(4)) : rcOf(pi); // "call it to a back row (RC)" / "in the same column as this unit"
+    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : row && row.startsWith("colback:") ? rcOf(pi).filter((k) => BACK.includes(k) && COL[k] && COL[k] === COL[row.slice(8)]) : row && row.startsWith("col:") ? rcOf(pi).filter((k) => COL[k] && COL[k] === COL[row.slice(4)]) : row && row.startsWith("key:") ? rcOf(pi).filter((k) => k === row.slice(4)) : rcOf(pi); // "call it to a back row (RC)" / "in the same column as this unit"
     const usable = keys.filter((k) => !(k === "bc" && ruleOn(pi, "noBC", card)));
     if (!usable.length) { log(`No circle ${card.name} can be called to; it goes to the drop`); P(pi).drop.push(card); return; }
     const opts = usable.map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
@@ -1020,6 +1023,7 @@ const Game = (() => {
         break;
       case "RCback": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "back"); break;
       case "RCbc": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "key:bc"); break; // "call it to your back row center (RC)"
+      case "RCcolBack": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, colKey ? "colback:" + colKey : "back"); break; // "call it to a back row (RC) in the same column as this unit"
       case "RCcol": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, colKey ? "col:" + colKey : ""); break;
       case "RCfront": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "front"); break;
       default: q.drop.push(c);

@@ -604,6 +604,7 @@ const TextParse = (() => {
     let dm;
     if ((dm = t.match(/^different (?:(.+?) )?(?:cards|card names) in your order zone/))) return { what: "myOrderZoneNames", ...(dm[1] && dm[1] !== "card" ? { filter: { clan: dm[1].replace(/\b\w/g, (x) => x.toUpperCase()) } } : {}) };
     if (/^face up cards in your order zone/.test(t)) return { what: "myOrderZoneUp" };
+    if (/^cards (?:\[(?:soul-blast|counter-blast)\](?:ed)?|soul-blasted|counter-blasted|discarded|put into (?:your )?soul|bound|retired)(?: (?:for|by|with))? (?:this|the) cost/.test(t)) return { what: "paidCount" };
     if (/^face up cards in your damage zone/.test(t)) return { what: "myDamageUp" };
     if (/^your opponent'?s open \(rc\)/.test(t)) return { what: "oppOpenRC" };
     if (/^your open \(rc\)/.test(t)) return { what: "myOpenRC" };
@@ -637,6 +638,7 @@ const TextParse = (() => {
     if (/if (?:one or more of )?your opponent'?s rear-guards? (?:was|were|has been|have been) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "opp", n: 1 });
     else if (/if (?:one or more of )?your rear-guards? (?:was|were) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "me", n: 1 });
     if ((m = t.match(/if you have an? "(.+)" crest/i))) add({ type: "count", what: "myCrest", op: "ge", n: 1, filter: { nameExact: m[1] } });
+    if ((m = t.match(rx(`if the sum of the grades of (?:(?:the )?set orders|cards) in your order zone is ${N} or (greater|more)`)))) add({ type: "count", what: "myOZGradeSum", op: "ge", n: toNum(m[m.length - 2]) });
     if (/if you did not play an order this turn|if you have not played an order this turn/i.test(t)) add({ type: "noOrderThisTurn" });
     if ((m = t.match(/if you played this card from (?:your )?(drop|hand|soul|bind zone)/i))) add({ type: "playedFrom", zone: m[1].toLowerCase().replace(" zone", "") });
     // round 19: states, battle number, "was boosted", another rear-guard with a name
@@ -1066,9 +1068,9 @@ const TextParse = (() => {
       const what = countPhrase(m[5]);
       if (what) { ctx.last = { target: /units/i.test(m[4]) ? "chooseMy" : "chooseMyRC", n: 99, ...(m[1] ? { upTo: true } : {}), nCount: what, filter: { ...(filt(m[3] || "") || {}), ...(m[2] ? { other: true } : {}) } }; ctx.lastUsed = false; return []; }
     }
-    if (ctx.search && /^call (it|them) to (?:a |an open )?\(rc\) in the same column as this unit$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCcol", n: s2.n, upTo: true, filter: s2.filter }]; }
-    if (ctx.pick && /^call (it|them) to (?:a |an open )?\(rc\) in the same column as this unit$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "RCcol", n: P.n, upTo: P.upTo, filter: P.filter }]; }
-    if (ctx.look && /^call (it|them) to (?:a |an open )?\(rc\) in the same column as this unit$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: L.upTo !== false, to: "RCcol", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e]; }
+    if (ctx.search && /^call (it|them) to (?:a |an open )?(?:back row )?\(rc\) in the same column as this unit$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: /back row/i.test(t) ? "RCcolBack" : "RCcol", n: s2.n, upTo: true, filter: s2.filter }]; }
+    if (ctx.pick && /^call (it|them) to (?:a |an open )?(?:back row )?\(rc\) in the same column as this unit$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: /back row/i.test(t) ? "RCcolBack" : "RCcol", n: P.n, upTo: P.upTo, filter: P.filter }]; }
+    if (ctx.look && /^call (it|them) to (?:a |an open )?(?:back row )?\(rc\) in the same column as this unit$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: L.upTo !== false, to: /back row/i.test(t) ? "RCcolBack" : "RCcol", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e]; }
     if ((m = t.match(/^you (?:are in )?"([^"]+)"$/i))) return [{ type: "setWorld", text: m[1], dur: ctx.dur || "turn" }]; // "until end of turn, you "Final Rush""
     if ((m = t.match(/^you get an? "(.+)" crest$/i))) return [{ type: "crest", name: m[1] }];
     if (/^(?:this unit )?cannot \[stand\] during (?:the|your) stand phase$/i.test(t)) return [{ type: "restrict", what: "cantStand", ...(ctx.dur ? { dur: ctx.dur } : {}), target: "self" }];
@@ -1115,7 +1117,7 @@ const TextParse = (() => {
       if (/different card name from your vanguard/i.test(m[1])) f.diffNameVC = true;
       if (Object.keys(f).length) return [{ type: "playerRule", who: "me", what: "cantRide", filter: f }];
     }
-    if ((m = t.match(/^reduce the next \[counter-blast\](?: cost)? you pay(?: this turn)?(?: for (that card'?s|this (?:unit|card)'?s|its) (?:abilities|ability|\[auto\] abilities))?(?: this turn)? by (?:①|1|one)$/i))) return [{ type: "cbDiscount", n: 1, ...(m[1] ? { forCard: /that card/i.test(m[1]) ? "last" : "self" } : {}) }];
+    if ((m = t.match(/^reduce the next \[counter-blast\](?: cost)? you pay(?: this turn)?(?: for (that (?:card|unit)'?s|this (?:unit|card)'?s|its) (?:abilities|ability|\[auto\] abilities?|\[act\] abilities?))?(?: this turn)? by (?:①|1|one)$/i))) return [{ type: "cbDiscount", n: 1, ...(m[1] ? { forCard: /^that/i.test(m[1]) ? "last" : "self" } : {}) }];
     if ((m = t.match(/^your world becomes ([A-Z][A-Za-z' ]+?)$/i))) return [{ type: "setWorld", text: m[1].trim() }];
     if ((m = t.match(/^put the top (?:(\w+) )?cards? of your deck (?:face (up|down) )?in(?:to)? (?:your |the )damage zone(?: face (up|down))?$/i))) return [{ type: "move", from: "deckTop", to: /down/i.test((m[2] || "") + (m[3] || "")) ? "damageDown" : "damageUp", look: m[1] ? toNum(m[1]) : 1, n: m[1] ? toNum(m[1]) : 1, all: true }];
     if (/^(?:your )?persona ride also increases the \[power\] of your back row units$/i.test(t)) return [{ type: "personaBack" }];
@@ -1200,7 +1202,7 @@ const TextParse = (() => {
     if (ctx.last && /^(put|return) (it|them|that unit|those units) (into (your |his or her |their )?(soul|hand|drop)|to (your |his or her |their |its owner'?s )?hand|on the (top|bottom) of (your|his or her|their|the) deck)/i.test(t)) {
       const L = ctx.last, opp = /Opp/.test(L.target || "");
       const to = /soul/i.test(t) ? "soul" : /hand/i.test(t) ? "hand" : /drop/i.test(t) ? "drop" : /bottom/i.test(t) ? "deckBottom" : "deckTop";
-      return [{ type: "move", from: opp ? (/Front/.test(L.target) ? "oppFrontRC" : "oppRC") : /Front/.test(L.target || "") ? "myFrontRC" : /Back/.test(L.target || "") ? "myBackRC" : "myRC", to, n: L.all ? 1 : L.n || 1, all: !!L.all, upTo: !!L.upTo, filter: L.filter }];
+      return [{ type: "move", from: opp ? (/Front/.test(L.target) ? "oppFrontRC" : "oppRC") : /Front/.test(L.target || "") ? "myFrontRC" : /Back/.test(L.target || "") ? "myBackRC" : "myRC", to, n: L.all ? 1 : L.n || 1, all: !!L.all, upTo: !!L.upTo, filter: L.filter, ...(L.nCount ? { nCount: L.nCount } : {}) }];
     }
     if (/^reveal it(,| and)?$|^reveal it to your opponent$/i.test(t)) return [];
     // search the deck
