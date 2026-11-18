@@ -863,6 +863,11 @@ const Game = (() => {
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     if (e.from === "self") return ctx.card ? [ctx.card] : [];
     if (e.eventCard) { const z = q[ZONE_OF[e.from] || e.from] || []; return ctx.subject && z.includes(ctx.subject) && match(ctx.subject, e.filter, env) ? [ctx.subject] : []; } // "one of the discarded cards": the card the timing is about
+    if (e.fromLast && FIELD_FROM[e.from]) {
+      const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK }[FIELD_FROM[e.from]];
+      const cards = (ctx.last && ctx.last.cards) || [];
+      return unitsAt(side, keys, e.filter, env).filter((u) => q.slots[u.key] && cards.includes(q.slots[u.key].card));
+    }
     if (e.fromLast) { const z = q[ZONE_OF[e.from] || e.from] || []; return ((ctx.last && ctx.last.cards) || []).filter((c) => z.includes(c) && match(c, e.filter, env)); }
     if (FIELD_FROM[e.from]) {
       const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK }[FIELD_FROM[e.from]];
@@ -908,6 +913,10 @@ const Game = (() => {
       case "automod": c.down = false; q.automod.push(c); log(`⚙ ${c.name} becomes an AutoMOD gauge`); break;
       case "prison": c.imprisoned = side; P(actor).orderZone.push(c); log(`⛓ ${c.name} is imprisoned`); break;
       case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from); break;
+      case "GC":
+        if (S.battle && side === 1 - S.active) { S.battle.guards.push(c); log(`${q.name} calls ${c.name} to (GC)${c.shield ? " (shield " + (+c.shield).toLocaleString() + ")" : ""}`); collect(side, null, "placedGC", { card: c, zone: "GC", subject: c, from }); }
+        else { q.drop.push(c); log(`${c.name} can't be called to (GC) now; it goes to the drop`); }
+        break;
       case "RCback": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "back"); break;
       case "RCfront": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "front"); break;
       default: q.drop.push(c);
@@ -1609,7 +1618,7 @@ const Game = (() => {
     if (card.type === "order") return err("Orders are played with the Play button");
     if (card.protect) return err("Protect can only be put on the guardian circle");
     if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
-    if (card.cantBeCalled) return err(`${card.name} can't be called`);
+    if (card.cantBeCalled || card.noNormalCall) return err(`${card.name} can't be called from hand`);
     if (ruleOn(pi, "cantCall", card)) return err(`${card.name} can't be called now`);
     p.hand.splice(p.hand.indexOf(card), 1);
     await place(pi, card, key, "hand");

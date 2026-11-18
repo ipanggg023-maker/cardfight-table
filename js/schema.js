@@ -295,7 +295,7 @@ const SCHEMA = {
       myRC: "your rear-guards", myFrontRC: "your front row rear-guards", myBackRC: "your back row rear-guards",
       oppHand: "opponent's hand", oppDeckTop: "the top of opponent's deck", oppDrop: "opponent's drop", oppSoul: "opponent's soul", oppDamage: "opponent's damage zone",
       oppRC: "opponent's rear-guards", oppFrontRC: "opponent's front row rear-guards" },
-    mto: { rideDeck: "ride deck", hand: "hand", RC: "RC (call)", RCback: "a back row RC (call)", RCfront: "a front row RC (call)", automod: "AutoMOD gauge (face up)", soul: "soul", drop: "drop (discard / retire)", deckTop: "top of the deck", deckBottom: "bottom of the deck", deck: "into the deck (shuffle)", bind: "bind zone",
+    mto: { rideDeck: "ride deck", hand: "hand", RC: "RC (call)", RCback: "a back row RC (call)", GC: "(GC) as a guardian (during a battle)", RCfront: "a front row RC (call)", automod: "AutoMOD gauge (face up)", soul: "soul", drop: "drop (discard / retire)", deckTop: "top of the deck", deckBottom: "bottom of the deck", deck: "into the deck (shuffle)", bind: "bind zone",
       damageUp: "damage zone (face up)", damageDown: "damage zone (face down)", removed: "removed from the game", orderZone: "order zone", prison: "your Prison (imprison)" },
     chooser: { me: "you choose", opp: "your opponent chooses" },
     lookRest: { shuffle: "shuffle the rest into the deck", bottom: "the rest on the bottom", top: "the rest back on top", drop: "the rest into the drop", soul: "the rest into the soul" },
