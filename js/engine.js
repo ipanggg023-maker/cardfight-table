@@ -232,6 +232,7 @@ const Game = (() => {
     const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
+      case "myBC": return p.slots.bc && !p.slots.bc.locked && match(p.slots.bc.card, f, env) ? 1 : 0; // "another unit in your middle column"
       case "oppGUp": return m(o.gUp || []);
       case "myRCToSoulTurn": return S.rcSoulTurn && S.rcSoulTurn.turn === S.turn ? S.rcSoulTurn.n[pi] : 0;
       case "oppOpenRC": return rcOf(1 - pi).filter((k) => !o.slots[k]).length;
@@ -494,6 +495,8 @@ const Game = (() => {
       case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
       case "placedFromThisTurn": { const pf = S.placedFrom && S.placedFrom.turn === S.turn ? S.placedFrom.from[pi] : {}; return (pf[c.from] || 0) >= (+c.n || 1); }
       case "playedFrom": return !!ctx && ctx.zone === c.zone; // "if you played this card from drop"
+      case "attackNoHit": return !!S.lastHit && S.lastHit.turn === S.turn && !S.lastHit.hit; // the last battle's attack did not hit
+      case "damageThisTurn": return S.dmgTurn === S.turn; // "if a new card was put into any player's damage zone this turn"
       case "noOrderThisTurn": return P(pi).orderTurn !== S.turn;
       case "retiredThisTurn": { const r = S.retiredTurn && S.retiredTurn.turn === S.turn ? S.retiredTurn.n : [0, 0]; return r[c.who === "me" ? pi : 1 - pi] >= (+c.n || 1); }
       case "battlePhase": return S.active === pi && (S.phase === "battle" || !!S.battle);
@@ -866,8 +869,8 @@ const Game = (() => {
         continue;
       }
       if (e.opt && !(opts && opts.has(e.opt))) continue;
-      if (e.ifCond && !condOK(pi, e.ifCond, ctx)) continue; // "…, and if X, Y"
-      if (e.later) { (S.later = S.later || []).push({ pi, e: { ...e, later: "" }, ctx: { ...ctx, last }, at: e.later, turn: S.turn }); continue; } // "at the end of that battle / turn, …"
+      if (e.later) { (S.later = S.later || []).push({ pi, e: { ...e, later: "" }, ctx: { ...ctx, last }, at: e.later, turn: S.turn }); continue; }
+      if (e.ifCond && !condOK(pi, e.ifCond, ctx)) continue; // "…, and if X, Y" (a later step checks it when it runs) // "at the end of that battle / turn, …"
       if (e.onlyIf) {
         const L = last || { count: 0, cards: [] };
         const hit = (L.cards || []).some((c) => match(c, e.onlyFilter, { pi, ctx }));
@@ -886,7 +889,7 @@ const Game = (() => {
     const due = (S.later || []).filter((x) => x.at === at || (at === "turn" && x.at === "battle"));
     if (!due.length) return;
     S.later = (S.later || []).filter((x) => !due.includes(x));
-    for (const x of due) { if (over()) break; log(`⏰ ${x.ctx.card ? x.ctx.card.name + ": " : ""}${SCHEMA.effects[x.e.type] ? SCHEMA.effects[x.e.type].text(x.e) : x.e.type}`); depth++; try { await effect(x.pi, x.e, x.ctx); } finally { depth--; } }
+    for (const x of due) { if (over()) break; if (x.e.ifCond && !condOK(x.pi, x.e.ifCond, x.ctx)) continue; log(`⏰ ${x.ctx.card ? x.ctx.card.name + ": " : ""}${SCHEMA.effects[x.e.type] ? SCHEMA.effects[x.e.type].text(x.e) : x.e.type}`); depth++; try { await effect(x.pi, x.e, x.ctx); } finally { depth--; } }
     await settle();
   }
   // ---------- Move cards (Ability Language v2): any zone → any zone ----------
@@ -946,6 +949,7 @@ const Game = (() => {
       case "damageDown": c.down = true; q.damage.push(c); break;
       case "orderZone": q.orderZone.push(c); break;
       case "rideDeck": q.ride.push(c); break;
+      case "gUp": c.down = false; q.gUp.push(c); break; // "put this unit into your G zone face up"
       case "automod": c.down = false; q.automod.push(c); log(`⚙ ${c.name} becomes an AutoMOD gauge`); break;
       case "prison": c.imprisoned = side; P(actor).orderZone.push(c); log(`⛓ ${c.name} is imprisoned`); break;
       case "RC": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from); break;
@@ -2104,6 +2108,7 @@ const Game = (() => {
     if (over()) return;
     const atk = attackPower(), def = defensePower();
     const hit = !b.perfect && atk >= def;
+    b.hit = hit; S.lastHit = { turn: S.turn, battle: S.battleNo || 0, hit }; // "if the attack did not hit during that battle"
     log(`${atk.toLocaleString()} vs ${def.toLocaleString()} → ${hit ? "HIT!" : "guarded"}`);
     await beat(hit ? "hit" : "guard");
     if (hit) {
@@ -2135,7 +2140,7 @@ const Game = (() => {
       collect(di, null, "revealedDamage", { card: c, zone: "deck", subject: c });
       await trigger(di, c, "damage");
       S.checking = null;
-      if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); collectAll(di, "toDamage", { subject: c }); }
+      if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); S.dmgTurn = S.turn; collectAll(di, "toDamage", { subject: c }); }
       ruleActions(); // 6 damage is a rule action, checked after each damage check
     }
   }

@@ -280,7 +280,7 @@ const TextParse = (() => {
     const kw = (re) => rx(`(^|\\n|\\]:)\\s*\\[?${re}\\]?\\b`).test(text);
     if (kw("forerunner")) out.forerunner = true;
     if (kw("lord")) out.lord = true;
-    if (kw("resist")) out.resist = true;
+    if (kw("resist") || /\(GC\):\s*resist\b/i.test(text)) out.resist = true;
     if (kw("harmony")) out.harmony = true;
     if (/this card cannot be called/i.test(text)) out.cantBeCalled = true;
     if (/regalis piece/i.test(text)) out.regalis = true;
@@ -637,6 +637,11 @@ const TextParse = (() => {
     if (!out.some((c) => c.type === "count") && (m = t.match(/if your (soul|drop|drop zone|hand|order zone|damage zone|bind zone) has "([^"]+)"/i))) add({ type: "count", what: { soul: "mySoul", drop: "myDrop", "drop zone": "myDrop", hand: "myHand", "order zone": "myOrderZone", "damage zone": "myDamage", "bind zone": "myBind" }[m[1].toLowerCase()], op: "ge", n: 1, filter: { nameExact: m[2] } });
     if (/if your opponent'?s g zone has (?:a|one or more) face up cards?/i.test(t)) add({ type: "count", what: "oppGUp", op: "ge", n: 1 });
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) open \\(RC\\)`)))) add({ type: "count", what: "myOpenRC", op: CMP(m[0]), n: toNum(m[1]) });
+    if (/if the attack did not hit(?: during that battle)?/i.test(t)) add({ type: "attackNoHit" });
+    if (/if a new card was put into any player'?s damage zone this turn|if a card was put into a damage zone this turn/i.test(t)) add({ type: "damageThisTurn" });
+    if (/if you have another unit in your middle column|if you have a rear-guard in your back row center/i.test(t)) add({ type: "count", what: "myBC", op: "ge", n: 1 });
+    if ((m = t.match(rx(`if you have (${N}|an?) (?:or more )?"?([A-Z][A-Za-z ]+?)"? tokens?`, "i")))) add({ type: "count", what: "myUnits", op: "ge", n: /^an?$/i.test(m[1]) ? 1 : toNum(m[1]), filter: { nameExact: m[m.length - 1].trim(), token: "yes" } });
+    if ((m = t.match(/if you have a face up card named "(.+?)" in (?:your|you) damage zone/i))) add({ type: "count", what: "myDamageUp", op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -984,7 +989,7 @@ const TextParse = (() => {
       return [{ type: "rideBy", from: { soul: "soul", drop: "drop", hand: "hand", "bind zone": "bind", deck: "deck" }[m[2].toLowerCase()], filter: /^"[^"]+"$/.test(m[1]) ? { nameExact: m[1].replace(/"/g, "") } : filt(m[1]) || {}, stand: /stand/i.test(m[3] || "") }];
     // "get an Imaginary Gift:Force, put that marker on your (VC)", "you get two Imaginary Gift:Accel"
     if ((m = t.match(/^(?:you )?get (an?|one|two|three) imaginary gifts*:?s*(force|accel|protect)/i))) return Array.from({ length: toNum(m[1]) }, () => ({ type: "gift", kind: m[2].toLowerCase() }));
-    if (/^put (that|the) marker on your (VC)$/i.test(t)) return [];
+    if (/^put (that|the) marker on your \(VC\)$/i.test(t)) return [];
     if ((m = t.match(/^deal (one|two|three|d+) damage(?: to (?:your opponent|that unit|it|the vanguard))?$/i))) return [{ type: "dealDamage", n: toNum(m[1]), who: "opp" }];
     if (/^choose (one of )?your opponent'?s vanguards?$/i.test(t)) { ctx.last = { target: "oppVc" }; ctx.lastUsed = false; return []; }
     if (/^return this (unit|card) to (your|the) deck$/i.test(t)) return [{ type: "move", from: "self", to: "deck" }];
@@ -997,6 +1002,7 @@ const TextParse = (() => {
     if (/^when you would play a normal order,? you can bind a normal order with a different card name from your drop(?:,? alchemagic)?$/i.test(t)) return []; // Alchemagic's own reminder (card flag)
     if (/^alchemagic$/i.test(t) || /^when you would play a normal order$/i.test(t) || /^you can bind a normal order with a different card name from your drop(?:,? alchemagic)?$/i.test(t)) return [];
     if (/^this (?:ability|card) can be played while ignoring (?:its )?grade$/i.test(t)) return [];
+    if (/^\/?\(GC\):resist$/i.test(t)) return []; // card flag
     if (/^\([^()]{0,60}\)$/.test(t)) return []; // a short reminder in brackets ("(Includes this unit)", "(You must reveal it)"), nothing to do
     if (/^choose one of the units being attacked$/i.test(t)) { ctx.last = { target: "attacked" }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/^all of your (grade \d or (?:greater|less) )?(front row |back row )?rear-guards(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)? cannot be chosen by your opponent'?s (?:card )?(?:effects|abilities)$/i)))
@@ -1036,6 +1042,7 @@ const TextParse = (() => {
     if (/^(?:this unit )?cannot be retired by your opponent'?s (?:card )?effects$/i.test(t)) return [{ type: "restrict", what: "cantBeRetired", dur, ...it({ target: "self" }) }];
     if (/^bind the top card of your deck(?: face up)?$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "bind" }];
     // "put that called unit into (the) soul", "retire that called unit"
+    if ((m = t.match(/^put the units? called (?:with|by) this effect on the (top|bottom) of (?:your|the) deck(?: in any order)?$/i))) return [{ type: "move", from: "myRC", to: m[1].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: 99, upTo: true, all: true, fromLast: true }];
     if ((m = t.match(/^(put|retire) (?:that|those) (?:called )?units?(?: into (?:your |the )?(soul|drop|hand)| on the (top|bottom) of (?:your |the )?deck)?$/i)))
       return [{ type: "move", from: "myRC", to: /^retire/i.test(m[1]) ? "drop" : m[2] ? m[2].toLowerCase() : m[3] ? (m[3].toLowerCase() === "top" ? "deckTop" : "deckBottom") : "soul", n: 99, upTo: true, all: true, fromLast: true }];
     if ((m = t.match(/^choose (up to )?the same number of your (other )?(.*?)(rear-guards|units) as the number of (.+)$/i))) {
@@ -1061,6 +1068,12 @@ const TextParse = (() => {
       const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: 1, upTo: L.upTo !== false, to: "RCbc", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e];
     }
     if ((m = t.match(/^this (?:card|unit) is in the \[?([A-Za-z@!' ]+?)\]? state$/i))) return [{ type: "setState", name: m[1].replace(/@$/, "").trim(), target: "self" }];
+    if (/^put this (?:unit|card) into your g zone face up$/i.test(t)) return [{ type: "move", from: "self", to: "gUp" }];
+    // "call five cards from the top of your deck to (GC) at [Rest]"
+    if ((m = t.match(rx(`^call (${N}) cards? from the top of your deck to \\(GC\\)(?: at \\[rest\\])?$`)))) return [{ type: "move", from: "deckTop", look: toNum(m[1]), n: toNum(m[1]), all: true, to: "GC" }];
+    // after "reveal five cards from the top": "call all <X> to (GC) at [Rest] from among them"
+    if (ctx.look && (m = t.match(/^call all (.*?) to \(GC\)(?: at \[rest\])?(?: from among them)?$/i))) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: 99, all: true, to: "GC", filter: filt(m[1]) || {}, rest: "drop", reveal: true }; ctx.lookMove = e; return [e]; }
+    if (ctx.lookMove && /^put the rest into (?:your )?drop(?: zone)?$/i.test(t)) { ctx.lookMove.rest = "drop"; return []; }
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1090,6 +1103,7 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^look at up to ${N} cards? from the top of your deck`)))) { ctx.look = { n: toNum(m[1]) }; return []; }
     if (ctx.look && /^put (it|them) on the top or bottom of (your|the) deck/i.test(t)) { const L = ctx.look; ctx.look = null; return [{ type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.n, upTo: true, to: "deckBottom", rest: "top" }]; }
     if ((m = t.match(rx(`^reveal the top (${N} )?cards? of your deck`)))) { ctx.look = { n: m[2] ? toNum(m[2]) : 1, reveal: true }; return []; }
+    if ((m = t.match(rx(`^reveal (${N}) cards? from the top of your deck$`)))) { ctx.look = { n: toNum(m[1]), reveal: true }; return []; }
     // round 3: "call up to one card from among them to (RC)", "call it to a (RC) as [Rest]"
     if (ctx.look && (m = t.match(rx(`^call (up to )?${N} (.*?)(?:cards?|units?)? from among them to (?:an? |an open )?\\(rc\\)( as \\[rest\\])?`)))) {
       const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: toNum(m[2]), upTo: !!m[1], to: "RC", filter: { ...(L.filter || {}), ...(filt(m[3] || "") || {}) }, rest: "shuffle", ...(m[4] ? { asRest: true } : {}) };
