@@ -202,6 +202,7 @@ const Game = (() => {
     if (f.kai && !c.kai) return false; // "with a Kai icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
     if (f.wasRideDeck && !c.wasRideDeck) return false;
+    if (f.driveMin && driveOf(c) < +f.driveMin) return false; // "has "Triple Drive"" / "Twin Drive"
     if (f.gradeAsPaid) { const paid = (env.ctx && env.ctx.paid) || []; const g = f.gradeAsPaid === "sum" ? paid.reduce((t, x) => t + (+x.grade || 0), 0) : paid[0] ? +paid[0].grade : -1; if (+c.grade !== g) return false; }
     if (Array.isArray(f.notTrig) && c.trigger && f.notTrig.includes(c.trigger)) return false; // "other than [Heal] trigger and [Over] trigger" // "that were in the ride deck"
     if (f.gKind && c.gKind !== f.gKind) return false; // "[G Guardian]" / "[Stride]" G units
@@ -806,7 +807,9 @@ const Game = (() => {
   async function callAnywhere(pi, card, from = "", row = "") {
     if (card.cantBeCalled) { log(`${card.name} can't be called; it goes to the drop`); P(pi).drop.push(card); return; }
     const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : row && row.startsWith("col:") ? rcOf(pi).filter((k) => COL[k] && COL[k] === COL[row.slice(4)]) : row && row.startsWith("key:") ? rcOf(pi).filter((k) => k === row.slice(4)) : rcOf(pi); // "call it to a back row (RC)" / "in the same column as this unit"
-    const opts = keys.map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
+    const usable = keys.filter((k) => !(k === "bc" && ruleOn(pi, "noBC", card)));
+    if (!usable.length) { log(`No circle ${card.name} can be called to; it goes to the drop`); P(pi).drop.push(card); return; }
+    const opts = usable.map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
     const [key] = await choose(pi, `Call ${card.name} to which circle?`, opts, 1, 1);
     await place(pi, card, key, from);
   }
@@ -1694,6 +1697,7 @@ const Game = (() => {
     if (card.grade > p.slots.vc.card.grade) return err("Grade must be ≤ your vanguard");
     if (card.cantBeCalled || card.noNormalCall) return err(`${card.name} can't be called from hand`);
     if (ruleOn(pi, "cantCall", card)) return err(`${card.name} can't be called now`);
+    if (key === "bc" && ruleOn(pi, "noBC", card)) return err("You can't put a unit card on the back row center (RC)");
     p.hand.splice(p.hand.indexOf(card), 1);
     await place(pi, card, key, "hand");
   });

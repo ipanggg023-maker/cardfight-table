@@ -649,6 +649,8 @@ const TextParse = (() => {
     if (/if you have another unit in the same column as this unit/i.test(t)) add({ type: "count", what: "myColumn", op: "ge", n: 1 });
     if ((m = t.match(rx(`if you have (${N}) or (more|less|fewer) (other )?"([^"]+)"`)))) add({ type: "count", what: "myUnits", op: CMP(m[0]), n: toNum(m[1]), filter: { state: m[m.length - 1], ...(m[m.length - 2] ? { other: true } : {}) } });
     if (/if this unit is (?:a )?"([^"]+)"/i.test(t) && (m = t.match(/if this unit is (?:a )?"([^"]+)"/i))) add({ type: "unit", who: "self", filter: { state: m[1] } });
+    if ((m = t.match(/if your opponent'?s vanguard has "(twin|triple) drive"/i))) add({ type: "unit", who: "oppVc", filter: { driveMin: /triple/i.test(m[1]) ? 3 : 2 } });
+    else if ((m = t.match(/if your vanguard has "(twin|triple) drive"/i))) add({ type: "unit", who: "vc", filter: { driveMin: /triple/i.test(m[1]) ? 3 : 2 } });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -1033,7 +1035,7 @@ const TextParse = (() => {
     if ((m = t.match(/(this unit|it|they|that unit) cannot \[stand\] during (your|your opponent'?s) next stand phase/i))) return [{ type: "restrict", what: "cantStand", dur: /opponent/i.test(m[2]) ? "oppTurn" : "nextTurn", ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
     if ((m = t.match(/(this unit|it|they) can attack from the back row/i))) return [{ type: "restrict", what: "canAttackBack", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
     if (/he or she must call two or more|must call two or more (cards )?(from hand )?(to \(gc\) )?at the same time/i.test(t)) return [{ type: "playerRule", who: "opp", what: "mustGuard2", dur }];
-    if (/^when your opponent would call cards from (?:their |his or her )?hand to \(gc\)(?: during the battle (?:that )?this unit attacked)?$/i.test(t)) { if (/during the battle/i.test(t)) ctx.dur = "battle"; return []; }
+    if (/^when your opponent would call cards from (?:their |his or her )?hand to \(gc\)(?: (?:during|for) the battle (?:that )?this unit attacked)?$/i.test(t)) { if (/the battle/i.test(t)) ctx.dur = "battle"; return []; }
     if (/(?:they|he or she) must call three or more(?: cards)? at the same time/i.test(t)) return [{ type: "playerRule", who: "opp", what: "mustGuard3", dur }];
     // equip gauge
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of (?:your|the) deck face down as (?:an )?equip gauges? for this unit$`)))) return [{ type: "gauge", n: m[1] ? toNum(m[1]) : 1 }];
@@ -1089,6 +1091,10 @@ const TextParse = (() => {
     if (/^during your opponent'?s turn'?s guard step$/i.test(t) && ctx.unconditional !== undefined) return [];
     // "bind all [Critical] triggers [Soul-Blast] for this cost"
     if ((m = t.match(/^(bind|put) all (.*?)(?:triggers?|cards?) \[soul-blast\] for this cost(?: into (?:your )?(hand|deck))?$/i))) return [{ type: "move", from: "drop", to: /^bind/i.test(m[1]) ? "bind" : (m[3] || "hand").toLowerCase(), all: true, n: 99, fromPaid: true, filter: filt((m[2] || "").trim() + " trigger") || {} }];
+    if (/^you cannot put (?:a )?unit cards? on (?:the |your )?back row center \(RC\)$/i.test(t)) return [{ type: "playerRule", who: "me", what: "noBC" }];
+    if (/^<[^<>]+>$/.test(t)) return []; // a lone clan label ("<Dragon World>")
+    if (/^during this fight$/i.test(t)) { ctx.dur = "game"; return []; }
+    if (ctx.search && /^call (it|them) to (?:a |an open )?back row \(rc\)$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCback", n: s2.n, upTo: true, filter: s2.filter }]; }
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1518,7 +1524,7 @@ const TextParse = (() => {
     ab.effects = merged;
     // a set order whose own text is only "Play this if …!" has nothing more to do when played (its abilities are separate lines)
     const onlyPlayIf = (kind === "ORDER" || kind === "BLITZ") && ab.conds.length && /^play this (only )?if\b/i.test(text.trim()) && !/[.!]\s*\S/.test(text.trim().replace(/[.!]\s*$/, ""));
-    if (!ab.effects.length && !unread.length && kind !== "CONT" && !onlyPlayIf && !(playCosts.length && !text.replace(/[s,.!]/g, ""))) ab.effects.push({ type: "manual", text: text.replace(/^\[[^\]]*\]\s*(\([^)]*\))?:?/, "").slice(0, 200) });
+    if (!ab.effects.length && !unread.length && kind !== "CONT" && !onlyPlayIf && !(playCosts.length && !text.replace(/[\s,.!]/g, "")) && !/^\s*<[^<>]+>\s*$/.test(text)) ab.effects.push({ type: "manual", text: text.replace(/^\[[^\]]*\]\s*(\([^)]*\))?:?/, "").slice(0, 200) });
     // never guess a timing: an AUTO whose timing wasn't read becomes a button with the whole text to do by hand
     if (unread.some((u) => u.startsWith("timing:"))) {
       ab.kind = "ACT";

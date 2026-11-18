@@ -280,7 +280,7 @@ const SCHEMA = {
     dur: { turn: "until end of turn", battle: "until end of battle", oppTurn: "until end of your opponent's turn", nextTurn: "until end of your next turn", game: "for the rest of the game (while on the field)" },
     restrict: { cantAttack: "cannot attack", cantBoost: "cannot boost", cantIntercept: "cannot intercept", cantBeAttacked: "cannot be attacked",
       cantBeChosen: "cannot be chosen by your opponent's effects", resist: "gets [Resist]", cantBeRetired: "cannot be retired by your opponent's effects", cantMove: "cannot move to other (RC)", cantStand: "does not stand", canBoost: "gets [Boost]", canIntercept: "gets [Intercept]", canAttackBack: "can attack from the back row", canInterceptBack: "can intercept from the back row" },
-    prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard", mustGuard3: "must call three or more cards from hand to guard" },
+    prule: { cantGuard: "cannot call cards from hand to (GC)", cantCall: "cannot call cards to (RC)", cantIntercept: "cannot intercept", mustGuard2: "must call two or more cards from hand to guard", mustGuard3: "must call three or more cards from hand to guard", noBC: "cannot put a unit card on the back row center (RC)" },
     side: { opp: "your opponent", me: "you" },
     whoMeOpp: { opp: "your opponent's", me: "your" },
     tokenWhere: { any: "a (RC) you choose", empty: "an open (RC)", orderZone: "your order zone" },
