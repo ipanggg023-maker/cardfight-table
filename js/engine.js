@@ -764,7 +764,7 @@ const Game = (() => {
   }
   async function callAnywhere(pi, card, from = "", row = "") {
     if (card.cantBeCalled) { log(`${card.name} can't be called; it goes to the drop`); P(pi).drop.push(card); return; }
-    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : row && row.startsWith("col:") ? rcOf(pi).filter((k) => COL[k] && COL[k] === COL[row.slice(4)]) : rcOf(pi); // "call it to a back row (RC)" / "in the same column as this unit"
+    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : row && row.startsWith("col:") ? rcOf(pi).filter((k) => COL[k] && COL[k] === COL[row.slice(4)]) : row && row.startsWith("key:") ? rcOf(pi).filter((k) => k === row.slice(4)) : rcOf(pi); // "call it to a back row (RC)" / "in the same column as this unit"
     const opts = keys.map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
     const [key] = await choose(pi, `Call ${card.name} to which circle?`, opts, 1, 1);
     await place(pi, card, key, from);
@@ -928,6 +928,7 @@ const Game = (() => {
         else { q.drop.push(c); log(`${c.name} can't be called to (GC) now; it goes to the drop`); }
         break;
       case "RCback": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "back"); break;
+      case "RCbc": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "key:bc"); break; // "call it to your back row center (RC)"
       case "RCcol": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, colKey ? "col:" + colKey : ""); break;
       case "RCfront": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "front"); break;
       default: q.drop.push(c);

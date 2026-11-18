@@ -360,6 +360,8 @@ const TextParse = (() => {
     if ((m = t.match(/\b(critical|front|draw|heal|over|stand) triggers?\b/i))) f.trig = m[1].toLowerCase();
     else if (/\btrigger units? or more|non-trigger|without a trigger/i.test(t)) f.trig = "none";
     if (/\bsentinels?\b/i.test(t)) f.sentinel = "yes";
+    if (/^(?:an? )?unit cards?$/i.test(t.trim())) f.ctype = "anyunit";
+    if (/^(?:an? )?trigger cards?$/i.test(t.trim())) f.trig = "any";
     if ((m = t.match(/\[([A-Za-z!' ]+)\] state/))) f.state = m[1];
     if (/\brested\b|\[rest\] state/i.test(t)) f.restState = "rest";
     if (/with the same grade as (your|the) vanguard/i.test(t)) f.gradeVC = "eq";
@@ -620,6 +622,11 @@ const TextParse = (() => {
     else if (/if (?:one or more of )?your rear-guards? (?:was|were) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "me", n: 1 });
     if ((m = t.match(/if you have an? "(.+)" crest/i))) add({ type: "count", what: "myCrest", op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if you did not play an order this turn|if you have not played an order this turn/i.test(t)) add({ type: "noOrderThisTurn" });
+    // round 19: states, battle number, "was boosted", another rear-guard with a name
+    if ((m = t.match(/if (your vanguard|this unit) is in the \[?([A-Za-z@!' ]+?)\]? state/i))) add({ type: "unit", who: /vanguard/i.test(m[1]) ? "vc" : "self", filter: { state: m[2].replace(/@$/, "").trim() } });
+    if ((m = t.match(/if it is the (first|second|third|fourth|fifth|sixth|\d+(?:st|nd|rd|th)) battle this turn( or (?:more|later))?/i))) add({ type: "count", what: "battleNo", op: m[2] ? "ge" : "eq", n: { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 }[m[1].toLowerCase()] || parseInt(m[1], 10) });
+    if (/if this unit was boosted/i.test(t)) add({ type: "boosted" });
+    if ((m = t.match(/if you have another rear-guard with "([^"]+)" in its card name/i))) add({ type: "count", what: "myRC", op: "ge", n: 1, filter: { name: m[1], other: true } });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -792,7 +799,7 @@ const TextParse = (() => {
       else if ((m = p.match(rx(`^turn (${N}) (.*?)cards? (?:from|in) (?:your )?g zone (?:with .*? )?face up`)))) out.push({ type: "gFaceUp", n: toNum(m[1]), filter: filt(m[3] || "") });
       else if ((m = p.match(rx(`^choose (${N}) of your (other )?(.*?)rear-guards?,? and retire (it|them)`)))) out.push({ type: "retireRC", n: toNum(m[1]) });
       else if (/^\[?rest\]? this (unit|card)/i.test(p)) out.push({ type: "restSelf" });
-      else if ((m = p.match(rx(`^\\[?rest\\]? (${N}) (?:of your )?(other )?(.*?)rear-guards?$`)))) out.push({ type: "restRC", n: toNum(m[1]), filter: { ...(filt(m[m.length - 1] || "") || {}), ...(m[m.length - 2] ? { other: true } : {}) } });
+      else if ((m = p.match(rx(`^\\[?rest\\]? (${N}) (?:of your )?(other )?(.*?)rear-guards?((?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?)$`)))) out.push({ type: "restRC", n: toNum(m[1]), filter: { ...(filt((m[m.length - 2] || "") + " " + (m[m.length - 1] || "")) || {}), ...(m[m.length - 2] ? { other: true } : {}) } });
       else if ((m = p.match(/^(counter|soul)-blast$/i))) out.push({ type: m[1].toLowerCase() === "counter" ? "CB" : "SB", n: 1 });
       else if (/^\[?rest\]?$/i.test(p)) out.push({ type: "restSelf" }); // "[COST][Rest]": rest this unit
       // round 8: costs from several zones: "remove a [Heal] from hand or drop", "put a card with "X" from your hand or soul into your drop"
@@ -945,7 +952,7 @@ const TextParse = (() => {
     if ((m = t.match(/^(this unit|it|they) cannot be retired by (?:card )?effects$/i))) return [{ type: "restrict", what: "cantBeRetired", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
     // "choose one of your opponent's rear-guards, your opponent puts that unit on the bottom of his or her deck": the chosen unit moves
     if (ctx.last && /^your opponent puts (that unit|those units|it|them) /i.test(t)) return effectOf(t.replace(/^your opponent puts/i, "put"), ctx);
-    if (/^\((?:includes|including) this (?:unit|card)\)$/i.test(t)) return []; // a reminder, nothing to do
+    if (/^\([^()]{0,60}\)$/.test(t)) return []; // a short reminder in brackets ("(Includes this unit)", "(You must reveal it)"), nothing to do
     if (/^choose one of the units being attacked$/i.test(t)) { ctx.last = { target: "attacked" }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/^all of your (grade \d or (?:greater|less) )?(front row |back row )?rear-guards(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)? cannot be chosen by your opponent'?s (?:card )?(?:effects|abilities)$/i)))
       return [{ type: "restrict", what: "cantBeChosen", target: /front/i.test(m[2] || "") ? "allFrontRC" : "allMyRC", filter: filt(t.replace(/ cannot be chosen.*$/i, "").replace(/^all of your /i, "")) || {}, dur }];
@@ -984,7 +991,7 @@ const TextParse = (() => {
     if (/^(?:this unit )?cannot be retired by your opponent'?s (?:card )?effects$/i.test(t)) return [{ type: "restrict", what: "cantBeRetired", dur, ...it({ target: "self" }) }];
     if (/^bind the top card of your deck(?: face up)?$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "bind" }];
     // "put that called unit into (the) soul", "retire that called unit"
-    if ((m = t.match(/^(put|retire) (?:that|those) called units?(?: into (?:your |the )?(soul|drop|hand)| on the (top|bottom) of (?:your |the )?deck)?$/i)))
+    if ((m = t.match(/^(put|retire) (?:that|those) (?:called )?units?(?: into (?:your |the )?(soul|drop|hand)| on the (top|bottom) of (?:your |the )?deck)?$/i)))
       return [{ type: "move", from: "myRC", to: /^retire/i.test(m[1]) ? "drop" : m[2] ? m[2].toLowerCase() : m[3] ? (m[3].toLowerCase() === "top" ? "deckTop" : "deckBottom") : "soul", n: 99, upTo: true, all: true, fromLast: true }];
     if ((m = t.match(/^choose (up to )?the same number of your (other )?(.*?)(rear-guards|units) as the number of (.+)$/i))) {
       const what = countPhrase(m[5]);
@@ -998,6 +1005,16 @@ const TextParse = (() => {
     if (/^(?:this unit )?cannot \[stand\] during (?:the|your) stand phase$/i.test(t)) return [{ type: "restrict", what: "cantStand", ...(ctx.dur ? { dur: ctx.dur } : {}), target: "self" }];
     if ((m = t.match(/^(this unit|it|that unit|that called unit|those units|they) cannot (?:be moved|move) to (?:other|another) \(RC\)(?: until end of (?:turn|that battle))?$/i)))
       return [{ type: "restrict", what: "cantMove", dur: /battle/i.test(t) ? "battle" : "turn", ...(/^this unit/i.test(m[1]) ? { target: "self" } : /called/i.test(m[1]) ? { target: "thatUnit" } : it({ target: "self" })) }];
+    // "All of your (grade 2 or greater / back row) rear-guards get "Boost" (until end of turn)"
+    if ((m = t.match(/^all of your (grade \d(?: or (?:greater|less))? )?(?:back row )?rear-guards get "(boost|intercept)"(?: until end of turn)?$/i)))
+      return [{ type: "restrict", what: /boost/i.test(m[2]) ? "canBoost" : "canIntercept", target: "allMyRC", filter: filt(m[1] || "") || {}, ...(/until end of turn/i.test(t) ? { dur: "turn" } : {}) }];
+    if (/^all of your opponent'?s (?:front row )?rear-guards cannot \[stand\] during (?:the|their|your opponent'?s) next stand phase$/i.test(t))
+      return [{ type: "restrict", what: "cantStand", dur: "oppTurn", target: /front row/i.test(t) ? "chooseOppFrontRC" : "chooseOppRC", n: 99, all: true }];
+    if ((ctx.pick || ctx.look || ctx.search) && /^call (it|them) to your back row center \(rc\)$/i.test(t)) {
+      if (ctx.pick) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "RCbc", n: 1, upTo: P.upTo, filter: P.filter }]; }
+      if (ctx.search) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCbc", n: 1, upTo: true, filter: s2.filter }]; }
+      const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: 1, upTo: L.upTo !== false, to: "RCbc", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e];
+    }
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1318,8 +1335,8 @@ const TextParse = (() => {
       const lt = t.match(/^at the end of (that|this|the) (battle|turn)$/i) || t.match(/^at the (?:beginning|start) of the end phase of (that|this) (turn)$/i);
       if (lt) { later = lt[2].toLowerCase(); continue; }
       // "If the revealed card is a <Royal Paladin>, …": the following steps need the revealed card to match
-      const rvl = t.match(/^if (?:the revealed card|the card revealed(?: by this effect)?|that card) is (?:an? )?(.+?)$/i);
-      if (rvl && filt(rvl[1]) && Object.keys(filt(rvl[1])).length) { onlyIf = "match"; onlyFilter = filt(rvl[1]); continue; }
+      const rvl = t.match(/^if (?:the revealed card|the card revealed(?: by this effect)?|that card|it) is (not )?(?:an? )?(.+?)$/i) || t.match(/^if (?:it|that card) (isn'?t)\s*(?:an? )?(.+?)$/i);
+      if (rvl && filt(rvl[2]) && Object.keys(filt(rvl[2])).length) { onlyIf = rvl[1] ? "noMatch" : "match"; onlyFilter = filt(rvl[2]); continue; }
       // "…, and if your opponent's vanguard is grade 3 or greater, …": a condition for the following steps
       if (/^if\b/i.test(t) && !/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched|rode|imprisoned|healed)\b/i.test(t)) {
         const r = condsIn(t);
@@ -1379,7 +1396,7 @@ const TextParse = (() => {
       }
       const es = es0;
       if (es === null) { ab.effects.push({ type: "manual", text: c.replace(/^and\s+/i, "") }); continue; }
-      for (const e of es) { if (onlyIf) e.onlyIf = onlyIf; if (onlyIf === "match" && onlyFilter) e.onlyFilter = onlyFilter; if (later) e.later = later; if (ifCond) e.ifCond = ifCond; ab.effects.push(e); }
+      for (const e of es) { if (onlyIf) e.onlyIf = onlyIf; if ((onlyIf === "match" || onlyIf === "noMatch") && onlyFilter) e.onlyFilter = onlyFilter; if (later) e.later = later; if (ifCond) e.ifCond = ifCond; ab.effects.push(e); }
       if (es.length) onlyIf = onlyIf && /^(and|then)\b/i.test(c) ? onlyIf : onlyIf; // stays for the rest of the sentence
     }
     for (const o of optClauses) {
