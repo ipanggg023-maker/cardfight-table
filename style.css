@@ -729,3 +729,29 @@ body.field-pick .slot:not(.can-choose):not(.chosen) > .card { filter: none; opac
 @media (prefers-reduced-motion: reduce) { .slot.can-choose { animation: none; } }
 .cp-stats { gap: 6px; }
 .cp-stats .st { padding: 2px 8px; border-radius: 7px; background: #ffffff0d; border: 1px solid #ffffff14; min-width: 46px; }
+
+/* v5.3 (2026-11-18): a card's text the game can't do by itself is done on the table: task bar at the top, a menu beside the picked card */
+.taskbar { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 9; width: min(720px, calc(100vw - 32px)); display: grid; gap: 6px;
+  padding: 10px 14px; border-radius: 12px; background: #0b1424f7; border: 1px solid var(--gold); box-shadow: 0 12px 32px #000b, 0 0 20px #f2b94b33; }
+.taskbar[hidden], .domenu[hidden] { display: none; }
+.taskbar .tb-text { display: grid; gap: 2px; max-height: 30vh; overflow-y: auto; }
+.taskbar .tb-text b { font: 700 .95rem var(--display); color: var(--gold); }
+.taskbar .tb-text span { font-size: .84rem; line-height: 1.35; white-space: pre-wrap; }
+.taskbar .tb-help { font-size: .74rem; color: var(--muted); }
+.taskbar .tb-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.taskbar .tb-btns button { padding: 5px 12px; font-size: .8rem; }
+.taskbar .tb-btns .go { padding: 6px 18px; font-size: .9rem; }
+.taskbar .tb-sep { width: 1px; height: 20px; background: #ffffff22; margin: 0 4px; }
+.domenu { position: fixed; left: 0; top: 0; z-index: 10; width: 300px; display: grid; gap: 6px; padding: 8px 10px; border-radius: 12px;
+  background: #0b1424fa; border: 1px solid var(--cyan); box-shadow: 0 12px 30px #000c; }
+.domenu .dm-head { display: flex; align-items: center; gap: 8px; }
+.domenu .dm-head b { font: 700 .85rem var(--display); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.domenu .dm-head small { color: var(--muted); font-size: .7rem; white-space: nowrap; }
+.domenu .dm-head button { padding: 1px 8px; }
+.domenu .dm-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.domenu .dm-row button { padding: 3px 8px; font-size: .74rem; }
+body.doing .card.dsel, body.doing .dmgc.dsel { outline: 3px solid var(--cyan); outline-offset: 2px; box-shadow: 0 0 18px var(--cyan); }
+body.doing .mat .slot:not(:has(> .card)) { box-shadow: 0 0 0 1px #5fd0ff55 inset; border-radius: 10px; }
+body.doing .mz.drop, body.doing .mz.deck, body.doing .mz.damage, body.doing .mz.order { cursor: pointer; }
+body.doing .table [data-uid], body.doing #zoneCards [data-uid] { cursor: pointer; }
+body.doing #rail .ph-hint { display: none; }

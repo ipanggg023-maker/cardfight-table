@@ -729,6 +729,7 @@ function render() {
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
   renderJudge(S, v);
+  renderDoing(S, v);
   if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
@@ -1042,13 +1043,122 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-unpin]")
 window.addEventListener("resize", () => { if (infoDock() && infoEl().hidden && infoUid) showInfo(infoUid); if (Game.state()) scheduleRender(); });
 // ---------- Judge panel: do card text by hand (Manual blocks), or fix a mistake in hot-seat ----------
 // Online it only works while a Manual effect is open (both players see what was done in the log).
+// ---------- card steps the game can't do by itself: done on the table (no panel) ----------
+// A bar at the top shows the card and its text with Done / Skip. Click any card (field, hand, drop, damage, order zone,
+// or inside the Drop / Soul / Deck viewer): a small menu beside it moves it anywhere, changes power / critical,
+// rests / stands it. Or click a card, then a circle or a zone on the mat (drop, deck, soul on the vanguard, damage, order zone, hand).
+const DO = { uid: null };
+const doingOn = (S) => !!(S && S.judge && S.winner === null);
+const myStep = (S, v) => doingOn(S) && S.pending && S.pending.player === v && myMove();
+// where a card is: { pi, zone } or { pi, key } on a circle
+function cardAt(S, uid) {
+  for (const pi of [0, 1]) {
+    const p = S.players[pi];
+    for (const z of ["hand", "deck", "drop", "soul", "damage", "bind", "removed", "orderZone", "automod", "gUp", "gDeck"]) if ((p[z] || []).some((c) => c.uid === uid)) return { pi, zone: z, card: p[z].find((c) => c.uid === uid) };
+    for (const k of Game.unitsOf(pi)) if (p.slots[k] && p.slots[k].card.uid === uid) return { pi, key: k, card: p.slots[k].card };
+  }
+  return null;
+}
+async function doOp(op) { const r = await Game.judgeOp(op); if (r && !r.ok) toast(r.msg); render(); }
+function renderDoing(S, v) {
+  let bar = $("#taskbar"), menu = $("#domenu");
+  if (!bar) { bar = document.createElement("div"); bar.id = "taskbar"; bar.className = "taskbar"; document.body.appendChild(bar); }
+  if (!menu) { menu = document.createElement("div"); menu.id = "domenu"; menu.className = "domenu"; document.body.appendChild(menu); }
+  const on = doingOn(S);
+  document.body.classList.toggle("doing", on);
+  if (!on) { bar.hidden = true; menu.hidden = true; DO.uid = null; document.querySelectorAll(".dsel").forEach((el) => el.classList.remove("dsel")); return; }
+  const mine = myStep(S, v), by = S.players[S.judge.by];
+  bar.hidden = false;
+  setHTML(bar, `<div class="tb-text"><b>✋ ${esc(S.judge.name || "Card")}</b><span>${esc(S.judge.text)}</span></div>
+    ${mine ? `<div class="tb-help">Do it on the table: click a card, then where it goes (or use the menu beside it).</div>
+    <div class="tb-btns"><button class="go" data-opt="done">Done ✓</button><button data-opt="skip" class="ghost">Skip</button>
+      <span class="tb-sep"></span><button data-dop="draw">Draw 1</button><button data-dop="shuffle">Shuffle deck</button><button data-dop="deck">Look at deck</button>
+      ${S.players[S.judge.by].useEnergy ? `<button data-dop="energy" data-a="1">Energy +1</button><button data-dop="energy" data-a="-1">Energy −1</button>` : ""}</div>`
+    : `<div class="tb-help">${esc(by.name)} is doing this card's text…</div>`}`);
+  // the picked card and its menu
+  document.querySelectorAll(".dsel").forEach((el) => { if (+el.dataset.uid !== DO.uid) el.classList.remove("dsel"); });
+  const at = DO.uid !== null && mine ? cardAt(S, DO.uid) : null;
+  if (!at) { DO.uid = null; menu.hidden = true; return; }
+  const els = [...document.querySelectorAll(`.table [data-uid="${DO.uid}"], #zoneCards [data-uid="${DO.uid}"]`)];
+  els.forEach((el) => el.classList.add("dsel"));
+  const p = S.players[at.pi];
+  const b = (attrs, label, cls = "") => `<button ${attrs} class="${cls}">${label}</button>`;
+  const dests = [["hand", "Hand"], ["deckTop", "Deck top"], ["deckBottom", "Deck bottom"], ["drop", "Drop"], ["soul", "Soul"], ["damage", "Damage ↑"], ["damageDown", "Damage ↓"], ["bind", "Bind"], ["removed", "Remove"], ["orderZone", "Order zone"]]
+    .filter(([d]) => d !== at.zone);
+  const sl = at.key ? p.slots[at.key] : null;
+  setHTML(menu, `<div class="dm-head"><b>${esc(at.card.name)}</b><small>${esc(S.players[at.pi].name)} · ${at.key ? at.key.toUpperCase() : at.zone}</small><button data-dop="cancel" class="ghost" title="Unpick">✕</button></div>
+    ${sl ? `<div class="dm-row">${b(`data-dop="power" data-a="5000"`, "+5000")}${b(`data-dop="power" data-a="-5000"`, "−5000")}${b(`data-dop="crit" data-a="1"`, "★+1")}${b(`data-dop="crit" data-a="-1"`, "★−1")}${b(`data-dop="rest" data-a="${sl.rest ? 0 : 1}"`, sl.rest ? "Stand" : "Rest")}${at.key !== "vc" ? b(`data-dop="lock"`, sl.locked ? "Unlock" : "Lock") : ""}</div>` : ""}
+    ${at.zone === "damage" ? `<div class="dm-row">${b(`data-dop="flip"`, at.card.down ? "Turn face up" : "Turn face down")}</div>` : ""}
+    ${at.key !== "vc" ? `<div class="dm-row">${dests.map(([d, l]) => b(`data-dto="${d}"`, l)).join("")}</div>
+    <div class="dm-row">${Game.rcOf(at.pi).filter((k) => k !== at.key).map((k) => b(`data-dto="${k}"`, "→ " + ({ fl: "front left", fr: "front right", bl: "back left", bc: "back center", br: "back right" }[k] || k) + (p.slots[k] ? " (replace)" : ""))).join("")}</div>` : `<p class="muted">The vanguard changes by riding.</p>`}`);
+  menu.hidden = false;
+  // beside the picked card (on screen), else at the top
+  const r = (els.find((el) => el.getBoundingClientRect().width) || bar).getBoundingClientRect();
+  const mw = menu.offsetWidth || 300, mh = menu.offsetHeight || 160;
+  let x = r.right + 10, y = r.top;
+  if (x + mw > innerWidth - 8) x = Math.max(8, r.left - mw - 10);
+  if (y + mh > innerHeight - 8) y = Math.max(8, innerHeight - mh - 8);
+  menu.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+// what a click on the mat means while doing a card's text
+function doTarget(t, S, v) {
+  const sideOf = (el) => (el.closest("#me") ? v : el.closest("#opp") ? 1 - v : null);
+  const slot = t.closest(".slot");
+  if (slot && !slot.querySelector(":scope > .card")) return { pi: sideOf(slot), to: slot.dataset.key }; // an open circle
+  const zones = [[".mz.drop", "drop"], [".mz.deck", "deckTop"], [".soulb", "soul"], [".mz.damage", "damage"], [".mz.order", "orderZone"], [".plate", "hand"]];
+  for (const [sel, to] of zones) { const z = t.closest(sel); if (z) return { pi: sideOf(z) ?? (z.closest(".mat.me") ? v : 1 - v), to }; }
+  if (t.closest("#hand")) return { pi: v, to: "hand" };
+  return null;
+}
+document.addEventListener("click", (e) => {
+  const S = Game.state();
+  if (!S || !document.body.classList.contains("doing")) return;
+  const t = e.target, v = view();
+  const btn = t.closest("[data-dop], [data-dto]");
+  if (btn && (btn.closest("#domenu") || btn.closest("#taskbar"))) {
+    e.stopPropagation(); e.preventDefault();
+    if (!myStep(S, v)) return;
+    const op = btn.dataset.dop, at = DO.uid !== null ? cardAt(S, DO.uid) : null, pi = at ? at.pi : S.judge.by;
+    if (btn.dataset.dto) { const uid = DO.uid; DO.uid = null; return doOp({ op: "move", pi, uid, to: btn.dataset.dto }); }
+    if (op === "cancel") { DO.uid = null; return render(); }
+    if (op === "deck") return showZone(`${S.judge.by}:deck`);
+    if (op === "draw" || op === "shuffle") return doOp({ op, pi: S.judge.by });
+    if (op === "energy") return doOp({ op, pi: S.judge.by, amount: +btn.dataset.a });
+    if (!at) return;
+    if (op === "power" || op === "crit") return doOp({ op, pi, key: at.key, amount: +btn.dataset.a });
+    if (op === "rest") return doOp({ op, pi, key: at.key, value: btn.dataset.a === "1" });
+    if (op === "lock") return doOp({ op, pi, key: at.key });
+    if (op === "flip") return doOp({ op, pi, uid: at.card.uid });
+    return;
+  }
+  if (t.closest("#taskbar [data-opt]")) return; // Done / Skip: the usual answer handler
+  if (!myStep(S, v) || t.closest("#domenu") || t.closest("#taskbar")) return;
+  // a card picked first, then a place on the mat
+  if (DO.uid !== null) {
+    const dest = doTarget(t, S, v), at = cardAt(S, DO.uid);
+    const hitCard = t.closest("[data-uid]");
+    const sameCard = hitCard && +hitCard.dataset.uid === DO.uid;
+    // another card you click is picked instead (only the picture that stands for a zone, like the drop's top card, counts as the zone)
+    const otherCard = hitCard && !sameCard && !hitCard.closest(".mz, .plate");
+    if (dest && at && !sameCard && !otherCard && dest.pi === at.pi && dest.to !== at.zone && dest.to !== at.key) { e.stopPropagation(); e.preventDefault(); const uid = DO.uid; DO.uid = null; return doOp({ op: "move", pi: at.pi, uid, to: dest.to }); }
+  }
+  const cardEl = t.closest(".table [data-uid], #zoneCards [data-uid]");
+  if (cardEl && cardAt(S, +cardEl.dataset.uid)) {
+    e.stopPropagation(); e.preventDefault();
+    DO.uid = DO.uid === +cardEl.dataset.uid ? null : +cardEl.dataset.uid;
+    if (cardEl.closest("#zoneCards")) $("#zone").hidden = true;
+    return render();
+  }
+  // a zone box without a card picked: open it to pick a card inside (drop / soul / deck / bind…)
+  const zb = t.closest("[data-zone]");
+  if (zb) { e.stopPropagation(); e.preventDefault(); return showZone(zb.dataset.zone); }
+}, true);
+
 const J = { pi: null, uid: null };
 const judgeAllowed = (S) => !!S && S.winner === null && (!ui.online || !!S.judge);
 function renderJudge(S, v) {
   const box = $("#judge");
-  $("#judgeBtn").hidden = !judgeAllowed(S);
-  if (S.judge && judgeAllowed(S) && box.hidden && !J.auto) { box.hidden = false; J.auto = true; J.pi = S.judge.by; }
-  if (!S.judge && J.auto) { J.auto = false; box.hidden = true; } // opened for a manual effect → closes after Done
+  $("#judgeBtn").hidden = !(ui.test && judgeAllowed(S)); // card steps are done on the table (renderDoing); the panel stays for the test table and "Fix a mistake"
   if (box.hidden || !judgeAllowed(S)) { if (!judgeAllowed(S)) box.hidden = true; return; }
   if (J.pi === null) J.pi = v;
   const p = S.players[J.pi];
@@ -1090,6 +1200,7 @@ $("#judge").addEventListener("click", (e) => {
 });
 $("#judgeBtn").addEventListener("click", () => { $("#judge").hidden = !$("#judge").hidden; render(); });
 $("#judgeClose").addEventListener("click", () => { $("#judge").hidden = true; });
+$("#fixBtn").addEventListener("click", () => { if (!judgeAllowed(Game.state())) return toast("Fixing by hand is for hot-seat games"); $("#logDrawer").hidden = true; $("#judge").hidden = false; render(); });
 $("#logBtn").addEventListener("click", () => { $("#logDrawer").hidden = !$("#logDrawer").hidden; render(); });
 $("#logClose").addEventListener("click", () => ($("#logDrawer").hidden = true));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; if (infoPinned) unpinInfo(); else if (!document.body.classList.contains("info-dock")) $("#info").hidden = true; } });

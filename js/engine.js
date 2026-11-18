@@ -1850,9 +1850,9 @@ const Game = (() => {
   // A "Manual" block pauses the game: the players do the card's text by hand with judgeOp() (move any card,
   // change power/critical, rest/stand, energy, shuffle), then answer Done. judgeOp() also works any time in hot-seat.
   async function manualEffect(pi, ctx, text) {
-    S.judge = { by: pi, text: text || (ctx.card && ctx.card.text) || "Do this card's text by hand" };
+    S.judge = { by: pi, name: ctx.card ? ctx.card.name : "", uid: ctx.card ? ctx.card.uid : null, text: text || (ctx.card && ctx.card.text) || "Do this card's text by hand" };
     log(`✋ ${ctx.card ? ctx.card.name + ": " : ""}manual effect, resolve it by hand`);
-    try { await choose(pi, `✋ Manual: ${S.judge.text}\nUse the Judge panel to do it, then press Done.`, [{ id: "done", label: "Done ✓" }, { id: "skip", label: "Skip (do nothing)" }], 1, 1); }
+    try { await choose(pi, `✋ Manual: ${S.judge.text}\nDo it on the table (click a card, then where it goes), then press Done.`, [{ id: "done", label: "Done ✓" }, { id: "skip", label: "Skip (do nothing)" }], 1, 1); }
     finally { S.judge = null; }
   }
   const ZONES = ["hand", "deck", "drop", "soul", "damage", "bind", "removed", "orderZone", "automod", "gUp", "gDeck"];
