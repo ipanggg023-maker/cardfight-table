@@ -29,7 +29,7 @@ const CONT_TARGETS = ["self", "vc", "allFront", "allFrontRC", "allMyRC", "allMyU
 
 // Move cards (effect and cost) share these settings
 const MOVE_PARAMS = [["from", "mfrom", "from"], ["to", "mto", "to"], ["n", "num", "how many"], ["upTo", "bool", "up to (may choose fewer)"], ["all", "bool", "all matching cards"],
-  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["asRest", "bool", "call as [Rest]"], ["fromLast", "bool", "only the cards the step before handled (e.g. the cards Soul-Charged by this effect)"], ["eventCard", "bool", "only the card the timing is about (\"one of the discarded cards\")"], ["filter", "filter"]];
+  ["random", "bool", "at random"], ["look", "num", "look at the top (deck top only)"], ["rest", "lookRest", "the rest"], ["chooser", "chooser", "who chooses"], ["reveal", "bool", "reveal"], ["asRest", "bool", "call as [Rest]"], ["fromLast", "bool", "only the cards the step before handled (e.g. the cards Soul-Charged by this effect)"], ["fromPaid", "bool", "only the cards paid for this ability's cost"], ["eventCard", "bool", "only the card the timing is about (\"one of the discarded cards\")"], ["filter", "filter"]];
 const PER = [["per", "count", "× for each card in (optional)"], ["perFilter", "filter", "counting only"]];
 const SCHEMA = {
   kinds: {
@@ -352,6 +352,7 @@ function flt(f, short) {
   if (f.skill) bits.push(`with the [${f.skill}] ability`);
   if (f.notName) bits.push(`other than "${f.notName}"`);
   if (f.wasRideDeck) bits.push("that were in the ride deck");
+  if (f.gradeAsPaid) bits.push(f.gradeAsPaid === "sum" ? "with grade = the sum of the paid cards' grades" : "with the same grade as the paid card");
   if (f.gKind) bits.push(f.gKind === "guardian" ? "[G Guardian]" : "[Stride] G unit");
   if (f.trig) bits.push(f.trig === "none" ? "non-trigger" : f.trig === "any" ? "trigger" : f.trig + " trigger");
   if (f.sentinel === "yes") bits.push("sentinel");

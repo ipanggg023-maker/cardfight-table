@@ -202,6 +202,7 @@ const Game = (() => {
     if (f.kai && !c.kai) return false; // "with a Kai icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
     if (f.wasRideDeck && !c.wasRideDeck) return false;
+    if (f.gradeAsPaid) { const paid = (env.ctx && env.ctx.paid) || []; const g = f.gradeAsPaid === "sum" ? paid.reduce((t, x) => t + (+x.grade || 0), 0) : paid[0] ? +paid[0].grade : -1; if (+c.grade !== g) return false; }
     if (Array.isArray(f.notTrig) && c.trigger && f.notTrig.includes(c.trigger)) return false; // "other than [Heal] trigger and [Over] trigger" // "that were in the ride deck"
     if (f.gKind && c.gKind !== f.gKind) return false; // "[G Guardian]" / "[Stride]" G units
     if (f.skill) { // "with the [overDress] ability": the card field, or the keyword written in its text
@@ -595,6 +596,7 @@ const Game = (() => {
       case "SB": {
         const picked = await chooseCards(pi, `Soul-Blast ${n}: choose cards from soul`, c.filter ? p.soul.filter((x) => match(x, c.filter, { pi, ctx })) : p.soul, n, n);
         picked.forEach((x) => { p.soul.splice(p.soul.indexOf(x), 1); p.drop.push(x); collect(pi, null, "soulToDrop", { card: x, zone: "soul", subject: x }); });
+        ctx.paid = [...(ctx.paid || []), ...picked];
         collectAll(pi, "soulBlasted", { n: picked.length, byKey: ctx.key, byPi: pi }); // "when you Soul-Blast 4 or more at the same time for the cost of your vanguard's ability"
         break;
       }
@@ -908,6 +910,7 @@ const Game = (() => {
   function moveCandidates(pi, e, ctx) {
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     if (e.from === "self") return ctx.card ? [ctx.card] : [];
+    if (e.fromPaid) { const z = q[ZONE_OF[e.from] || e.from] || []; return ((ctx.paid) || []).filter((c) => z.includes(c) && match(c, e.filter, env)); }
     if (e.eventCard) { const z = q[ZONE_OF[e.from] || e.from] || []; return ctx.subject && z.includes(ctx.subject) && match(ctx.subject, e.filter, env) ? [ctx.subject] : []; } // "one of the discarded cards": the card the timing is about
     if (e.fromLast && FIELD_FROM[e.from]) {
       const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK, column: rcOf(side).filter((k) => ctx.key && k !== ctx.key && COL[k] && COL[k] === COL[ctx.key]) }[FIELD_FROM[e.from]];
@@ -1004,7 +1007,7 @@ const Game = (() => {
       // several zones ("hand|drop"): one list to choose from; each card leaves its own zone
       const zonesOf = String(e.from).includes("|") ? String(e.from).split("|").map((z) => q[ZONE_OF[z] || z] || []) : null;
       const pool = look || (zonesOf ? zonesOf.flat() : q[ZONE_OF[e.from] || "drop"]);
-      const only = e.fromLast ? (ctx.last && ctx.last.cards) || [] : e.eventCard ? (ctx.subject ? [ctx.subject] : []) : null; // "the cards the step before handled" / "the card the timing is about"
+      const only = e.fromPaid ? ctx.paid || [] : e.fromLast ? (ctx.last && ctx.last.cards) || [] : e.eventCard ? (ctx.subject ? [ctx.subject] : []) : null; // "the cards the step before handled" / "the card the timing is about"
       const cands = pool.filter((c) => match(c, e.filter, env) && (!only || only.includes(c)));
       if (look && e.reveal) log(`${q.name} reveals ${look.map((c) => c.name).join(", ") || "nothing"}`);
       if (e.all) picked = cands.slice();
@@ -2070,7 +2073,8 @@ const Game = (() => {
     if (!b) return err("No attack to guard");
     const card = d.hand.find((c) => c.uid === uid);
     if (!card) return err("Card not in hand");
-    if (card.type === "order") return err("Orders can't guard. Blitz orders use the Play button");
+    if (card.type === "order" && !card.gcShield) return err("Orders can't guard. Blitz orders use the Play button");
+    if (card.gcShield) { card.shield = +card.gcShield; card.grade = 0; } // it becomes a Grade 0 guardian with that shield
     if (ruleOn(di, "cantGuard", card)) return err(`${card.name} can't be called to the guardian circle now`);
     d.hand.splice(d.hand.indexOf(card), 1);
     b.guards.push(card);

@@ -294,6 +294,8 @@ const TextParse = (() => {
     if (sg) out.strideGrade = +sg[1];
     if (/this card cannot be ridden/i.test(text)) out.cantBeRidden = true;
     if (/this card can be played from (?:your )?drop/i.test(text)) out.playFromDrop = true;
+    const gcs = text.match(/this card can be called to \(GC\) as a trigger unit,?\s*(?:and )?it becomes a Grade 0\/\[Shield\]\s*(\d+) guardian/i);
+    if (gcs) out.gcShield = +gcs[1];
     if (/this (?:ability|card) can be played while ignoring (?:its )?grade/i.test(text)) out.ignoreGrade = true;
     if (/(?:^|[\n.:])\s*this card cannot be played(?=[.,]|$)/im.test(text)) out.cantPlay = true;
     if (/cannot be normal called to \(RC\) from (?:your )?hand/i.test(text)) out.noNormalCall = true;
@@ -360,7 +362,7 @@ const TextParse = (() => {
     else if (/trigger units?/i.test(t)) f.ctype = "trigger";
     else if (/\borders?\b/i.test(t) && !/units?/i.test(t)) f.ctype = "order";
     else if (/\bunits?\b/i.test(t) && /cards?/i.test(t) === false && /grade/i.test(t)) f.ctype = "anyunit";
-    if ((m = t.match(/\b(critical|front|draw|heal|over|stand) triggers?\b/i))) f.trig = m[1].toLowerCase();
+    if ((m = t.match(/\b(critical|front|draw|heal|over|stand)\]? triggers?\b/i))) f.trig = m[1].toLowerCase() === "critical" ? "crit" : m[1].toLowerCase();
     else if (/\btrigger units? or more|non-trigger|without a trigger/i.test(t)) f.trig = "none";
     if (/\bsentinels?\b/i.test(t)) f.sentinel = "yes";
     if (/^(?:an? )?unit cards?$/i.test(t.trim())) f.ctype = "anyunit";
@@ -370,6 +372,8 @@ const TextParse = (() => {
     if (/with the same grade as (your|the) vanguard/i.test(t)) f.gradeVC = "eq";
     if (/grade (lower|less) than (your|the) vanguard/i.test(t)) f.gradeVC = "lt";
     if (/grade less than or equal to (your|the) vanguard/i.test(t)) f.gradeVC = "le";
+    if (/with the same grade as the sum of the grades of the cards \[?(?:soul-blast|counter-blast|discarded)\]? for this cost/i.test(t)) { f.gradeAsPaid = "sum"; delete f.gmin; delete f.gmax; }
+    else if (/with the same grade as the card \[?(?:soul-blast|counter-blast|discarded)\]? for this cost/i.test(t)) { f.gradeAsPaid = "one"; delete f.gmin; delete f.gmax; }
     if ((m = t.match(/with the \[([A-Za-z !']+)\] ability/i))) f.skill = m[1].trim();
     if ((m = t.match(/other than "([^"]+)"/i))) f.notName = m[1];
     if (/(?:with )?a different card name from this (?:unit|card)/i.test(t)) f.diffNameSelf = true;
@@ -1076,6 +1080,11 @@ const TextParse = (() => {
     if (ctx.lookMove && /^put the rest into (?:your )?drop(?: zone)?$/i.test(t)) { ctx.lookMove.rest = "drop"; return []; }
     if (/^\[stride\] this card on your \(vc\)(?: from face down)?$/i.test(t)) return ctx.strideRule ? [] : [{ type: "strideSelf" }];
     if (/^this unit'?s "when (?:its |this unit'?s )?attack hits" (?:effects|abilities) activate even if the attack did not hit$/i.test(t)) return [{ type: "hitsAnyway" }];
+    // trigger orders that guard: card fields
+    if (/^this card can be called to \(GC\) as a trigger unit$/i.test(t) || /^(?:and )?it becomes a Grade 0\/\[Shield\]\s*\d+ guardian$/i.test(t)) return [];
+    if (/^during your opponent'?s turn'?s guard step$/i.test(t) && ctx.unconditional !== undefined) return [];
+    // "bind all [Critical] triggers [Soul-Blast] for this cost"
+    if ((m = t.match(/^(bind|put) all (.*?)(?:triggers?|cards?) \[soul-blast\] for this cost(?: into (?:your )?(hand|deck))?$/i))) return [{ type: "move", from: "drop", to: /^bind/i.test(m[1]) ? "bind" : (m[3] || "hand").toLowerCase(), all: true, n: 99, fromPaid: true, filter: filt((m[2] || "").trim() + " trigger") || {} }];
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
