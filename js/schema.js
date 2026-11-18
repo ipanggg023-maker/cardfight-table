@@ -190,6 +190,7 @@ const SCHEMA = {
     SB: { label: "Soul-Blast", params: [["n", "num"], ["filter", "filter", "only these cards (blank = any)"]], text: (p) => `Soul-Blast ${p.n}${p.filter && Object.keys(p.filter).length ? ` (${flt(p.filter)})` : ""}` },
     EB: { label: "Energy-Blast", params: [["n", "num"]], text: (p) => `Energy-Blast ${p.n}` },
     reveal: { label: "Reveal cards (they stay where they are)", params: [["from", "mfrom", "from"], ["n", "num"], ["filter", "filter"]], text: (p) => `reveal ${p.n || 1} ${flt(p.filter)} from ${SCHEMA.paramOptions.mfrom[p.from || "hand"]}` },
+    lockRC: { label: "Lock your rear-guards", params: [["n", "num"], ["filter", "filter"]], text: (p) => `lock ${p.n || 1} of your ${flt(p.filter, true)} rear-guards` },
     payGauge: { label: "Pay equip gauge", params: [["n", "num"]], text: (p) => `pay ${p.n || 1} gauge` },
     discard: { label: "Discard from hand", params: [["n", "num"], ["filter", "filter"]], text: (p) => `discard ${p.n} ${flt(p.filter)}` },
     move: { label: "Move cards (put a card from hand into soul, bind this card, put this unit on the bottom of the deck…)", params: MOVE_PARAMS, text: (p) => moveText(p) },
@@ -346,6 +347,8 @@ function flt(f, short) {
   if (f.kai) bits.push("with a Kai icon");
   if (f.skill) bits.push(`with the [${f.skill}] ability`);
   if (f.notName) bits.push(`other than "${f.notName}"`);
+  if (f.wasRideDeck) bits.push("that were in the ride deck");
+  if (f.gKind) bits.push(f.gKind === "guardian" ? "[G Guardian]" : "[Stride] G unit");
   if (f.trig) bits.push(f.trig === "none" ? "non-trigger" : f.trig === "any" ? "trigger" : f.trig + " trigger");
   if (f.sentinel === "yes") bits.push("sentinel");
   if (f.sameNameVC) bits.push("with your vanguard's name");

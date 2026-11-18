@@ -355,7 +355,7 @@ const TextParse = (() => {
     if ((m = t.match(/<+([^>]+)>+/))) f.clan = m[1].trim();
     if (/same card name as (your|the) vanguard/i.test(t)) f.sameNameVC = true;
     if (/with an? kai icon/i.test(t)) f.kai = true;
-    if (/\bother\b/i.test(t) && !/other than "/i.test(t)) f.other = true;
+    if (/\bother\b/i.test(t) && !/other than/i.test(t)) f.other = true;
     if (/normal units?/i.test(t)) f.ctype = "unit";
     else if (/trigger units?/i.test(t)) f.ctype = "trigger";
     else if (/\borders?\b/i.test(t) && !/units?/i.test(t)) f.ctype = "order";
@@ -814,8 +814,28 @@ const TextParse = (() => {
         const to = /^remove/i.test(m[1]) ? "removed" : /^bind/i.test(m[1]) ? "bind" : m[5] ? m[5].toLowerCase() : m[6] ? (m[6].toLowerCase() === "top" ? "deckTop" : "deckBottom") : "drop";
         out.push({ type: "move", from: zonesOf(m[4]), to, n: m[2] ? toNum(m[2]) : 1, filter: filt(m[3].replace(/^(a|an)\s+/i, "")) || {} });
       }
+      // round 21: ride deck returns, deck bottom, G zone, rear-guards, lock, reveal
+      else if ((m = p.match(rx(`^put (?:a total of )?(${N}|an?) (.*?)cards? (?:that (?:were|was) in the ride deck )?from (soul or drop|drop or soul|soul|drop)(?: zone)?(?: that (?:were|was) in the ride deck)? into (?:the |your )?ride deck(?: face up)?$`)))) {
+        const k = p.match(/^put (?:a total of )?(\w+)/i)[1];
+        out.push({ type: "move", from: /soul or drop|drop or soul/i.test(m[m.length - 1]) ? "soul|drop" : m[m.length - 1].toLowerCase(), to: "rideDeck", n: /^an?$/i.test(k) ? 1 : toNum(k), filter: { ...(filt(m[m.length - 2] || "") || {}), wasRideDeck: true } });
+      }
+      else if ((m = p.match(rx(`^put (${N}|an?) (.+?) from (?:your )?(drop|soul|hand)(?: zone)? on the (top|bottom) of (?:your |the )?deck$`)))) {
+        const what = m[m.length - 3].replace(/^(cards?)\s*/i, ""), k = p.match(/^put (\w+)/i)[1];
+        const f = /^"[^"]+"$/.test(what) ? { nameExact: what.replace(/"/g, "") } : filt(what) || {};
+        if (/other than \[heal\] trigger and \[over\] trigger/i.test(what)) { delete f.trig; f.notTrig = ["heal", "over"]; }
+        out.push({ type: "move", from: m[m.length - 2].toLowerCase(), to: m[m.length - 1].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: /^an?$/i.test(k) ? 1 : toNum(k), filter: f });
+      }
+      else if ((m = p.match(/^turn (?:an?|one) (\[G Guardian\]|\[Stride\]|card with the same card name as this (?:unit|card)|.+?) from (?:your )?g zone face up$/i))) out.push({ type: "gFaceUp", n: 1, filter: /guardian/i.test(m[1]) ? { gKind: "guardian" } : /\[stride\]/i.test(m[1]) ? { gKind: "stride" } : /same card name/i.test(m[1]) ? { sameNameSelf: true } : filt(m[1]) || {} });
+      else if ((m = p.match(rx(`^put (${N}|an?|another) (other )?rear-guards? in the same column as this unit into (?:your )?soul$`)))) out.push({ type: "move", from: "myColumnRC", to: "soul", n: /^(an?|another)$/i.test(p.match(/^put (\w+)/i)[1]) ? 1 : toNum(p.match(/^put (\w+)/i)[1]) });
+      else if ((m = p.match(rx(`^put (${N}|an?) (other )?rear-guards? on the (top|bottom) of (?:the |your )?deck$`)))) out.push({ type: "move", from: "myRC", to: /top/i.test(p) ? "deckTop" : "deckBottom", n: /^an?$/i.test(p.match(/^put (\w+)/i)[1]) ? 1 : toNum(p.match(/^put (\w+)/i)[1]), filter: /other/i.test(p) ? { other: true } : {} });
+      else if ((m = p.match(/^put an? "([^"]+)" from your \(RC\) into (?:your )?soul$/i))) out.push({ type: "move", from: "myRC", to: "soul", n: 1, filter: { nameExact: m[1] } });
+      else if ((m = p.match(rx(`^lock (${N}|an?|one of your) (?:of your )?(.*?)rear-guards?$`)))) { const k = p.match(/^lock (\w+)/i)[1]; out.push({ type: "lockRC", n: /^(an?|one)$/i.test(k) ? 1 : toNum(k), filter: filt(m[m.length - 1] || "") || {} }); }
+      else if (/^reveal this card$/i.test(p)) out.push({ type: "reveal", from: "self", n: 1 });
+      else if ((m = p.match(/^reveal (?:an?|one) (.+?) from (?:your )?hand$/i))) out.push({ type: "move", from: "hand", to: "hand", n: 1, reveal: true, filter: filt(m[1]) || {} });
+      else if ((m = p.match(rx(`^put (${N}|an?) (.+?) from (?:your )?(hand|soul|drop)(?: zone)? into (?:your )?(drop|soul)$`)))) { const k = p.match(/^put (\w+)/i)[1]; out.push({ type: "move", from: m[m.length - 2].toLowerCase(), to: m[m.length - 1].toLowerCase(), n: /^an?$/i.test(k) ? 1 : toNum(k), filter: filt(m[m.length - 3].replace(/^cards?\s*/i, "")) || {} }); }
+      else if (/^put this (?:\[stand\] )?(?:card|unit) into (?:your )?soul$/i.test(p)) out.push({ type: "selfToSoul" });
       // round 13: one zone: "bind a "Deepening Night, Tamayura" from soul", "Bind two cards with "Stealth" in their card names from soul"
-      else if ((m = p.match(rx(`^(bind|remove) (?:(${N}) |an? )?(.+?) from (?:your )?(hand|soul|drop(?: zone)?|damage zone|bind zone)$`)))) {
+      else if ((m = p.match(rx(`^(bind|remove) (?:(${N}) |an? )?(.+?) from (?:your )?(hand|soul|drop(?: zone)?|damage zone|bind zone)(?: face (?:down|up))?$`)))) {
         const zw = m[m.length - 1], whatRaw = m[m.length - 2]; // the number pattern has its own group, so count from the end
         const zone = { hand: "hand", soul: "soul", drop: "drop", "drop zone": "drop", "damage zone": "damage", "bind zone": "bind" }[zw.toLowerCase()];
         const what = whatRaw.replace(/^(cards?|units?)\s*/i, "");

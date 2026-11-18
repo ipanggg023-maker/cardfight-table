@@ -46,6 +46,7 @@ const Game = (() => {
     let ride = [], first;
     if (hasRideDeck) {
       ride = deck.ride.map(inst).sort((a, b) => a.grade - b.grade);
+      ride.forEach((c) => (c.wasRideDeck = true)); // "cards that were in the ride deck"
       first = ride.shift(); // the ride deck's grade 0 is the first vanguard
     } else {
       // no ride deck (V Premium / Premium): the first vanguard is a grade 0 taken from the main deck (CR 8.2.1.2)
@@ -200,6 +201,9 @@ const Game = (() => {
     }
     if (f.kai && !c.kai) return false; // "with a Kai icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
+    if (f.wasRideDeck && !c.wasRideDeck) return false;
+    if (Array.isArray(f.notTrig) && c.trigger && f.notTrig.includes(c.trigger)) return false; // "other than [Heal] trigger and [Over] trigger" // "that were in the ride deck"
+    if (f.gKind && c.gKind !== f.gKind) return false; // "[G Guardian]" / "[Stride]" G units
     if (f.skill) { // "with the [overDress] ability": the card field, or the keyword written in its text
       const k = String(f.skill).toLowerCase();
       const has = k === "overdress" ? !!(c.overDress || c.xoverDress || c.dress) : k === "xoverdress" ? !!c.xoverDress : k === "persona ride" ? !!c.persona : String(c.text || "").toLowerCase().includes("[" + k + "]");
@@ -492,7 +496,8 @@ const Game = (() => {
       case "SB": return (c.filter ? p.soul.filter((x) => match(x, c.filter, { pi, ctx })) : p.soul).length >= n;
       case "restRC": return rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].rest && match(p.slots[k].card, c.filter, { pi, ctx: { ...ctx, card: ctx.card } }) && !(c.filter && c.filter.other && k === ctx.key)).length >= n;
       case "EB": return p.energy >= n;
-      case "reveal": return (p[ZONE_OF[c.from] || c.from] || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
+      case "reveal": return c.from === "self" ? !!ctx.card : (p[ZONE_OF[c.from] || c.from] || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
+      case "lockRC": return rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].locked && match(p.slots[k].card, c.filter, { pi, ctx })).length >= n;
       case "payGauge": { const own = ctx.key && p.slots[ctx.key] && p.slots[ctx.key].gauge ? p.slots[ctx.key].gauge.length : 0; return own >= n || unitsOf(pi).reduce((t, k) => t + ((p.slots[k] && p.slots[k].gauge) || []).length, 0) >= n; }
       case "discard": return p.hand.filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
       case "move": return moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : n);
@@ -509,7 +514,14 @@ const Game = (() => {
   async function pay(pi, c, ctx) {
     const p = P(pi), n = +c.n || 1;
     switch (c.type) {
+      case "lockRC": { // "[COST][lock a rear-guard]"
+        const ks = rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].locked && match(p.slots[k].card, c.filter, { pi, ctx }));
+        const us = await chooseUnits(pi, `Lock ${n} of your rear-guards`, ks.map((k) => ({ pi, key: k })), n);
+        for (const u of us) { p.slots[u.key].locked = true; p.slots[u.key].rest = false; log(`🔒 ${p.slots[u.key].card.name} is locked`); }
+        break;
+      }
       case "reveal": { // "reveal a grade 3 card with "X" from hand / ride deck": shown, stays where it is
+        if (c.from === "self") { log(`${p.name} reveals ${ctx.card ? ctx.card.name : "this card"}`); ctx.revealed = ctx.card ? [ctx.card] : []; break; }
         const zone = p[ZONE_OF[c.from] || c.from] || [];
         const shown = await chooseCards(pi, `Reveal ${n} for the cost`, zone.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
         log(`${p.name} reveals ${shown.map((x) => x.name).join(", ")}`);
@@ -1599,6 +1611,7 @@ const Game = (() => {
     if (ok !== true) return err(ok);
     p.drop.push(p.hand.splice(hi, 1)[0]);
     p.ride.splice(p.ride.indexOf(next), 1);
+    next.wasRideDeck = true;
     await doRide(pi, next, false);
   });
   // card.cantBeRidden ("This card cannot be ridden"), card.rideFrom (filter: "can only be ridden from a grade 3 with "X" in its card name")
