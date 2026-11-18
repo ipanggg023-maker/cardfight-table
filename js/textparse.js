@@ -293,6 +293,9 @@ const TextParse = (() => {
     const sg = text.match(/while (?:you are )?paying the cost (?:for|of) \[?stride\]?,? this card gets grade \+(\d)/i);
     if (sg) out.strideGrade = +sg[1];
     if (/this card cannot be ridden/i.test(text)) out.cantBeRidden = true;
+    if (/this card can be played from (?:your )?drop/i.test(text)) out.playFromDrop = true;
+    if (/this (?:ability|card) can be played while ignoring (?:its )?grade/i.test(text)) out.ignoreGrade = true;
+    if (/(?:^|[\n.:])\s*this card cannot be played(?=[.,]|$)/im.test(text)) out.cantPlay = true;
     if (/cannot be normal called to \(RC\) from (?:your )?hand/i.test(text)) out.noNormalCall = true;
     // Arms: "Right Deity Arms - "Sealed Blaze Maiden, Bavsargra"", "Arms - "X"" (the vanguard it attaches to)
     const armsM = text.match(/(?:(?:right|left) deity )?arms\s*[-–－]\s*"([^"]+)"/i);
@@ -622,6 +625,7 @@ const TextParse = (() => {
     else if (/if (?:one or more of )?your rear-guards? (?:was|were) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "me", n: 1 });
     if ((m = t.match(/if you have an? "(.+)" crest/i))) add({ type: "count", what: "myCrest", op: "ge", n: 1, filter: { nameExact: m[1] } });
     if (/if you did not play an order this turn|if you have not played an order this turn/i.test(t)) add({ type: "noOrderThisTurn" });
+    if ((m = t.match(/if you played this card from (?:your )?(drop|hand|soul|bind zone)/i))) add({ type: "playedFrom", zone: m[1].toLowerCase().replace(" zone", "") });
     // round 19: states, battle number, "was boosted", another rear-guard with a name
     if ((m = t.match(/if (your vanguard|this unit) is in the \[?([A-Za-z@!' ]+?)\]? state/i))) add({ type: "unit", who: /vanguard/i.test(m[1]) ? "vc" : "self", filter: { state: m[2].replace(/@$/, "").trim() } });
     if ((m = t.match(/if it is the (first|second|third|fourth|fifth|sixth|\d+(?:st|nd|rd|th)) battle this turn( or (?:more|later))?/i))) add({ type: "count", what: "battleNo", op: m[2] ? "ge" : "eq", n: { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 }[m[1].toLowerCase()] || parseInt(m[1], 10) });
@@ -645,6 +649,9 @@ const TextParse = (() => {
     else if (/if your g zone has (?:a|one or more) cards?/i.test(t)) add({ type: "count", what: "myGZone", op: "ge", n: 1 });
     if (/if your opponent'?s g zone has (?:a|one or more) cards?/i.test(t)) add({ type: "count", what: "oppGZone", op: "ge", n: 1 });
     else if (/if your opponent'?s g zone has no cards/i.test(t)) add({ type: "count", what: "oppGZone", op: "eq", n: 0 });
+    if ((m = t.match(/if your order zone has "([^"]+)"/i))) add({ type: "count", what: "myOrderZone", op: "ge", n: 1, filter: { nameExact: m[1] } });
+    if (/if your order zone does not have (?:a|any) cards? with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "myOrderZone", op: "eq", n: 0, filter: { sameNameSelf: true } });
+    if ((m = t.match(/[Ii]f your [Oo]rder [Zz]one has an? ((?:[A-Z][A-Za-z]+ )+[A-Z][A-Za-z]+)$/))) add({ type: "count", what: "myOrderZone", op: "ge", n: 1, filter: { clan: m[1] } }); // "a Sound System", "a Blue Storm Armada"
     if ((m = t.match(rx(`[Ii]f your [Oo]rder [Zz]one has (an?|${N}(?: or more)?) ([A-Z][A-Za-z]+)$`, ""))) && !/^(Set|Normal|Card|Order)/.test(m[m.length - 1]))
       add({ type: "count", what: "myOrderZone", op: "ge", n: /^an?$/i.test(m[1]) ? 1 : toNum(m[2] || m[1]), filter: { clan: m[m.length - 1].replace(/s$/, "") } });
     for (const [z, what] of COUNT_ZONES) {
@@ -952,6 +959,10 @@ const TextParse = (() => {
     if ((m = t.match(/^(this unit|it|they) cannot be retired by (?:card )?effects$/i))) return [{ type: "restrict", what: "cantBeRetired", dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
     // "choose one of your opponent's rear-guards, your opponent puts that unit on the bottom of his or her deck": the chosen unit moves
     if (ctx.last && /^your opponent puts (that unit|those units|it|them) /i.test(t)) return effectOf(t.replace(/^your opponent puts/i, "put"), ctx);
+    if (/^this card (?:is only from <[^>]+>|can be played from (?:your )?drop|cannot be played)$/i.test(t)) return []; // card rules (fields)
+    if (/^when you would play a normal order,? you can bind a normal order with a different card name from your drop(?:,? alchemagic)?$/i.test(t)) return []; // Alchemagic's own reminder (card flag)
+    if (/^alchemagic$/i.test(t) || /^when you would play a normal order$/i.test(t) || /^you can bind a normal order with a different card name from your drop(?:,? alchemagic)?$/i.test(t)) return [];
+    if (/^this (?:ability|card) can be played while ignoring (?:its )?grade$/i.test(t)) return [];
     if (/^\([^()]{0,60}\)$/.test(t)) return []; // a short reminder in brackets ("(Includes this unit)", "(You must reveal it)"), nothing to do
     if (/^choose one of the units being attacked$/i.test(t)) { ctx.last = { target: "attacked" }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/^all of your (grade \d or (?:greater|less) )?(front row |back row )?rear-guards(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)? cannot be chosen by your opponent'?s (?:card )?(?:effects|abilities)$/i)))
@@ -1306,14 +1317,16 @@ const TextParse = (() => {
     const optParts = rest.split(/\s*・\s*/);
     let optClauses = [], tiers = [];
     // "perform all of the following according to the number of cards in your soul. ・5 or more ‐ X ・10 or more ‐ Y": each bullet only when the count is reached
-    const tierM = optParts.length > 1 && optParts[0].match(/perform all of the following according to the number of (?:cards in )?(your (?:opponent'?s )?(?:soul|drop(?: zone)?|hand|damage zone|bind zone|order zone|g zone)|attacks you (?:have )?made this turn)/i);
+    const tierM = optParts.length > 1 && (optParts[0].match(/perform all of the following according to the number of (?:(.+?) )?(?:cards )?in (your (?:opponent'?s )?(?:soul|drop(?: zone)?|hand|damage zone|bind zone|order zone|g zone))/i) || optParts[0].match(/perform all of the following according to the number of ()(attacks you (?:have )?made this turn)/i) || optParts[0].match(/(?:^|,|\.)\s*(?:and )?perform all of the following()()\.?\s*$/i));
+    let tierFilter = null;
+    if (tierM && tierM[1] && !/^cards?$/i.test(tierM[1])) tierFilter = filt(tierM[1]) || { clan: tierM[1].replace(/\s*cards?$/i, "").trim() };
     if (tierM) {
-      const what = /attacks/i.test(tierM[1]) ? "battleNo" : (COUNT_ZONES.find(([re]) => rx(`^${re}$`).test(tierM[1].toLowerCase())) || [])[1] || "mySoul";
+      const what = !tierM[2] ? null : /attacks/i.test(tierM[2]) ? "battleNo" : (COUNT_ZONES.find(([re]) => rx(`^${re}$`).test(tierM[2].toLowerCase())) || [])[1] || "mySoul";
       tiers = optParts.slice(1).map((p) => {
         const mm = p.match(/^(\d+|one|two|three|four|five|six|seven|eight|nine|ten)( or more)?(?: [a-z ]+?)?\s*[‐\-–－]\s*([\s\S]*)$/i);
-        return mm ? { cond: { type: "count", what, op: mm[2] ? "ge" : "eq", n: toNum(mm[1]) }, cl: clauses(mm[3]) } : { cond: null, cl: clauses(p) };
+        return mm && what ? { cond: { type: "count", what, op: mm[2] ? "ge" : "eq", n: toNum(mm[1]), ...(tierFilter ? { filter: tierFilter } : {}) }, cl: clauses(mm[3]) } : { cond: null, cl: clauses(p) };
       });
-      const before = optParts[0].replace(/,?\s*(?:and\s+)?perform all of the following according to[^.]*\.?\s*$/i, "");
+      const before = optParts[0].replace(/,?\s*(?:and\s+)?perform all of the following(?: according to[^.]*)?\.?\s*$/i, "");
       effectClauses.splice(0, effectClauses.length, ...clauses(before).filter((c) => c !== "§" && !/^(if|during)\b/i.test(c)));
     }
     if (optParts.length > 1 && /(choose|perform|activate) (one|two|three|\d|up to \w+|any number) of the (following|effects below)/i.test(optParts[0])) {
@@ -1419,6 +1432,7 @@ const TextParse = (() => {
         const pc = t.match(/^\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?\s*(?:and\s+)?([\s\S]*)$/i);
         if (pc) { const r = costsIn(pc[1]); if (r.costs.length && !r.unread.length) { ab.effects.push({ type: "payCost", costs: r.costs, ...(tr.cond ? { ifCond: tr.cond } : {}) }); t = pc[2].trim(); if (!t) continue; } }
         if (/^until end of/i.test(t)) { tctx.dur = durOf(t); continue; }
+        if (/^if\b/i.test(t) && !/^if you (do|did)\b/i.test(t)) { const r = condsIn(t); if (r.conds.length === 1) { tr.cond = tr.cond ? tr.cond : r.conds[0]; continue; } }
         const es = effectOf(t, tctx);
         if (es === null) ab.effects.push({ type: "manual", text: c, ...(tr.cond ? { ifCond: tr.cond } : {}) });
         else es.forEach((e) => ab.effects.push({ ...e, ...(tr.cond ? { ifCond: tr.cond } : {}) }));

@@ -476,6 +476,7 @@ const Game = (() => {
       case "byMe": return ctx.by === pi; // by your own card's ability
       case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
       case "placedFromThisTurn": { const pf = S.placedFrom && S.placedFrom.turn === S.turn ? S.placedFrom.from[pi] : {}; return (pf[c.from] || 0) >= (+c.n || 1); }
+      case "playedFrom": return !!ctx && ctx.zone === c.zone; // "if you played this card from drop"
       case "noOrderThisTurn": return P(pi).orderTurn !== S.turn;
       case "retiredThisTurn": { const r = S.retiredTurn && S.retiredTurn.turn === S.turn ? S.retiredTurn.n : [0, 0]; return r[c.who === "me" ? pi : 1 - pi] >= (+c.n || 1); }
       case "battlePhase": return S.active === pi && (S.phase === "battle" || !!S.battle);
@@ -1715,16 +1716,18 @@ const Game = (() => {
   const playOrder = (uid) => run(async () => {
     const guarding = S.battle && S.controller !== S.active;
     const pi = guarding ? 1 - S.active : S.active, p = P(pi);
-    const card = p.hand.find((c) => c.uid === uid);
+    let card = p.hand.find((c) => c.uid === uid), src = p.hand;
+    if (!card) { const d = p.drop.find((c) => c.uid === uid && c.playFromDrop); if (d) { card = d; src = p.drop; } } // "This card can be played from drop"
     if (!card || card.type !== "order") return err("Not an order card");
+    if (card.cantPlay) return err(`${card.name} can't be played`);
     const kind = guarding ? "BLITZ" : "ORDER";
     if (!guarding && (S.phase !== "main" || S.battle)) return err("Normal orders: your main phase only");
-    if (card.grade > p.slots.vc.card.grade) return err("An order's grade must be ≤ your vanguard's");
+    if (card.grade > p.slots.vc.card.grade && !card.ignoreGrade) return err("An order's grade must be ≤ your vanguard's"); // "this ability can be played while ignoring grade"
     if (p.orderTurn === S.turn) return err("Only 1 order per turn (blitz orders count too)");
     const found = orderAbility(card, kind);
     if (!found) return err(guarding ? "This is not a blitz order" : "This is not a normal order");
-    const ctx = { key: null, zone: "hand", card };
-    p.hand.splice(p.hand.indexOf(card), 1);
+    const ctx = { key: null, zone: src === p.drop ? "drop" : "hand", card };
+    src.splice(src.indexOf(card), 1);
     p.ordersThisTurn++;
     p.orderTurn = S.turn;
     // A second Regalis Piece goes to the drop without resolving (CR 14.51.2.2.1)
@@ -1744,7 +1747,7 @@ const Game = (() => {
         }
       }
     }
-    if (!ready(pi, card, ab, found.i, ctx)) { p.ordersThisTurn--; p.orderTurn = -1; p.hand.push(card); return err("Conditions or costs not met"); }
+    if (!ready(pi, card, ab, found.i, ctx)) { p.ordersThisTurn--; p.orderTurn = -1; src.push(card); return err("Conditions or costs not met"); }
     log(`${p.name} plays ${card.name}`);
     await resolve(pi, card, ab, found.i, ctx, false);
     await fireAll(pi, "orderPlayed", { subject: card });

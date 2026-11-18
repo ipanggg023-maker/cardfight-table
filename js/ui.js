@@ -977,7 +977,8 @@ function showZone(z) {
   const cards = zone === "gzone" ? [...(pl.gUp || []), ...(+pi === view() ? (pl.gDeck || []) : [])] : pl[zone];
   const label = zone === "orderZone" ? "order zone" : zone === "gzone" ? `G zone: ${(pl.gUp || []).length} face up${+pi === view() ? `, ${(pl.gDeck || []).length} face down` : ""}` : zone;
   $("#zoneTitle").textContent = `${pl.name}: ${label} (${cards.length})`;
-  $("#zoneCards").innerHTML = cards.map((c) => cardHTML(c, {}, null, null, " mini")).join("") || "<p class='muted'>Empty</p>";
+  const canPlay = (c) => zone === "drop" && +pi === view() && c.playFromDrop && c.type === "order" && S.phase === "main" && S.active === +pi && !S.battle && myMove();
+  $("#zoneCards").innerHTML = cards.map((c) => canPlay(c) ? `<div class="zplay">${cardHTML(c, {}, null, null, " mini")}<button class="go" data-playdrop="${c.uid}">Play</button></div>` : cardHTML(c, {}, null, null, " mini")).join("") || "<p class='muted'>Empty</p>";
   $("#zone").hidden = false;
 }
 
@@ -1212,6 +1213,7 @@ $("#startBtn").addEventListener("click", startGame);
 $("#curtainBtn").addEventListener("click", () => { ui.shown = Game.state().controller; render(); });
 $("#winBtn").addEventListener("click", () => onAction("restart"));
 $("#zoneClose").addEventListener("click", () => ($("#zone").hidden = true));
+$("#zoneCards").addEventListener("click", (e) => { const b = e.target.closest("[data-playdrop]"); if (!b) return; $("#zone").hidden = true; act(Game.playOrder(+b.dataset.playdrop)); });
 $("#netRetry").addEventListener("click", async () => {
   $("#netRetry").disabled = true;
   try { await Net.join(Net.code, { name: Game.state().players[ui.online.seat].name, deck: { ride: [], main: [] } }, onNet); $("#netLost").hidden = true; }

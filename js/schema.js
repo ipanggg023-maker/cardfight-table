@@ -179,6 +179,7 @@ const SCHEMA = {
     byMe: { label: "It was by your own card's ability", params: [], text: () => "it was by your own card's ability" },
     mainPhase: { label: "During your main phase", params: [], text: () => "during your main phase" },
     noOrderThisTurn: { label: "You did not play an order this turn", params: [], text: () => "you did not play an order this turn" },
+    playedFrom: { label: "This order was played from a zone", params: [["zone", "text", "zone (drop)"]], text: (p) => `you played this card from ${p.zone || "drop"}` },
     placedFromThisTurn: { label: "Your unit was placed on (RC) from a zone this turn", params: [["from", "text", "zone (soul / drop / hand / deck)"], ["n", "num", "at least"]], text: (p) => `your unit was placed on (RC) from ${p.from || "soul"} this turn` },
     retiredThisTurn: { label: "A rear-guard was retired this turn", params: [["who", "whoMeOpp", "whose"], ["n", "num", "at least"]], text: (p) => `${p.who === "me" ? "your" : "your opponent's"} rear-guard was retired this turn` },
     battlePhase: { label: "During your battle phase", params: [], text: () => "during your battle phase" },
