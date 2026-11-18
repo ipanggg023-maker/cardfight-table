@@ -269,6 +269,7 @@ const Game = (() => {
       case "imprisoned": return m((p.orderZone || []).filter((c) => c.imprisoned !== undefined));
       case "myCrest": return m(p.crest);
       case "myLocked": return rcOf(pi).filter((k) => p.slots[k] && p.slots[k].locked).length;
+      case "anyLocked": return [0, 1].reduce((t, q) => t + rcOf(q).filter((k) => P(q).slots[k] && P(q).slots[k].locked).length, 0);
       case "myArms": return m(p.slots.vc.arms || []); // Arms attached to your vanguard
       case "myAutoMOD": return m(p.automod || []);
       case "myOrderZoneDown": return m((p.orderZone || []).filter((c) => c.faceDown));
@@ -1207,6 +1208,16 @@ const Game = (() => {
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
       // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
+      case "extraOrder": { p.extraOrders = p.extraOrders && p.extraOrders.turn === S.turn ? { turn: S.turn, n: p.extraOrders.n + 1 } : { turn: S.turn, n: 1 }; log(`${p.name} can play an additional order this turn`); return { count: 1 }; }
+      case "swap": { // "choose two of your rear-guards, swap their positions" / "swap that unit's position with this unit"
+        let keys = [];
+        if (e.with === "self" && ctx.key) { const us = await pickUnits(pi, { ...e, n: 1 }, ctx); if (us[0] && us[0].pi === pi) keys = [us[0].key, ctx.key]; }
+        else { const us = await pickUnits(pi, { ...e, n: 2 }, ctx); keys = us.filter((u) => u.pi === pi).map((u) => u.key); }
+        if (keys.length !== 2 || keys[0] === keys[1] || keys.includes("vc")) return { count: 0 };
+        [p.slots[keys[0]], p.slots[keys[1]]] = [p.slots[keys[1]], p.slots[keys[0]]];
+        log(`${p.name} swaps ${[p.slots[keys[0]], p.slots[keys[1]]].filter(Boolean).map((s) => s.card.name).join(" and ")}`);
+        return { count: 2, cards: keys.map((k) => p.slots[k] && p.slots[k].card).filter(Boolean) };
+      }
       case "strideSelf": { // "[Stride] this card on your (VC) from face down" (an ability of a G unit in your G zone)
         const g = ctx.card;
         const i = g ? p.gDeck.indexOf(g) : -1;
@@ -1784,7 +1795,8 @@ const Game = (() => {
     const kind = guarding ? "BLITZ" : "ORDER";
     if (!guarding && (S.phase !== "main" || S.battle)) return err("Normal orders: your main phase only");
     if (card.grade > p.slots.vc.card.grade && !card.ignoreGrade) return err("An order's grade must be ≤ your vanguard's"); // "this ability can be played while ignoring grade"
-    if (p.orderTurn === S.turn) return err("Only 1 order per turn (blitz orders count too)");
+    const orderLimit = 1 + (p.extraOrders && p.extraOrders.turn === S.turn ? p.extraOrders.n : 0);
+    if (p.orderTurn === S.turn && p.ordersThisTurn >= orderLimit) return err(`Only ${orderLimit} order${orderLimit > 1 ? "s" : ""} this turn (blitz orders count too)`);
     const found = orderAbility(card, kind);
     if (!found) return err(guarding ? "This is not a blitz order" : "This is not a normal order");
     const ctx = { key: null, zone: src === p.drop ? "drop" : "hand", card };

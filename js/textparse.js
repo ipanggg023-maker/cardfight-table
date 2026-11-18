@@ -651,6 +651,7 @@ const TextParse = (() => {
     if (/if this unit is (?:a )?"([^"]+)"/i.test(t) && (m = t.match(/if this unit is (?:a )?"([^"]+)"/i))) add({ type: "unit", who: "self", filter: { state: m[1] } });
     if ((m = t.match(/if your opponent'?s vanguard has "(twin|triple) drive"/i))) add({ type: "unit", who: "oppVc", filter: { driveMin: /triple/i.test(m[1]) ? 3 : 2 } });
     else if ((m = t.match(/if your vanguard has "(twin|triple) drive"/i))) add({ type: "unit", who: "vc", filter: { driveMin: /triple/i.test(m[1]) ? 3 : 2 } });
+    if (/if any player has a locked card/i.test(t)) add({ type: "count", what: "anyLocked", op: "ge", n: 1 });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -1095,6 +1096,10 @@ const TextParse = (() => {
     if (/^<[^<>]+>$/.test(t)) return []; // a lone clan label ("<Dragon World>")
     if (/^during this fight$/i.test(t)) { ctx.dur = "game"; return []; }
     if (ctx.search && /^call (it|them) to (?:a |an open )?back row \(rc\)$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCback", n: s2.n, upTo: true, filter: s2.filter }]; }
+    if ((m = t.match(/^retire this unit at the end of (?:that |this |the )?(turn|battle)$/i))) return [{ type: "retire", target: "self", later: m[1].toLowerCase() }];
+    if (/^you can play an additional order(?: this turn)?$/i.test(t)) return [{ type: "extraOrder" }];
+    if (/^swap their positions$/i.test(t) && ctx.last) { const L = ctx.last; ctx.last = null; return [{ type: "swap", ...L, n: 2 }]; }
+    if (/^swap (?:that unit'?s|its) position with this unit$/i.test(t) && ctx.last) { const L = ctx.last; ctx.last = null; return [{ type: "swap", ...L, n: 1, with: "self" }]; }
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1428,6 +1433,10 @@ const TextParse = (() => {
       }
       // "until end of turn, this unit gets …": the duration comes first
       if (/^(until end of (turn|that battle|the battle|your opponent'?s (?:next )?turn|your next turn|the fight|this fight))$/i.test(t)) { ctx.dur = durOf(t); continue; }
+      if (/^if no (?:units?|cards?) (?:were|was) (?:retired|discarded|bound|called)$/i.test(t)) { onlyIf = "didNot"; continue; }
+      const wasM = t.match(/^if an? (.+?) was (?:discarded|retired|revealed|bound|put into [a-z ]+)$/i);
+      if (wasM && filt(wasM[1]) && Object.keys(filt(wasM[1])).length) { onlyIf = "match"; onlyFilter = filt(wasM[1]); continue; }
+      if (/^if you \[stand\] (?:this unit|it)$/i.test(t)) { onlyIf = "did"; continue; }
       const iff = t.match(/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched|rode|imprisoned|healed)( not)?\b[^,]*?(?=,|$)/i);
       if (iff && /^if you (do|did)( not)?$/i.test(iff[0])) { onlyIf = iff[2] ? "didNot" : "did"; t = t.slice(iff[0].length).replace(/^,?\s*/, ""); if (!t) continue; }
       else if (iff) { onlyIf = iff[2] ? "didNot" : "did"; t = t.slice(iff[0].length).replace(/^,?\s*/, ""); if (!t) continue; }
