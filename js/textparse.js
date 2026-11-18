@@ -997,9 +997,9 @@ const TextParse = (() => {
     if ((m = t.match(/^ride (?:a |an |one )?(.+?) from your (soul|drop|hand|bind zone|deck)(?: as \[(stand|rest)\])?$/i)))
       return [{ type: "rideBy", from: { soul: "soul", drop: "drop", hand: "hand", "bind zone": "bind", deck: "deck" }[m[2].toLowerCase()], filter: /^"[^"]+"$/.test(m[1]) ? { nameExact: m[1].replace(/"/g, "") } : filt(m[1]) || {}, stand: /stand/i.test(m[3] || "") }];
     // "get an Imaginary Gift:Force, put that marker on your (VC)", "you get two Imaginary Gift:Accel"
-    if ((m = t.match(/^(?:you )?get (an?|one|two|three) imaginary gifts*:?s*(force|accel|protect)/i))) return Array.from({ length: toNum(m[1]) }, () => ({ type: "gift", kind: m[2].toLowerCase() }));
+    if ((m = t.match(/^(?:you )?get (an?|one|two|three) imaginary gifts?\s*:?\s*(force|accel|protect)/i))) return Array.from({ length: toNum(m[1]) }, () => ({ type: "gift", kind: m[2].toLowerCase() }));
     if (/^put (that|the) marker on your \(VC\)$/i.test(t)) return [];
-    if ((m = t.match(/^deal (one|two|three|d+) damage(?: to (?:your opponent|that unit|it|the vanguard))?$/i))) return [{ type: "dealDamage", n: toNum(m[1]), who: "opp" }];
+    if ((m = t.match(/^deal (one|two|three|\d+) damage(?: to (?:your opponent|that unit|it|the vanguard))?$/i))) return [{ type: "dealDamage", n: toNum(m[1]), who: "opp" }];
     if (/^choose (one of )?your opponent'?s vanguards?$/i.test(t)) { ctx.last = { target: "oppVc" }; ctx.lastUsed = false; return []; }
     if (/^return this (unit|card) to (your|the) deck$/i.test(t)) return [{ type: "move", from: "self", to: "deck" }];
     if (/^return (it|that unit|them) to (your|the|his or her|its owner'?s) deck$/i.test(t))
