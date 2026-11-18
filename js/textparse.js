@@ -421,6 +421,8 @@ const TextParse = (() => {
     [/when (?:this unit|it) (?:\[stand\]|stands) by the (?:ability|effect) of your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?)/i, "stood", null, { byVCText: 1 }],
     // round 2 (official list): columns, stands, discards, soul, binds, locks, Soul-Blast at once, order zone
     [/when your other (?:unit|rear-guard)s? (?:is|are) placed (?:on (?:an? )?\(RC\) )?in the same column as this unit/i, "allyPlacedRC", null, { column: true }],
+    [/when your other (?:unit|rear-guard)s? (?:is|are) placed on \(RC\) from (?:your |the )?order zone(?: by your card'?s (?:ability|effect))?/i, "allyPlacedRC", null, { fromZone: "orderzone" }],
+    [/when your (?:other )?(?:unit|rear-guard)s? (with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?) @?\[?stand\]? by (?:a|your) card'?s? (?:ability|effect)/i, "allyStood", null, { subjectText: 1, byAny: 1 }],
     [/when your other (rear-guard|unit) in the same column as this unit is placed/i, "allyPlacedRC", null, { column: true }],
     [/when (?:this unit|it) (?:is )?(?:\[stand\]|stands|becomes \[stand\]) (?:by|due to) the (?:ability|effect) of your vanguard(?: with ((?:"[^"]+"(?:,? or )?)+) in its card name)?|when this unit is \[stand\] by your vanguard'?s (?:ability|effect)/i, "stood", null, { byVC: 1 }],
     [/when (?:this unit|it) (?:is )?(?:\[stand\]|stands) by the (?:ability|effect) of your ((?:grade \d or (?:greater|less) )?(?:card|unit)s?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?)/i, "stood", null, { byCard: 1 }],
@@ -563,6 +565,7 @@ const TextParse = (() => {
         if (m[7]) ab.whenFrom = { deck: "deck", drop: "drop", "drop zone": "drop", soul: "soul", hand: "hand", "bind zone": "bind" }[m[7].toLowerCase()];
       }
       if (extra.column) ab.whenColumn = true;
+      if (extra.fromZone) ab.whenFrom = extra.fromZone;
       if (extra.byVC) { const vf = extra.byVC !== true && m[extra.byVC] ? filt("with " + m[extra.byVC] + " in its card name") : null; ab.whenByVC = vf && Object.keys(vf).length ? vf : true; }
       if (extra.min) ab.whenMin = toNum(m[extra.min]);
       // "by the ability of your grade 3 or greater vanguard with "X" in its card name": a filter on your vanguard
@@ -631,6 +634,7 @@ const TextParse = (() => {
     if ((m = t.match(/if it is the (first|second|third|fourth|fifth|sixth|\d+(?:st|nd|rd|th)) battle this turn( or (?:more|later))?/i))) add({ type: "count", what: "battleNo", op: m[2] ? "ge" : "eq", n: { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 }[m[1].toLowerCase()] || parseInt(m[1], 10) });
     if (/if this unit was boosted/i.test(t)) add({ type: "boosted" });
     if ((m = t.match(/if you have another rear-guard with "([^"]+)" in its card name/i))) add({ type: "count", what: "myRC", op: "ge", n: 1, filter: { name: m[1], other: true } });
+    if (!out.some((c) => c.type === "count") && (m = t.match(/if your (soul|drop|drop zone|hand|order zone|damage zone|bind zone) has "([^"]+)"/i))) add({ type: "count", what: { soul: "mySoul", drop: "myDrop", "drop zone": "myDrop", hand: "myHand", "order zone": "myOrderZone", "damage zone": "myDamage", "bind zone": "myBind" }[m[1].toLowerCase()], op: "ge", n: 1, filter: { nameExact: m[2] } });
     if (/if your opponent'?s g zone has (?:a|one or more) face up cards?/i.test(t)) add({ type: "count", what: "oppGUp", op: "ge", n: 1 });
     if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) open \\(RC\\)`)))) add({ type: "count", what: "myOpenRC", op: CMP(m[0]), n: toNum(m[1]) });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
@@ -915,6 +919,14 @@ const TextParse = (() => {
     if (/^choose (one of )?your vanguards?$/i.test(t)) { ctx.last = { target: "vc" }; return []; }
     if ((m = t.match(/^choose (?:an?|one|up to one) (?:of your )?opponent'?s (.*?)rear-guards?$/i))) { ctx.last = { target: "chooseOppRC", n: 1, ...(/up to/i.test(t) ? { upTo: true } : {}), filter: filt(m[1]) || {} }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/^choose (?:a|one|up to one) rear-guards? in your opponent'?s front row$/i))) { ctx.last = { target: "chooseOppFrontRC", n: 1 }; ctx.lastUsed = false; return []; }
+    // "that (placed) unit and this unit get [Power] +5000": the unit the timing is about, and this unit
+    if ((m = t.match(/^(that (?:placed |called )?unit|it) and this unit (get .+)$/i)) && !ctx.bothDone) {
+      ctx.bothDone = true;
+      const a = effectOf("this unit " + m[2].replace(/^get /i, "gets "), ctx) || [];
+      const b = (effectOf("this unit " + m[2].replace(/^get /i, "gets "), ctx) || []).map((x) => ({ ...x, target: ctx.last ? "thatUnit" : "eventUnit" }));
+      ctx.bothDone = false;
+      if (a.length) return [...b, ...a];
+    }
     // stats
     const outs = [];
     if ((m = t.match(/\[Power\] ([+-])\s*([\d,]+)/i))) outs.push({ type: "power", amount: (m[1] === "-" ? -1 : 1) * +m[2].replace(/,/g, ""), dur, ...who(), ...per });
