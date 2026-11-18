@@ -227,6 +227,7 @@ const Game = (() => {
     const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
+      case "myRCToSoulTurn": return S.rcSoulTurn && S.rcSoulTurn.turn === S.turn ? S.rcSoulTurn.n[pi] : 0;
       case "oppOpenRC": return rcOf(1 - pi).filter((k) => !o.slots[k]).length;
       case "myOpenRC": return rcOf(pi).filter((k) => !p.slots[k]).length;
       case "oppGZone": return m([...(o.gUp || []), ...(o.gDeck || [])]);
@@ -759,7 +760,7 @@ const Game = (() => {
   }
   async function callAnywhere(pi, card, from = "", row = "") {
     if (card.cantBeCalled) { log(`${card.name} can't be called; it goes to the drop`); P(pi).drop.push(card); return; }
-    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : rcOf(pi); // "call it to a back row (RC)"
+    const keys = row === "back" ? rcOf(pi).filter((k) => BACK.includes(k)) : row === "front" ? frontOf(pi).filter((k) => k !== "vc") : row && row.startsWith("col:") ? rcOf(pi).filter((k) => COL[k] && COL[k] === COL[row.slice(4)]) : rcOf(pi); // "call it to a back row (RC)" / "in the same column as this unit"
     const opts = keys.map((k) => ({ id: k, label: `${slotName(k)}${P(pi).slots[k] ? " (replace " + P(pi).slots[k].card.name + ")" : " (empty)"}` }));
     const [key] = await choose(pi, `Call ${card.name} to which circle?`, opts, 1, 1);
     await place(pi, card, key, from);
@@ -807,7 +808,10 @@ const Game = (() => {
   // a card goes from the hand to the drop by a cost or an effect (discarding)
   function discarded(pi, card) { collect(pi, null, "discarded", { card, zone: "hand", subject: card }); collectAll(pi, "allyDiscarded", { subject: card }); }
   // any card put into a player's soul ("when a card is put into your soul"); from = "RC" when a rear-guard went there
-  function soulEvent(pi, card, from = "") { collectAll(pi, "cardToSoul", { subject: card, from }); }
+  function soulEvent(pi, card, from = "") {
+    if (from === "RC") (S.rcSoulTurn = S.rcSoulTurn && S.rcSoulTurn.turn === S.turn ? S.rcSoulTurn : { turn: S.turn, n: [0, 0] }).n[pi]++; // "if two or more of your cards were put from (RC) into your soul this turn"
+    collectAll(pi, "cardToSoul", { subject: card, from });
+  }
   async function sendTo(pi, card, dest, from = "deck") {
     const p = P(pi);
     if (dest === "RC" && card.type !== "order") return callAnywhere(pi, card, from);
@@ -840,7 +844,9 @@ const Game = (() => {
         const ok = { did: L.count > 0, didNot: L.count === 0, match: hit, noMatch: !hit }[e.onlyIf];
         if (ok === false) continue;
       }
-      const r = await effect(pi, e, { ...ctx, last });
+      let step = e;
+      if (e.nCount) { const k = countOf(pi, e.nCount.what, e.nCount.filter, { ...ctx, last }); if (k <= 0) { last = { count: 0, cards: [] }; continue; } step = { ...e, n: k }; }
+      const r = await effect(pi, step, { ...ctx, last });
       last = r && typeof r === "object" ? { count: r.count || 0, cards: r.cards || [] } : { count: 1, cards: [] };
     }
     return last;
@@ -857,20 +863,20 @@ const Game = (() => {
   // e = {from, to, n, upTo, all, random, look (deck top: how many to look at), rest (where the rest go), filter, chooser: "me"|"opp", reveal}
   const ZONE_OF = { automod: "automod", rideDeck: "ride", hand: "hand", deck: "deck", deckTop: "deck", drop: "drop", soul: "soul", damage: "damage", bind: "bind", gzone: "gUp", orderZone: "orderZone",
     oppHand: "hand", oppDeckTop: "deck", oppDrop: "drop", oppSoul: "soul", oppDamage: "damage", oppBind: "bind" };
-  const FIELD_FROM = { myRC: "rc", myUnits: "units", myFrontRC: "front", myBackRC: "back", oppRC: "rc", oppUnits: "units", oppFrontRC: "front" };
+  const FIELD_FROM = { myRC: "rc", myUnits: "units", myFrontRC: "front", myBackRC: "back", oppRC: "rc", oppUnits: "units", oppFrontRC: "front", myColumnRC: "column" };
   const sideOf = (pi, from) => (String(from).startsWith("opp") ? 1 - pi : pi);
   function moveCandidates(pi, e, ctx) {
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     if (e.from === "self") return ctx.card ? [ctx.card] : [];
     if (e.eventCard) { const z = q[ZONE_OF[e.from] || e.from] || []; return ctx.subject && z.includes(ctx.subject) && match(ctx.subject, e.filter, env) ? [ctx.subject] : []; } // "one of the discarded cards": the card the timing is about
     if (e.fromLast && FIELD_FROM[e.from]) {
-      const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK }[FIELD_FROM[e.from]];
+      const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK, column: rcOf(side).filter((k) => ctx.key && k !== ctx.key && COL[k] && COL[k] === COL[ctx.key]) }[FIELD_FROM[e.from]];
       const cards = (ctx.last && ctx.last.cards) || [];
       return unitsAt(side, keys, e.filter, env).filter((u) => q.slots[u.key] && cards.includes(q.slots[u.key].card));
     }
     if (e.fromLast) { const z = q[ZONE_OF[e.from] || e.from] || []; return ((ctx.last && ctx.last.cards) || []).filter((c) => z.includes(c) && match(c, e.filter, env)); }
     if (FIELD_FROM[e.from]) {
-      const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK }[FIELD_FROM[e.from]];
+      const keys = { rc: rcOf(side), units: unitsOf(side), front: frontOf(side).filter((k) => k !== "vc"), back: BACK, column: rcOf(side).filter((k) => ctx.key && k !== ctx.key && COL[k] && COL[k] === COL[ctx.key]) }[FIELD_FROM[e.from]];
       return unitsAt(side, keys, e.filter, env).filter((u) => !(e.filter && e.filter.other && ctx.key === u.key && side === pi));
     }
     if (e.from === "deckTop" || e.from === "oppDeckTop") return q.deck.slice(-Math.max(1, +e.look || +e.n || 1)).filter((c) => match(c, e.filter, env));
@@ -918,6 +924,7 @@ const Game = (() => {
         else { q.drop.push(c); log(`${c.name} can't be called to (GC) now; it goes to the drop`); }
         break;
       case "RCback": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "back"); break;
+      case "RCcol": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, colKey ? "col:" + colKey : ""); break;
       case "RCfront": if (c.type === "order") q.drop.push(c); else await callAnywhere(side, c, from, "front"); break;
       default: q.drop.push(c);
     }
@@ -925,7 +932,9 @@ const Game = (() => {
   const ZONE_NAME = { hand: "hand", deck: "deck", deckTop: "top of the deck", drop: "drop", soul: "soul", damage: "damage zone", bind: "bind zone", gzone: "G zone", orderZone: "order zone",
     deckBottom: "bottom of the deck", damageUp: "damage zone", damageDown: "damage zone (face down)", RC: "RC", removed: "removed zone",
     myRC: "rear-guards", myUnits: "units", myFrontRC: "front row rear-guards", myBackRC: "back row rear-guards", self: "this card" };
+  let colKey = null; // the circle of the card whose ability moves cards ("in the same column as this unit")
   async function moveCards(pi, e, ctx) {
+    colKey = ctx && ctx.key ? ctx.key : null;
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     const chooser = e.chooser === "opp" ? 1 - pi : pi;
     const n = Math.max(1, +e.n || 1);

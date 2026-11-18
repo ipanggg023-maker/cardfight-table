@@ -578,6 +578,19 @@ const TextParse = (() => {
   const COUNT_ZONES = [["your opponent'?s g zone", "oppGZone"], ["your soul", "mySoul"], ["your drop( zone)?", "myDrop"], ["your hand", "myHand"], ["your damage zone", "myDamage"], ["your bind zone", "myBind"],
     ["your order zone", "myOrderZone"], ["your g zone", "myGUp"], ["your opponent'?s damage zone", "oppDamage"], ["your opponent'?s hand", "oppHand"], ["your opponent'?s soul", "oppSoul"],
     ["your opponent'?s drop( zone)?", "oppDrop"], ["your crest zone", "myCrest"]];
+  function countPhrase(t) {
+    t = String(t).trim().toLowerCase();
+    if (/^face down cards in your order zone/.test(t)) return { what: "myOrderZoneDown" };
+    if (/^face up cards in your order zone/.test(t)) return { what: "myOrderZoneUp" };
+    if (/^face up cards in your damage zone/.test(t)) return { what: "myDamageUp" };
+    if (/^your opponent'?s open \(rc\)/.test(t)) return { what: "oppOpenRC" };
+    if (/^your open \(rc\)/.test(t)) return { what: "myOpenRC" };
+    if (/^(?:your )?opponent'?s rear-guards/.test(t)) return { what: "oppRC" };
+    if (/^your (?:other )?rear-guards/.test(t)) return { what: "myRC" };
+    const z = t.match(/^cards in (your (?:opponent'?s )?(?:soul|drop(?: zone)?|hand|damage zone|bind zone|order zone|g zone))/);
+    if (z) { const hit = COUNT_ZONES.find(([re]) => rx("^" + re + "$").test(z[1])); if (hit) return { what: hit[1] }; }
+    return null;
+  }
   const CMP = (s) => (/or (more|greater)/i.test(s) ? "ge" : /or (less|fewer)/i.test(s) ? "le" : "eq");
   function condsIn(t) {
     const out = [];
@@ -601,6 +614,11 @@ const TextParse = (() => {
     if ((m = t.match(rx(`if your opponent has ${N} or (more|less|fewer) rear-guards?`)))) add({ type: "count", what: "oppRC", op: CMP(m[0]), n: toNum(m[1]) });
     if (/if (?:one or more of )?your opponent'?s rear-guards? (?:was|were|has been|have been) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "opp", n: 1 });
     else if (/if (?:one or more of )?your rear-guards? (?:was|were) retired this turn/i.test(t)) add({ type: "retiredThisTurn", who: "me", n: 1 });
+    // round 16: "if you have three or more <Ghost> on your (RC)", damage zone vs the opponent's, cards from (RC) into soul this turn
+    if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) <+([^>]+)>+(?: units?| rear-guards?)? on your \\(RC\\)`)))) add({ type: "count", what: "myRC", op: CMP(m[0]), n: toNum(m[1]), filter: { clan: m[m.length - 1].trim() } });
+    else if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) <+([^>]+)>+(?: units?)?$`)))) add({ type: "count", what: "myUnits", op: CMP(m[0]), n: toNum(m[1]), filter: { clan: m[m.length - 1].trim() } });
+    if (/if your damage zone has the same number of cards as your opponent'?s(?: damage zone)? or more|if the number of cards in your damage zone is (?:equal to or more than|the same as or more than|greater than or equal to) (?:the number of cards in )?your opponent'?s/i.test(t)) add({ type: "countVs", what: "myDamage", vs: "oppDamage", op: "ge" });
+    if ((m = t.match(rx(`if ${N} or more of your cards were put from \\(RC\\) into your soul this turn`)))) add({ type: "count", what: "myRCToSoulTurn", op: "ge", n: toNum(m[1]) });
     // round 14: Prison, markers, World, opponent's G zone, order zone races ("if your Order Zone has a Base / three or more Bases")
     if ((m = t.match(rx(`if ${N} or (more|less|fewer) of your opponent'?s cards are imprisoned in your prison`)))) add({ type: "count", what: "imprisoned", op: CMP(m[0]), n: toNum(m[1]) });
     else if (/if (?:any|one) of your opponent'?s cards (?:is|are) imprisoned in your prison|if your prison has (?:a|an opponent'?s) card/i.test(t)) add({ type: "count", what: "imprisoned", op: "ge", n: 1 });
@@ -681,7 +699,7 @@ const TextParse = (() => {
     if (/if your opponent has no rear-guards/i.test(t)) add({ type: "count", what: "oppRC", op: "eq", n: 0 });
     if ((m = t.match(/if your vanguard'?s grade is (less|lower|greater|higher) than (?:or equal to )?your opponent'?s vanguard'?s grade/i)))
       add({ type: "gradeVs", op: /less|lower/i.test(m[1]) ? (/or equal/i.test(m[0]) ? "le" : "lt") : (/or equal/i.test(m[0]) ? "ge" : "gt") });
-    if ((m = t.match(/if your [Ww]orld is ([A-Z][A-Za-z ]+?)(?: or ([A-Z][A-Za-z ]+?))?(?=,|\.|$)/))) add({ type: "world", text: [m[1], m[2]].filter(Boolean).map((w) => w.replace(/\s+instead$/i, "")).join("|") });
+    if ((m = t.match(/[Ii]f your [Ww]orld is ([A-Z][A-Za-z ]+?)(?: or ([A-Z][A-Za-z ]+?))?(?=,|\.|$)/))) add({ type: "world", text: [m[1], m[2]].filter(Boolean).map((w) => w.replace(/\s+instead$/i, "")).join("|") });
     // round 3 conditions
     if ((m = t.match(/if you have an? "([^"]+)" crest/i))) add({ type: "count", what: "myCrest", op: "ge", n: 1, filter: { nameExact: m[1] } });
     if ((m = t.match(/if you have an? face up card (?:named "([^"]+)"|with "([^"]+)" in its card name) in your damage zone/i))) add({ type: "count", what: "myDamageUp", op: "ge", n: 1, filter: m[1] ? { nameExact: m[1] } : { name: m[2] } });
@@ -810,6 +828,7 @@ const TextParse = (() => {
       else if ((m = p.match(rx(`^bind ${N} (.*?)cards? from your (drop|soul|hand|damage zone)`)))) out.push({ type: "move", from: { drop: "drop", soul: "soul", hand: "hand", "damage zone": "damage" }[m[3].toLowerCase()], to: "bind", n: toNum(m[1]), filter: filt(m[2] || "") });
       else if ((m = p.match(rx(`^put (?:the top )?${N} cards? from the top of your deck into (?:your )?(drop|soul|damage zone)`)))) out.push({ type: "move", from: "deckTop", to: /soul/i.test(m[2]) ? "soul" : /damage/i.test(m[2]) ? "damageUp" : "drop", n: toNum(m[1]) });
       else if ((m = p.match(rx(`^put (${N}) (other )?(.*?)rear-guards? into (?:your )?soul$`)))) out.push({ type: "move", from: "myRC", to: "soul", n: toNum(m[1]), filter: { ...(filt(m[4] || "") || {}), ...(m[3] ? { other: true } : {}) } });
+      else if ((m = p.match(rx(`^put (${N}) (?:other )?rear-guards? in the same column as this unit into (?:your )?soul$`)))) out.push({ type: "move", from: "myColumnRC", to: "soul", n: toNum(m[1]) });
       else if (/^put (?:an|one )?other rear-guard into (?:your )?soul$|^put another rear-guard into (?:your )?soul$/i.test(p)) out.push({ type: "move", from: "myRC", to: "soul", n: 1, filter: { other: true } });
       else if ((m = p.match(/^retire (?:a|an|one|two|three) "?([^"]+?)"? tokens?$/i))) out.push({ type: "retireRC", n: toNum((p.match(/^retire (\w+)/i) || [])[1] || "1"), filter: { nameExact: m[1].trim(), token: "yes" } });
       else if (/^return this (unit|card) to (your )?hand/i.test(p)) out.push({ type: "move", from: "self", to: "hand" });
@@ -828,11 +847,12 @@ const TextParse = (() => {
   // ---------- effects: one clause at a time ----------
   // ctx.last = the target of the previous "choose …" clause (for "and it/they get …")
   function effectOf(c, ctx) {
-    const t = c.trim().replace(/^(and|then|also)\s+/i, "").replace(/^you may\s+/i, "").replace(/[.!]$/, "");
+    const t = c.trim().replace(/^(and|then|also)\s+/i, "").replace(/^you may\s+/i, "").replace(/^you (?=draw |\[?soul-charge|\[?counter-charge|\[?energy-charge)/i, "").replace(/[.!]$/, "");
     if (!t) return [];
     let m;
     const dur = /until end of/i.test(t) ? durOf(t) : ctx.dur || durOf(t);
     const per = (() => {
+      if (/for each (?:unit|card|rear-guard)s? (?:\[[^\]]+\]|[a-z]+ed|put into [a-z ]+?|called|retired|bound) by this effect/i.test(t)) return { per: "lastCount" };
       const pm = t.match(/for each (.*?)(card|unit)s? in (your (?:opponent'?s )?(soul|drop|hand|damage zone|bind zone|g zone|order zone))|for each of your (.*?)(rear-guards|units)/i);
       if (!pm) return {};
       if (pm[6]) return { per: /units/i.test(pm[6]) ? "myUnits" : "myRC", perFilter: filt(pm[5] || "") };
@@ -868,6 +888,7 @@ const TextParse = (() => {
       ctx.last = { target: /rear-guard/i.test(m[4]) ? "chooseMyRC" : "chooseMy", n: m[2] ? toNum(m[2].trim()) : 1, filter: { ...(filt(m[4]) || {}), other: true } }; ctx.lastUsed = false; return [];
     }
     if (/^turn (it|them) face up$/i.test(t) && ctx.lastDamage) return [{ type: "CC", n: ctx.lastDamage }];
+    if (/^heal (it|them)$/i.test(t) && ctx.lastDamage) { const k = ctx.lastDamage; ctx.lastDamage = 0; return [{ type: "heal", n: k }]; }
     if ((m = t.match(rx(`^put the top (?:${N} )?cards? of your deck (face (?:down|up) )?into your damage zone`)))) return [{ type: "move", from: "deckTop", to: /up/i.test(m[2] || "") ? "damageUp" : "damageDown", n: m[1] ? toNum(m[1]) : 1 }];
     if (/^remove this card( from the game)?$/i.test(t)) return [{ type: "move", from: "self", to: "removed" }];
     if (/^bind this (unit|card)$/i.test(t)) return [{ type: "move", from: "self", to: "bind" }];
@@ -949,6 +970,13 @@ const TextParse = (() => {
     // "put that called unit into (the) soul", "retire that called unit"
     if ((m = t.match(/^(put|retire) (?:that|those) called units?(?: into (?:your |the )?(soul|drop|hand)| on the (top|bottom) of (?:your |the )?deck)?$/i)))
       return [{ type: "move", from: "myRC", to: /^retire/i.test(m[1]) ? "drop" : m[2] ? m[2].toLowerCase() : m[3] ? (m[3].toLowerCase() === "top" ? "deckTop" : "deckBottom") : "soul", n: 99, upTo: true, all: true, fromLast: true }];
+    if ((m = t.match(/^choose (up to )?the same number of your (other )?(.*?)(rear-guards|units) as the number of (.+)$/i))) {
+      const what = countPhrase(m[5]);
+      if (what) { ctx.last = { target: /units/i.test(m[4]) ? "chooseMy" : "chooseMyRC", n: 99, ...(m[1] ? { upTo: true } : {}), nCount: what, filter: { ...(filt(m[3] || "") || {}), ...(m[2] ? { other: true } : {}) } }; ctx.lastUsed = false; return []; }
+    }
+    if (ctx.search && /^call (it|them) to (?:a |an open )?\(rc\) in the same column as this unit$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCcol", n: s2.n, upTo: true, filter: s2.filter }]; }
+    if (ctx.pick && /^call (it|them) to (?:a |an open )?\(rc\) in the same column as this unit$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "RCcol", n: P.n, upTo: P.upTo, filter: P.filter }]; }
+    if (ctx.look && /^call (it|them) to (?:a |an open )?\(rc\) in the same column as this unit$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: L.upTo !== false, to: "RCcol", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e]; }
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1040,7 +1068,7 @@ const TextParse = (() => {
     // round 8: "choose a card from your hand or drop", "choose up to five cards in total from your hand and drop zone"
     if ((m = t.match(rx(`^choose (up to )?(?:a total of )?${N} (.*?)(?:cards?|units?)?(?: in total)? from your (${ZL})`)))) {
       let tail = t.slice(m[0].length);
-      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?|with (?:a )?grade (?:less than or equal to|lower than|less than|equal to) (?:your|the) vanguard(?:'?s grade)?)/i);
+      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?|with (?:a )?grade (?:less than or equal to|lower than|less than|equal to) (?:your|the) vanguard(?:'?s grade)?|with only <[^>]+> for its clans?)/i);
       if (after) tail = tail.slice(after[0].length);
       ctx.pick = { from: zonesOf(m[4]), n: toNum(m[2]), upTo: !!m[1], filter: { ...(filt(m[3]) || {}), ...(after ? filt(after[1]) || {} : {}) } };
       if (!tail.trim()) return [];
@@ -1052,7 +1080,7 @@ const TextParse = (() => {
       const zone = m[5].toLowerCase() === "ride deck" ? "rideDeck" : m[5].toLowerCase().replace(" zone", "");
       let tail = t.slice(m[0].length);
       // the filter may come after the zone: "from your soul with "Silver Thorn" in its card name"
-      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?|with (?:a )?grade (?:less than or equal to|lower than|less than|equal to) (?:your|the) vanguard(?:'?s grade)?)/i);
+      const after = tail.match(/^\s*(with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?|named "[^"]+"|with the \[[A-Za-z !']+\] ability(?: other than "[^"]+")?|with (?:a )?grade (?:less than or equal to|lower than|less than|equal to) (?:your|the) vanguard(?:'?s grade)?|with only <[^>]+> for its clans?)/i);
       if (after) tail = tail.slice(after[0].length);
       ctx.pick = { from: (/opponent/i.test(m[4]) ? "opp" + zone[0].toUpperCase() + zone.slice(1) : zone).replace(/^oppDrop$/, "oppDrop"), n: toNum(m[2]), upTo: !!m[1], filter: { ...(filt(m[3]) || {}), ...(after ? filt(after[1]) || {} : {}) } };
       if (!tail.trim()) return [];
