@@ -300,8 +300,11 @@ const Game = (() => {
     if (stateDepth > 2 || !P(pi).slots[key]) return false;
     stateDepth++;
     try {
-      return abilitiesAt(pi, key).some(({ ab, card }) => ab.kind === "CONT" && zoneOK(ab.zone, zoneOf(key)) && (ab.effects || []).some((x) => x.type === "setState" && String(x.name || "").toLowerCase() === want && (!x.target || x.target === "self"))
-        && (ab.conds || []).every((c) => condOK(pi, c, { key, card })));
+      const given = (k, targets) => P(pi).slots[k] && !P(pi).slots[k].locked && abilitiesAt(pi, k).some(({ ab, card }) => ab.kind === "CONT" && zoneOK(ab.zone, zoneOf(k)) && (ab.effects || []).some((x) => x.type === "setState" && String(x.name || "").toLowerCase() === want && targets.includes(x.target || "self"))
+        && (ab.conds || []).every((c) => condOK(pi, c, { key: k, card })));
+      if (given(key, ["self", "selfAndColumn"])) return true;
+      // another unit in this unit's column that makes both of them "Friends"
+      return unitsOf(pi).some((k) => k !== key && COL[k] && COL[k] === COL[key] && given(k, ["selfAndColumn"]));
     } finally { stateDepth--; }
   };
   // unit-only filter parts: state, rested / standing

@@ -646,6 +646,9 @@ const TextParse = (() => {
     if (/if you have another unit in your middle column|if you have a rear-guard in your back row center/i.test(t)) add({ type: "count", what: "myBC", op: "ge", n: 1 });
     if ((m = t.match(rx(`if you have (${N}|an?) (?:or more )?"?([A-Z][A-Za-z ]+?)"? tokens?`, "i")))) add({ type: "count", what: "myUnits", op: "ge", n: /^an?$/i.test(m[1]) ? 1 : toNum(m[1]), filter: { nameExact: m[m.length - 1].trim(), token: "yes" } });
     if ((m = t.match(/if you have a face up card named "(.+?)" in (?:your|you) damage zone/i))) add({ type: "count", what: "myDamageUp", op: "ge", n: 1, filter: { nameExact: m[1] } });
+    if (/if you have another unit in the same column as this unit/i.test(t)) add({ type: "count", what: "myColumn", op: "ge", n: 1 });
+    if ((m = t.match(rx(`if you have (${N}) or (more|less|fewer) (other )?"([^"]+)"`)))) add({ type: "count", what: "myUnits", op: CMP(m[0]), n: toNum(m[1]), filter: { state: m[m.length - 1], ...(m[m.length - 2] ? { other: true } : {}) } });
+    if (/if this unit is (?:a )?"([^"]+)"/i.test(t) && (m = t.match(/if this unit is (?:a )?"([^"]+)"/i))) add({ type: "unit", who: "self", filter: { state: m[1] } });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -1072,6 +1075,7 @@ const TextParse = (() => {
       const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: 1, upTo: L.upTo !== false, to: "RCbc", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e];
     }
     if ((m = t.match(/^this (?:card|unit) is in the \[?([A-Za-z@!' ]+?)\]? state$/i))) return [{ type: "setState", name: m[1].replace(/@$/, "").trim(), target: "self" }];
+    if ((m = t.match(/^that unit and this unit become "([^"]+)"$/i))) return [{ type: "setState", name: m[1], target: "selfAndColumn" }]; // "Friends"
     if (/^put this (?:unit|card) into your g zone face up$/i.test(t)) return [{ type: "move", from: "self", to: "gUp" }];
     // "call five cards from the top of your deck to (GC) at [Rest]"
     if ((m = t.match(rx(`^call (${N}) cards? from the top of your deck to \\(GC\\)(?: at \\[rest\\])?$`)))) return [{ type: "move", from: "deckTop", look: toNum(m[1]), n: toNum(m[1]), all: true, to: "GC" }];
