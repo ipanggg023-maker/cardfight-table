@@ -656,6 +656,7 @@ const TextParse = (() => {
     if ((m = t.match(/if your opponent'?s vanguard has "(twin|triple) drive"/i))) add({ type: "unit", who: "oppVc", filter: { driveMin: /triple/i.test(m[1]) ? 3 : 2 } });
     else if ((m = t.match(/if your vanguard has "(twin|triple) drive"/i))) add({ type: "unit", who: "vc", filter: { driveMin: /triple/i.test(m[1]) ? 3 : 2 } });
     if (/if any player has a locked card/i.test(t)) add({ type: "count", what: "anyLocked", op: "ge", n: 1 });
+    if ((m = t.match(/[Ii]f your [Oo]rder [Zz]one only has ([A-Z][A-Za-z]+) cards/))) { add({ type: "count", what: "myOrderZone", op: "eq", n: 0, filter: { clanNot: m[1] } }); add({ type: "count", what: "myOrderZone", op: "ge", n: 1 }); }
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -1112,6 +1113,8 @@ const TextParse = (() => {
       if (/different card name from your vanguard/i.test(m[1])) f.diffNameVC = true;
       if (Object.keys(f).length) return [{ type: "playerRule", who: "me", what: "cantRide", filter: f }];
     }
+    if ((m = t.match(/^reduce the next \[counter-blast\](?: cost)? you pay(?: this turn)?(?: for (that card'?s|this (?:unit|card)'?s|its) (?:abilities|ability|\[auto\] abilities))?(?: this turn)? by (?:①|1|one)$/i))) return [{ type: "cbDiscount", n: 1, ...(m[1] ? { forCard: /that card/i.test(m[1]) ? "last" : "self" } : {}) }];
+    if ((m = t.match(/^your world becomes ([A-Z][A-Za-z' ]+?)$/i))) return [{ type: "setWorld", text: m[1].trim() }];
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1304,6 +1307,9 @@ const TextParse = (() => {
     let rest = head ? text.slice(head[0].length) : text;
     const ab = { kind, zone: zone || (kind === "ORDER" || kind === "BLITZ" ? undefined : "VC"), once: "", conds: [], costs: [...playCosts], effects: [] };
     if (kind === "ORDER" || kind === "BLITZ") delete ab.zone;
+    // "[CONT]Back Row (RC):…", "[AUTO]Front Row (RC):…", "Back Row Center (RC):": a rear-guard circle in that row
+    const rowM = rest.match(/^\s*(Back Row Center|Back Row|Front Row) \(RC\)\s*:?\s*/i);
+    if (rowM) { ab.zone = "RC"; ab.conds.push({ type: "inRow", row: /center/i.test(rowM[1]) ? "bc" : /back/i.test(rowM[1]) ? "back" : "front" }); rest = rest.slice(rowM[0].length); }
     const unread = [];
     if (/this ability may only be used by a card with the same (card )?name once a turn/i.test(rest)) { ab.once = "nameTurn"; rest = rest.replace(/,?\s*this ability may only be used by a card with the same (card )?name once a turn\.?/i, ""); }
     if (/this ability cannot be used for the rest of (that|the) turn/i.test(rest)) { ab.once = "turn"; rest = rest.replace(/,?\s*this ability cannot be used for the rest of (that|the) turn\.?/i, ""); }
@@ -1405,7 +1411,7 @@ const TextParse = (() => {
     const optParts = rest.split(/\s*・\s*/);
     let optClauses = [], tiers = [];
     // "perform all of the following according to the number of cards in your soul. ・5 or more ‐ X ・10 or more ‐ Y": each bullet only when the count is reached
-    const tierM = optParts.length > 1 && (optParts[0].match(/perform all of the following according to the number of (?:(.+?) )?(?:cards )?in (your (?:opponent'?s )?(?:soul|drop(?: zone)?|hand|damage zone|bind zone|order zone|g zone))/i) || optParts[0].match(/perform all of the following according to the number of ()(attacks you (?:have )?made this turn)/i) || optParts[0].match(/(?:^|,|\.)\s*(?:and )?perform all of the following()()\.?\s*$/i));
+    const tierM = optParts.length > 1 && (optParts[0].match(/perform all of the following according to the number of (?:(.+?) )?(?:cards )?in (your (?:opponent'?s )?(?:soul|drop(?: zone)?|hand|damage zone|bind zone|order zone|g zone))/i) || optParts[0].match(/perform all of the following according to the number of ()(attacks you (?:have )?made this turn)/i) || optParts[0].match(/(?:^|,|\.)\s*(?:and )?perform all of the following()()\.?\s*$/i) || optParts[0].match(/the following effects are active according to the number of (?:(.+?) )?(?:cards )?in (your (?:soul|drop(?: zone)?|hand|damage zone|bind zone|order zone|g zone))/i));
     let tierFilter = null;
     if (tierM && tierM[1] && !/^cards?$/i.test(tierM[1])) tierFilter = filt(tierM[1]) || { clan: tierM[1].replace(/\s*cards?$/i, "").trim() };
     if (tierM) {
@@ -1414,7 +1420,9 @@ const TextParse = (() => {
         const mm = p.match(/^(\d+|one|two|three|four|five|six|seven|eight|nine|ten)( or more)?(?: [a-z ]+?)?\s*[‐\-–－]\s*([\s\S]*)$/i);
         return mm && what ? { cond: { type: "count", what, op: mm[2] ? "ge" : "eq", n: toNum(mm[1]), ...(tierFilter ? { filter: tierFilter } : {}) }, cl: clauses(mm[3]) } : { cond: null, cl: clauses(p) };
       });
-      const before = optParts[0].replace(/,?\s*(?:and\s+)?perform all of the following(?: according to[^.]*)?\.?\s*$/i, "");
+      const before = optParts[0].replace(/,?\s*(?:and\s+)?perform all of the following(?: according to[^.]*)?\.?\s*$/i, "").replace(/,?\s*the following effects are active according to[^.]*\.?\s*$/i, "");
+      // "If your order zone only has World cards, the following effects are active …": an "if" in front of the list is the ability's condition
+      for (const c of clauses(before)) if (/^if\b/i.test(c)) { const r = condsIn(c); for (const x of r.conds) if (!ab.conds.some((y) => JSON.stringify(y) === JSON.stringify(x))) ab.conds.push(x); }
       effectClauses.splice(0, effectClauses.length, ...clauses(before).filter((c) => c !== "§" && !/^(if|during)\b/i.test(c)));
     }
     if (optParts.length > 1 && /(choose|perform|activate) (one|two|three|\d|up to \w+|any number) of the (following|effects below)/i.test(optParts[0])) {

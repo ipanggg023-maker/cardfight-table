@@ -201,6 +201,7 @@ const Game = (() => {
     }
     if (f.kai && !c.kai) return false; // "with a Kai icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
+    if (f.clanNot && [c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(String(f.clanNot).toLowerCase()))) return false; // not a <World>…
     if (f.nameNot && names.some((x) => x.includes(String(f.nameNot).toLowerCase()))) return false; // "without "X" in its card name"
     if (f.wasRideDeck && !c.wasRideDeck) return false;
     if (f.driveMin && driveOf(c) < +f.driveMin) return false; // "has "Triple Drive"" / "Twin Drive"
@@ -468,7 +469,7 @@ const Game = (() => {
       case "oppTurn": return S.active !== pi;
       case "legion": return !!p.slots.vc.mate;
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
-      case "world": { const names = String(c.text || "").toLowerCase().split("|").map((x) => x.trim()); return names.includes((p.world || "").toLowerCase()) || names.some((n) => p.states && p.states[n] === S.turn); } // "Dark Night|Abyssal Dark Night"
+      case "world": { const names = String(c.text || "").toLowerCase().split("|").map((x) => x.trim()); if (names.includes(worldOf(pi).toLowerCase())) return true; return names.includes((p.world || "").toLowerCase()) || names.some((n) => p.states && p.states[n] === S.turn); } // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
       case "sungThisTurn": return p.sungTurn === S.turn; // "if your vanguard sung a Song this turn"
       case "operatedThisTurn": return (p.operatedTurn === S.turn) === (c.not ? false : true); // "if you (did not) operate a Product this turn"
@@ -519,6 +520,7 @@ const Game = (() => {
       case "byOpp": return ctx.by !== undefined && ctx.by !== null && ctx.by !== pi; // retired by the opponent's card
       case "byMe": return ctx.by === pi; // by your own card's ability
       case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
+      case "inRow": return !!ctx && !!ctx.key && (c.row === "back" ? BACK.includes(ctx.key) : c.row === "bc" ? ctx.key === "bc" : frontOf(pi).includes(ctx.key)); // "Back Row (RC):"
       case "placedFromThisTurn": { const pf = S.placedFrom && S.placedFrom.turn === S.turn ? S.placedFrom.from[pi] : {}; return (pf[c.from] || 0) >= (+c.n || 1); }
       case "playedFrom": return !!ctx && ctx.zone === c.zone; // "if you played this card from drop"
       case "attackNoHit": return !!S.lastHit && S.lastHit.turn === S.turn && !S.lastHit.hit; // the last battle's attack did not hit
@@ -531,10 +533,30 @@ const Game = (() => {
     }
   }
   const selfThere = (pi, ctx) => ctx.key && P(pi).slots[ctx.key] && P(pi).slots[ctx.key].card.uid === ctx.card.uid;
+  // the Counter-Blast actually needed after a discount for this card ("reduce the next [Counter-Blast] … by ①")
+  function cbNeed(pi, n, ctx) {
+    const d = P(pi).cbDisc;
+    if (!d || d.turn !== S.turn || (d.uid != null && !(ctx && ctx.card && ctx.card.uid === d.uid))) return n;
+    return Math.max(0, n - d.n);
+  }
+  let worldDepth = 0;
+  function worldOf(pi) {
+    const p = P(pi);
+    if (worldDepth) return p.world || "";
+    worldDepth++;
+    try {
+      let w = p.world || "";
+      for (const card of (p.orderZone || []).filter((x) => !x.faceDown)) for (const ab of card.abilities || []) {
+        if (ab.kind !== "CONT" || !(ab.conds || []).every((x) => condOK(pi, x, { card }))) continue;
+        for (const x of ab.effects || []) if (x.type === "setWorld" && !x.dur && (!x.ifCond || condOK(pi, x.ifCond, { card }))) w = x.text || w;
+      }
+      return w;
+    } finally { worldDepth--; }
+  }
   function canPay(pi, c, ctx) {
     const p = P(pi), n = +c.n || 1;
     switch (c.type) {
-      case "CB": return c.filter ? p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx })).length >= n : faceUp(p) >= n;
+      case "CB": { const need = cbNeed(pi, n, ctx); return c.filter ? p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx })).length >= need : faceUp(p) >= need; }
       case "SB": return (c.filter ? p.soul.filter((x) => match(x, c.filter, { pi, ctx })) : p.soul).length >= n;
       case "restRC": return rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].rest && match(p.slots[k].card, c.filter, { pi, ctx: { ...ctx, card: ctx.card } }) && !(c.filter && c.filter.other && k === ctx.key)).length >= n;
       case "EB": return p.energy >= n;
@@ -584,8 +606,10 @@ const Game = (() => {
         break;
       }
       case "CB": {
+        const n0 = n; const need = cbNeed(pi, n0, ctx);
+        if (need < n0) { p.cbDisc = null; log(`Counter-Blast reduced by ${n0 - need}`); }
         const up = p.damage.filter((d) => !d.down && match(d, c.filter, { pi, ctx }));
-        const picked = c.filter && up.length > n ? await chooseCards(pi, `Counter-Blast ${n}: choose face-up damage cards`, up, n, n) : up.slice(0, n);
+        const picked = c.filter && up.length > need ? await chooseCards(pi, `Counter-Blast ${need}: choose face-up damage cards`, up, need, need) : up.slice(0, need);
         picked.forEach((d) => (d.down = true));
         break;
       }
@@ -1221,6 +1245,12 @@ const Game = (() => {
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
       // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
+      case "cbDiscount": { // "reduce the next [Counter-Blast] cost you pay (for that card's abilities) by ①"
+        const uid = e.forCard === "last" ? ((ctx.last && ctx.last.cards && ctx.last.cards[0]) || {}).uid : e.forCard === "self" ? ctx.card && ctx.card.uid : null;
+        p.cbDisc = { turn: S.turn, n: +e.n || 1, uid: uid == null ? null : uid };
+        log(`${p.name}'s next Counter-Blast this turn is reduced by ${+e.n || 1}`);
+        return { count: 1 };
+      }
       case "extraOrder": { p.extraOrders = p.extraOrders && p.extraOrders.turn === S.turn ? { turn: S.turn, n: p.extraOrders.n + 1 } : { turn: S.turn, n: 1 }; log(`${p.name} can play an additional order this turn`); return { count: 1 }; }
       case "swap": { // "choose two of your rear-guards, swap their positions" / "swap that unit's position with this unit"
         let keys = [];
@@ -2281,6 +2311,6 @@ const Game = (() => {
     power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
     toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, judgeOp, testOp, zoneActs, activateZone, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
-    driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower,
+    driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower, worldOf,
   };
 })();
