@@ -232,6 +232,7 @@ const Game = (() => {
     const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
+      case "oppGUp": return m(o.gUp || []);
       case "myRCToSoulTurn": return S.rcSoulTurn && S.rcSoulTurn.turn === S.turn ? S.rcSoulTurn.n[pi] : 0;
       case "oppOpenRC": return rcOf(1 - pi).filter((k) => !o.slots[k]).length;
       case "myOpenRC": return rcOf(pi).filter((k) => !p.slots[k]).length;
@@ -286,7 +287,19 @@ const Game = (() => {
   const COL = { fl: "L", bl: "L", vc: "C", bc: "C", fr: "R", br: "R" };
   const MIRROR = { L: "R", C: "C", R: "L" };
   // named states on units ("in harmony", "[Mental Pollution] state"…): slot.mods {stat: "state", name}
-  const hasState = (pi, key, name) => !!name && ((P(pi).slots[key] || {}).mods || []).some((m) => m.stat === "state" && m.name.toLowerCase() === String(name).toLowerCase());
+  // a named state: given by an effect (slot.mods) or written in the unit's own [CONT] ("this card is in the SweetLink state")
+  let stateDepth = 0;
+  const hasState = (pi, key, name) => {
+    if (!name) return false;
+    const want = String(name).toLowerCase();
+    if (((P(pi).slots[key] || {}).mods || []).some((m) => m.stat === "state" && m.name.toLowerCase() === want)) return true;
+    if (stateDepth > 2 || !P(pi).slots[key]) return false;
+    stateDepth++;
+    try {
+      return abilitiesAt(pi, key).some(({ ab, card }) => ab.kind === "CONT" && zoneOK(ab.zone, zoneOf(key)) && (ab.effects || []).some((x) => x.type === "setState" && String(x.name || "").toLowerCase() === want && (!x.target || x.target === "self"))
+        && (ab.conds || []).every((c) => condOK(pi, c, { key, card })));
+    } finally { stateDepth--; }
+  };
   // unit-only filter parts: state, rested / standing
   function slotOK(pi, key, f) {
     const sl = P(pi).slots[key];

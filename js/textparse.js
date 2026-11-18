@@ -324,7 +324,7 @@ const TextParse = (() => {
   }
 
   // ---------- normalising ----------
-  const norm = (s) => decode(String(s || "")).replace(/\r/g, "").replace(/［/g, "[").replace(/］/g, "]").replace(/（/g, "(").replace(/）/g, ")")
+  const norm = (s) => decode(String(s || "")).replace(/\r/g, "").replace(/until the end of/gi, "until end of").replace(/［/g, "[").replace(/］/g, "]").replace(/（/g, "(").replace(/）/g, ")")
     .replace(/\[COST\]\s*\[([^\]]*)\]\s*&\s*((?:[^\[\]]|\[[^\]]*\])*)\]/gi, "[COST][$1 & $2]")
     .replace(/&\s*Rest\]\s*this (unit|card)\]/gi, "& [Rest] this $1]")
     .replace(/\[COST\]\s*\[([^\[\]]*)\]\s*&\s*\[([^\[\]]*)\]/gi, "[COST][$1 & $2]")
@@ -631,6 +631,8 @@ const TextParse = (() => {
     if ((m = t.match(/if it is the (first|second|third|fourth|fifth|sixth|\d+(?:st|nd|rd|th)) battle this turn( or (?:more|later))?/i))) add({ type: "count", what: "battleNo", op: m[2] ? "ge" : "eq", n: { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 }[m[1].toLowerCase()] || parseInt(m[1], 10) });
     if (/if this unit was boosted/i.test(t)) add({ type: "boosted" });
     if ((m = t.match(/if you have another rear-guard with "([^"]+)" in its card name/i))) add({ type: "count", what: "myRC", op: "ge", n: 1, filter: { name: m[1], other: true } });
+    if (/if your opponent'?s g zone has (?:a|one or more) face up cards?/i.test(t)) add({ type: "count", what: "oppGUp", op: "ge", n: 1 });
+    if ((m = t.match(rx(`if you have ${N} or (more|less|fewer) open \\(RC\\)`)))) add({ type: "count", what: "myOpenRC", op: CMP(m[0]), n: toNum(m[1]) });
     if (/if you have no rear-guards/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0 });
     if (/if your soul has another card with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "mySoul", op: "ge", n: 1, filter: { sameNameSelf: true } });
     if ((m = t.match(/if (?:one of )?your units? (?:was|were) placed on \(RC\) from (?:your )?(soul|drop|hand|deck|bind zone) this turn/i))) add({ type: "placedFromThisTurn", from: m[1].toLowerCase().replace(" zone", "") });
@@ -1046,6 +1048,7 @@ const TextParse = (() => {
       if (ctx.search) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCbc", n: 1, upTo: true, filter: s2.filter }]; }
       const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: 1, upTo: L.upTo !== false, to: "RCbc", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e];
     }
+    if ((m = t.match(/^this (?:card|unit) is in the \[?([A-Za-z@!' ]+?)\]? state$/i))) return [{ type: "setState", name: m[1].replace(/@$/, "").trim(), target: "self" }];
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
