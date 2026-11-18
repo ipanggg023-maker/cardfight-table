@@ -449,6 +449,10 @@ const TextParse = (() => {
     [/when your opponent'?s locked cards? (?:is|are) unlocked|when an opponent'?s locked card is unlocked/i, "oppUnlocked", null],
     [/when you \[?soul-blast (\d+)\]? or more(?: cards)? at the same time for the cost of your vanguard'?s abilit(?:y|ies)/i, "soulBlasted", null, { min: 1, byVC: true }],
     [/when a card is put into your order zone/i, "cardToOrderZone", null],
+    [/when your ((?:other )?(?:grade \d or (?:greater|less) |grade \d )?)(?:set )?orders? (?:card )?is put into (?:your |the )?order zone/i, "cardToOrderZone", null, { subject: 1 }],
+    [/when the set order you played(?: from (?:your )?hand)? is put into (?:your |the )?order zone/i, "cardToOrderZone", null],
+    [/when (?:this card|this order) is put into (?:the |your )?drop(?: zone)? from (?:the |your )?order zone/i, "ozToDrop", null],
+    [/when (?:a|an|your) ((?:grade \d or (?:greater|less) |grade \d )?)(?:card|unit) is put into your soul by (?:a|your|your card'?s|one of your cards'?) (?:card'?s? )?(?:abilit(?:y|ies)|effects?)/i, "cardToSoul", null, { subject: 1 }],
     [/when your other rear-guard is put into your soul/i, "cardToSoul", null, { subjectOther: true, whenFrom: "RC" }],
     [/when (?:a|your) card is put into your soul(?! by)/i, "cardToSoul", null],
     [/when your other rear-guard is returned to (?:your )?hand(?: by your vanguard'?s abilit(?:y|ies))?/i, "allyReturnedHand", null, { subjectOther: true }],
@@ -930,6 +934,10 @@ const TextParse = (() => {
         out.push({ type: "move", from: "self", to: /^bind/i.test(p) || /bind/i.test(m[4] || "") ? "bind" : /bottom/i.test(p) ? "deckBottom" : /top/i.test(p) ? "deckTop" : /soul/i.test(p) ? "soul" : "drop" });
       else if ((m = p.match(rx(`^put ${N} (.*?)cards? from your drop( zone)? on the (top|bottom) of (your|the) deck`)))) out.push({ type: "move", from: "drop", to: m[4].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: toNum(m[1]), filter: filt(m[2]) });
       else if ((m = p.match(rx(`^(?:choose ${N} (.*?)cards? from your drop,? and )?put them on the bottom of (the|your) deck`)))) out.push({ type: "move", from: "drop", to: "deckBottom", n: toNum(m[1]), filter: filt(m[2] || "") });
+      else if ((m = p.match(/^put (a|an|one|two|three) (.+?) from (?:your |the )?order zone (?:into (?:your )?(drop|soul)|on the (top|bottom) of (?:your |the )?deck)$/i))) {
+        const w = m[2].trim(), f = /"([^"]+)"/.test(w) ? { nameExact: w.match(/"([^"]+)"/)[1] } : /^card$/i.test(w) ? {} : /^[A-Z][A-Za-z]+(?: cards?)?$/.test(w) ? { clan: w.replace(/ cards?$/i, "").replace(/s$/, "") } : filt(w);
+        if (f) out.push({ type: "move", from: "orderZone", to: m[3] ? m[3].toLowerCase() : m[4].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: toNum(m[1]), filter: f }); else unread.push(p);
+      }
       else if (/^bind the top card of (?:your|the) deck$/i.test(p)) out.push({ type: "move", from: "deckTop", to: "bind", n: 1 });
       else {
         const q = rewriteCost(p), r = q && q !== p ? costsIn(q) : null;

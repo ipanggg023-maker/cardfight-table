@@ -112,7 +112,7 @@ const SCHEMA = {
     allyStood: "When your unit [Stand]s by an effect (filter = that unit)",
     allyReturnedHand: "When your rear-guard is returned to hand",
     rcToDeck: "When this unit is put into your deck from (RC)",
-    cardToOrderZone: "When a card is put into your order zone",
+    ozToDrop: "This card is put into your drop from the Order Zone", cardToOrderZone: "When a card is put into your order zone",
     sung: "When this Song is sung (order zone)",
     operated: "When this card is operated (order zone)",
     operatedAny: "When you operate a Product",

@@ -732,7 +732,7 @@ const Game = (() => {
   // choose, then the other player; abilities triggered meanwhile join the queue.
   let depth = 0, inCheck = false, qN = 0;
   // events about a card that just changed place: its printed zone is where it was, so the zone isn't checked
-  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed", "boundFromRC", "rcToDeck", "replacedBy"]);
+  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed", "boundFromRC", "rcToDeck", "replacedBy", "ozToDrop"]);
   function collect(pi, key, event, extra = {}) {
     if (over()) return;
     const list = extra.card ? ownAbilities(extra.card) : key ? abilitiesAt(pi, key) : [];
@@ -1089,6 +1089,7 @@ const Game = (() => {
       await putCard(side, c, e.to, pi, fromName);
       if (e.to === "RC" && e.asRest) for (const k of rcOf(side)) if (P(side).slots[k] && P(side).slots[k].card.uid === c.uid) P(side).slots[k].rest = true; // "call it as [Rest]"
       if (e.to === "soul") collect(side, null, "toSoul", { card: c, zone: "soul", subject: c });
+      if (e.to === "drop" && fromName.replace(/s/g, "") === "orderzone") collect(side, null, "ozToDrop", { card: c, zone: "drop", subject: c }); // "when this card is put into your drop from the Order Zone"
       const fromRC = e.from === "self" ? !!(ctx.key && ctx.key !== "vc" && rcOf(side).includes(ctx.key)) : /^(my|opp)?(front|back)?RC$/i.test(String(e.from || ""));
       if (fromRC && e.to === "soul") collect(side, null, "rcToSoul", { card: c, zone: "RC", subject: c });
       if (fromRC && e.to === "hand") { collect(side, null, "returnedHand", { card: c, zone: "RC", subject: c }); collectAll(side, "allyReturnedHand", { subject: c, byPi: pi, byKey: ctx.key }); }
@@ -2275,7 +2276,7 @@ const Game = (() => {
     returnGUnits();
     endPhaseReturns(S.active);
     // Music set orders go to the drop at the end of the turn
-    S.players.forEach((pl) => { const music = (pl.orderZone || []).filter((c) => c.music); if (music.length) { pl.orderZone = pl.orderZone.filter((c) => !c.music); pl.drop.push(...music); } });
+    S.players.forEach((pl) => { const music = (pl.orderZone || []).filter((c) => c.music); if (music.length) { pl.orderZone = pl.orderZone.filter((c) => !c.music); pl.drop.push(...music); music.forEach((c) => collect(S.players.indexOf(pl), null, "ozToDrop", { card: c, zone: "drop", subject: c })); } });
     collectAll(S.active, "endTurn");
     collectAll(1 - S.active, "oppTurnEnd");
     collectAll(S.active, "eachTurnEnd"); collectAll(1 - S.active, "eachTurnEnd");
