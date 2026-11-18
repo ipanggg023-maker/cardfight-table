@@ -216,6 +216,7 @@ const Game = (() => {
       }
       if (f.other && env.ctx && env.ctx.card && c.uid === env.ctx.card.uid) return false;
       if (f.sameNameSelf && !(env.ctx && env.ctx.card && c.name === env.ctx.card.name)) return false; // "with the same card name as this unit"
+      if (f.diffNameSelf && env.ctx && env.ctx.card && c.name === env.ctx.card.name) return false; // "with a different card name from this unit"
     }
     return true;
   }
@@ -423,7 +424,7 @@ const Game = (() => {
       case "oppTurn": return S.active !== pi;
       case "legion": return !!p.slots.vc.mate;
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
-      case "world": return String(c.text || "").toLowerCase().split("|").map((x) => x.trim()).includes((p.world || "").toLowerCase()); // "Dark Night|Abyssal Dark Night"
+      case "world": { const names = String(c.text || "").toLowerCase().split("|").map((x) => x.trim()); return names.includes((p.world || "").toLowerCase()) || names.some((n) => p.states && p.states[n] === S.turn); } // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
       case "sungThisTurn": return p.sungTurn === S.turn; // "if your vanguard sung a Song this turn"
       case "operatedThisTurn": return (p.operatedTurn === S.turn) === (c.not ? false : true); // "if you (did not) operate a Product this turn"
@@ -474,6 +475,8 @@ const Game = (() => {
       case "byOpp": return ctx.by !== undefined && ctx.by !== null && ctx.by !== pi; // retired by the opponent's card
       case "byMe": return ctx.by === pi; // by your own card's ability
       case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
+      case "placedFromThisTurn": { const pf = S.placedFrom && S.placedFrom.turn === S.turn ? S.placedFrom.from[pi] : {}; return (pf[c.from] || 0) >= (+c.n || 1); }
+      case "noOrderThisTurn": return P(pi).orderTurn !== S.turn;
       case "retiredThisTurn": { const r = S.retiredTurn && S.retiredTurn.turn === S.turn ? S.retiredTurn.n : [0, 0]; return r[c.who === "me" ? pi : 1 - pi] >= (+c.n || 1); }
       case "battlePhase": return S.active === pi && (S.phase === "battle" || !!S.battle);
       case "wentSecond": return S.first !== pi;
@@ -742,6 +745,7 @@ const Game = (() => {
     const p = P(pi);
     if (p.slots[key]) { const oldC = p.slots[key].card; collect(pi, null, "replacedBy", { card: oldC, zone: "RC", subject: card, placedKey: key }); log(`${oldC.name} was replaced and retired`); retireBy(pi, key, null); }
     p.slots[key] = slot(card);
+    if (from) { const pf = (S.placedFrom = S.placedFrom && S.placedFrom.turn === S.turn ? S.placedFrom : { turn: S.turn, from: [{}, {}] }); pf.from[pi][from] = (pf.from[pi][from] || 0) + 1; } // "if your unit was placed on (RC) from soul this turn"
     log(`${p.name} calls ${card.name}${from === "token" ? " (token)" : from && from !== "hand" ? " from the " + from : ""}`);
     // Harmony (CR 14.33): when your other unit is placed in the same column as a Harmony unit, both are in harmony until end of turn
     for (const k of unitsOf(pi)) {
@@ -1288,7 +1292,9 @@ const Game = (() => {
         for (const c of costs) await pay(pi, c, ctx);
         return { count: 1, cards: [] };
       }
-      case "setWorld": p.world = e.text || ""; log(`🌐 ${p.name}'s World is now ${p.world || "(none)"}`); break;
+      case "setWorld":
+        if (e.dur === "turn") { (p.states = p.states || {})[String(e.text || "").toLowerCase()] = S.turn; log(`✦ ${p.name} is in "${e.text}" this turn`); break; } // "until end of turn, you "Final Rush""
+        p.world = e.text || ""; log(`🌐 ${p.name}'s World is now ${p.world || "(none)"}`); break;
       case "seekMate": {
         // Seek Mate (CR 6.4, 14.11): legion with a named card from the deck; a unit only legions once
         const vs = p.slots.vc;
@@ -1638,6 +1644,7 @@ const Game = (() => {
     const p = P(S.active);
     if (!p.slots[a] && !p.slots[b]) return err("No unit to move");
     if ((p.slots[a] && p.slots[a].locked) || (p.slots[b] && p.slots[b].locked)) return err("Locked cards can't move"); // CR 7.30
+    if ((p.slots[a] && restricted(S.active, a, "cantMove")) || (p.slots[b] && restricted(S.active, b, "cantMove"))) return err("That unit can't move to another circle now");
     [p.slots[a], p.slots[b]] = [p.slots[b], p.slots[a]];
     log(`${p.name} moves ${[p.slots[a], p.slots[b]].filter(Boolean).map((s) => s.card.name).join(" and ")}`);
   });
