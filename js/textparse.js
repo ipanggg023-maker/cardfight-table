@@ -812,6 +812,23 @@ const TextParse = (() => {
   const zonesOf = (s) => [...new Set(String(s).toLowerCase().match(/hand|soul|drop|bind/g) || [])].map((z) => (z === "bind" ? "bind" : z)).join("|");
 
   // ---------- costs ("[COST][Counter-Blast 1 & discard a card from your hand]") ----------
+  // old wordings "Choose X from your Y, and bind it" / "Choose one of your other rear-guards, and lock it" rewritten into wordings costsIn reads
+  function rewriteCost(p) {
+    const Q = "(a|an|one|two|three|four|five|\d+)";
+    const parts = p.split(/,\s*(?:and\s+)?(?=choose )/i);
+    if (parts.length > 1) return parts.map((x) => rewriteCost(x) || x).join(" & ");
+    let m, q = p.replace(/^choose another of your /i, "choose one of your other ").replace(/,\s*turn (it|them) face up$/i, ", and turn $1 face up").replace(/,\s*(discard|retire) (it|them)$/i, ", and $1 $2");
+    if ((m = q.match(new RegExp("^choose " + Q + " ([^,]+?) from (?:your )?(hand|soul|drop|damage zone|bind zone)(?: zone)?,?(?: and)? (bind (?:it|them)(?: face (?:up|down))?|remove (?:it|them)|put (?:it|them) into (?:your )?(?:soul|drop)|put (?:it|them) on the (?:top|bottom) of (?:your |the )?deck|reveal (?:it|them)(?: to your opponent)?,? and put (?:it|them) on the (?:top|bottom) of (?:your |the )?deck)$", "i")))) {
+      const [, n, what, zone, act] = m, z = zone.toLowerCase() === "drop" ? "drop" : zone.toLowerCase();
+      if (/^bind/i.test(act)) return "bind " + n + " " + what + " from your " + z + (/face (up|down)/i.exec(act) ? " " + /face (up|down)/i.exec(act)[0] : "");
+      if (/^remove/i.test(act)) return "remove " + n + " " + what + " from your " + z;
+      if (/^reveal/i.test(act)) return "reveal " + n + " " + what + " from your hand, and put it on the " + (/bottom/i.test(act) ? "bottom" : "top") + " of your deck";
+      if (/deck$/i.test(act)) return "put " + n + " " + what + " from your " + z + " on the " + (/bottom/i.test(act) ? "bottom" : "top") + " of your deck";
+      return "put " + n + " " + what + " from your " + z + " into your " + (/soul/i.test(act) ? "soul" : "drop");
+    }
+    if ((m = q.match(new RegExp("^choose " + Q + " of your (other )?([^,]*?)rear-guards?,? and lock (?:it|them)$", "i")))) return "lock " + (/^(a|an|one)$/i.test(m[1]) ? "one of your" : m[1]) + " " + (m[2] || "") + (m[3] || "") + "rear-guards";
+    return q !== p ? q : null;
+  }
   function costsIn(s) {
     const out = [], unread = [];
     for (const part of s.split(/\s*&\s*/)) {
@@ -913,7 +930,11 @@ const TextParse = (() => {
         out.push({ type: "move", from: "self", to: /^bind/i.test(p) || /bind/i.test(m[4] || "") ? "bind" : /bottom/i.test(p) ? "deckBottom" : /top/i.test(p) ? "deckTop" : /soul/i.test(p) ? "soul" : "drop" });
       else if ((m = p.match(rx(`^put ${N} (.*?)cards? from your drop( zone)? on the (top|bottom) of (your|the) deck`)))) out.push({ type: "move", from: "drop", to: m[4].toLowerCase() === "top" ? "deckTop" : "deckBottom", n: toNum(m[1]), filter: filt(m[2]) });
       else if ((m = p.match(rx(`^(?:choose ${N} (.*?)cards? from your drop,? and )?put them on the bottom of (the|your) deck`)))) out.push({ type: "move", from: "drop", to: "deckBottom", n: toNum(m[1]), filter: filt(m[2] || "") });
-      else unread.push(p);
+      else if (/^bind the top card of (?:your|the) deck$/i.test(p)) out.push({ type: "move", from: "deckTop", to: "bind", n: 1 });
+      else {
+        const q = rewriteCost(p), r = q && q !== p ? costsIn(q) : null;
+        if (r && !r.unread.length && r.costs.length) out.push(...r.costs); else unread.push(p);
+      }
     }
     return { costs: out, unread };
   }
