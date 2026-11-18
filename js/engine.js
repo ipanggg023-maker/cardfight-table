@@ -201,6 +201,7 @@ const Game = (() => {
     }
     if (f.kai && !c.kai) return false; // "with a Kai icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
+    if (f.nameNot && names.some((x) => x.includes(String(f.nameNot).toLowerCase()))) return false; // "without "X" in its card name"
     if (f.wasRideDeck && !c.wasRideDeck) return false;
     if (f.driveMin && driveOf(c) < +f.driveMin) return false; // "has "Triple Drive"" / "Twin Drive"
     if (f.gradeAsPaid) { const paid = (env.ctx && env.ctx.paid) || []; const g = f.gradeAsPaid === "sum" ? paid.reduce((t, x) => t + (+x.grade || 0), 0) : paid[0] ? +paid[0].grade : -1; if (+c.grade !== g) return false; }
@@ -216,6 +217,7 @@ const Game = (() => {
     if (env.pi !== undefined && S) {
       const vc = P(env.pi).slots.vc && P(env.pi).slots.vc.card;
       if (f.sameNameVC && (!vc || c.name !== vc.name)) return false;
+      if (f.diffNameVC && vc && c.name === vc.name) return false; // "a unit with a different card name from your vanguard"
       if (f.gradeVC && vc) {
         const g = vc.grade, x = c.grade;
         if (!({ lt: x < g, le: x <= g, eq: x === g, ge: x >= g, gt: x > g, plus1: x === g + 1 })[f.gradeVC]) return false;
@@ -394,7 +396,7 @@ const Game = (() => {
     if ((S.rules || []).some(ok)) return true;
     for (const owner of [0, 1]) {
       const p = P(owner);
-      const lists = [...unitsOf(owner).map((k) => [k, zoneOf(k), abilitiesAt(owner, k)]), ...(p.orderZone || []).filter((c) => !c.faceDown).map((c) => [null, "OZ", ownAbilities(c)])];
+      const lists = [...unitsOf(owner).map((k) => [k, zoneOf(k), abilitiesAt(owner, k)]), ...(p.orderZone || []).filter((c) => !c.faceDown).map((c) => [null, "OZ", ownAbilities(c)]), ...(p.crest || []).map((c) => [null, "crest", ownAbilities(c)])]; // crests too ("cannot ride …")
       for (const [k, zone, list] of lists) for (const { ab, card: src } of list) {
         if (ab.kind !== "CONT" || !zoneOK(ab.zone, zone) || !(ab.conds || []).every((c) => condOK(owner, c, { key: k, card: src }))) continue;
         for (const e of ab.effects || []) if (e.type === "playerRule" && ok({ pi: e.who === "me" ? owner : 1 - owner, what: e.what, filter: e.filter })) return true;
@@ -408,15 +410,26 @@ const Game = (() => {
     S.players.forEach((pl) => Object.values(pl.slots).forEach((sl) => { if (sl) { if (sl.mods) sl.mods = sl.mods.filter(keep); if (sl.extra) sl.extra = sl.extra.filter(keep); } }));
     if (S.rules) S.rules = S.rules.filter(keep);
   }
+  // a card's original power: printed, unless a crest / order zone [CONT] sets it ("The original [Power] of your grade 3 cards with "Chronojet" in their card names become 13000")
+  function origPower(pi, card) {
+    const p = P(pi);
+    let v = +card.power || 0;
+    const srcs = [...(p.crest || []).map((c) => [c, "crest"]), ...(p.orderZone || []).filter((c) => !c.faceDown).map((c) => [c, "OZ"])];
+    for (const [src, zone] of srcs) for (const ab of src.abilities || []) {
+      if (ab.kind !== "CONT" || (ab.zone && !zoneOK(ab.zone, zone) && ab.zone !== "crest")) continue;
+      for (const x of ab.effects || []) if (x.type === "setBasePower" && match(card, x.filter, { pi })) v = +x.value || v;
+    }
+    return v;
+  }
   function power(pi, key) {
     const p = P(pi), s = p.slots[key];
     if (!s || s.locked) return 0;
     // Persona Ride: units on your front-row circles get +10000 until end of turn (CR 7.15.1.4).
     // It belongs to the circles, so units called there later this turn get it too.
     const persona = p.personaFront && frontOf(pi).includes(key) ? 10000 : 0;
-    const heart = s.heart ? (+s.heart.power || 0) + (s.heartMate ? +s.heartMate.power || 0 : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
-    const mate = s.mate ? +s.mate.power || 0 : 0; // legion: the mate's power is added (CR 6.4)
-    const base = s.deleted ? 0 : s.card.power; // Delete: power drops by its printed power (CR 7.32)
+    const heart = s.heart ? origPower(pi, s.heart) + (s.heartMate ? origPower(pi, s.heartMate) : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
+    const mate = s.mate ? origPower(pi, s.mate) : 0; // legion: the mate's power is added (CR 6.4)
+    const base = s.deleted ? 0 : origPower(pi, s.card); // Delete: power drops by its printed power (CR 7.32)
     return Math.max(0, base + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power"));
   }
   function crit(pi, key) {
@@ -1634,7 +1647,8 @@ const Game = (() => {
     }
     // Persona Ride (CR 6.3.8): a normal ride from hand onto a vanguard with the same name, both with the icon
     // card.personaFromKai: "the normal ride of this card from a grade 3 card with a Kai icon and a different card name also becomes a persona ride"
-    const kaiPersona = card.personaFromKai && old.kai && +old.grade === 3 && old.name !== card.name;
+    const kaiPersona = (card.personaFromKai && old.kai && +old.grade === 3 && old.name !== card.name)
+      || (old.personaFromName && old.name !== card.name && String(card.name).toLowerCase().includes(String(old.personaFromName).toLowerCase())); // "… a unit with "Thegrea" … on this unit also becomes a Persona Ride"
     if (!opts.effect && fromHand && card.persona && ((old.persona && old.name === card.name) || kaiPersona)) {
       p.personaFront = true;
       p.personaThisTurn = true;
@@ -1674,6 +1688,7 @@ const Game = (() => {
   });
   // card.cantBeRidden ("This card cannot be ridden"), card.rideFrom (filter: "can only be ridden from a grade 3 with "X" in its card name")
   function rideAllowed(pi, card) {
+    if (ruleOn(pi, "cantRide", card)) return `You can't ride ${card.name}`;
     if (card.cantBeRidden) return `${card.name} cannot be ridden`;
     if (card.rideFrom && !match(P(pi).slots.vc.card, card.rideFrom, { pi })) return `${card.name} can only be ridden from ${flt(card.rideFrom)}`;
     return true;

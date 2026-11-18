@@ -294,6 +294,8 @@ const TextParse = (() => {
     if (sg) out.strideGrade = +sg[1];
     if (/this card cannot be ridden/i.test(text)) out.cantBeRidden = true;
     if (/this card can be played from (?:your )?drop/i.test(text)) out.playFromDrop = true;
+    const pfn = text.match(/the normal ride from hand of a unit with ["“]([^"”]+)["”] in its (?:different )?card name(?: from this unit)? on this unit also becomes a persona ride/i);
+    if (pfn) out.personaFromName = pfn[1];
     const gcs = text.match(/this card can be called to \(GC\) as a trigger unit,?\s*(?:and )?it becomes a Grade 0\/\[Shield\]\s*(\d+) guardian/i);
     if (gcs) out.gcShield = +gcs[1];
     if (/this (?:ability|card) can be played while ignoring (?:its )?grade/i.test(text)) out.ignoreGrade = true;
@@ -376,6 +378,8 @@ const TextParse = (() => {
     else if (/with the same grade as the card \[?(?:soul-blast|counter-blast|discarded)\]? for this cost/i.test(t)) { f.gradeAsPaid = "one"; delete f.gmin; delete f.gmax; }
     if ((m = t.match(/with the \[([A-Za-z !']+)\] ability/i))) f.skill = m[1].trim();
     if ((m = t.match(/other than "([^"]+)"/i))) f.notName = m[1];
+    if ((m = t.match(/without "([^"]+)" in (?:its|their) card names?/i))) f.nameNot = m[1];
+    if (/with a different card name from (?:your|the) vanguard/i.test(t)) f.diffNameVC = true;
     if (/(?:with )?a different card name from this (?:unit|card)/i.test(t)) f.diffNameSelf = true;
     return Object.keys(f).length ? f : undefined;
   }
@@ -1100,6 +1104,14 @@ const TextParse = (() => {
     if (/^you can play an additional order(?: this turn)?$/i.test(t)) return [{ type: "extraOrder" }];
     if (/^swap their positions$/i.test(t) && ctx.last) { const L = ctx.last; ctx.last = null; return [{ type: "swap", ...L, n: 2 }]; }
     if (/^swap (?:that unit'?s|its) position with this unit$/i.test(t) && ctx.last) { const L = ctx.last; ctx.last = null; return [{ type: "swap", ...L, n: 1, with: "self" }]; }
+    if (/^the normal ride from hand of a unit with "[^"]+" in its (?:different )?card name(?: from this unit)? on this unit also becomes a persona ride$/i.test(t)) return []; // card field personaFromName
+    if (/^you can perform \[stride\]$/i.test(t)) return [];
+    if ((m = t.match(/^the original \[power\] of your (.+?) becomes? ([\d,]+)(?:,? \(including heart cards\))?$/i))) return [{ type: "setBasePower", value: +m[2].replace(/,/g, ""), filter: filt(m[1]) || {} }]; // the deck's G deck is turned on with "My ride deck unlocks a G deck"
+    if ((m = t.match(/^(?:and )?(?:you )?cannot ride (.+)$/i)) && /grade|card|unit/i.test(m[1])) {
+      const f = filt(m[1].replace(/^(?:a |an )/i, "")) || {};
+      if (/different card name from your vanguard/i.test(m[1])) f.diffNameVC = true;
+      if (Object.keys(f).length) return [{ type: "playerRule", who: "me", what: "cantRide", filter: f }];
+    }
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
