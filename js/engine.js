@@ -237,6 +237,7 @@ const Game = (() => {
     const col = ctx.key ? COL[ctx.key] : null;
     switch (what) {
       case "myHand": return m(p.hand);
+      case "myOrderZoneNames": return new Set((p.orderZone || []).filter((c) => !c.faceDown && match(c, f, env)).map((c) => c.name)).size; // "the number of different Research cards in your order zone"
       case "myBC": return p.slots.bc && !p.slots.bc.locked && match(p.slots.bc.card, f, env) ? 1 : 0; // "another unit in your middle column"
       case "oppGUp": return m(o.gUp || []);
       case "myRCToSoulTurn": return S.rcSoulTurn && S.rcSoulTurn.turn === S.turn ? S.rcSoulTurn.n[pi] : 0;
@@ -422,12 +423,18 @@ const Game = (() => {
     }
     return v;
   }
+  // a [CONT] "your persona ride also increases the [Power] of your back row units" on any of your units / order zone cards
+  function personaBack(pi) {
+    const p = P(pi);
+    const has = (list, k) => list.some(({ ab, card }) => ab.kind === "CONT" && (ab.effects || []).some((x) => x.type === "personaBack") && (ab.conds || []).every((c) => condOK(pi, c, { key: k, card })));
+    return unitsOf(pi).some((k) => p.slots[k] && !p.slots[k].locked && has(abilitiesAt(pi, k), k)) || (p.orderZone || []).filter((c) => !c.faceDown).some((c) => has((c.abilities || []).map((ab) => ({ ab, card: c })), null));
+  }
   function power(pi, key) {
     const p = P(pi), s = p.slots[key];
     if (!s || s.locked) return 0;
     // Persona Ride: units on your front-row circles get +10000 until end of turn (CR 7.15.1.4).
     // It belongs to the circles, so units called there later this turn get it too.
-    const persona = p.personaFront && frontOf(pi).includes(key) ? 10000 : 0;
+    const persona = p.personaFront && (frontOf(pi).includes(key) || (BACK.includes(key) && personaBack(pi))) ? 10000 : 0;
     const heart = s.heart ? origPower(pi, s.heart) + (s.heartMate ? origPower(pi, s.heartMate) : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
     const mate = s.mate ? origPower(pi, s.mate) : 0; // legion: the mate's power is added (CR 6.4)
     const base = s.deleted ? 0 : origPower(pi, s.card); // Delete: power drops by its printed power (CR 7.32)

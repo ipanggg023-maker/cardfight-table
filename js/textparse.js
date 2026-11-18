@@ -601,6 +601,8 @@ const TextParse = (() => {
   function countPhrase(t) {
     t = String(t).trim().toLowerCase();
     if (/^face down cards in your order zone/.test(t)) return { what: "myOrderZoneDown" };
+    let dm;
+    if ((dm = t.match(/^different (?:(.+?) )?(?:cards|card names) in your order zone/))) return { what: "myOrderZoneNames", ...(dm[1] && dm[1] !== "card" ? { filter: { clan: dm[1].replace(/\b\w/g, (x) => x.toUpperCase()) } } : {}) };
     if (/^face up cards in your order zone/.test(t)) return { what: "myOrderZoneUp" };
     if (/^face up cards in your damage zone/.test(t)) return { what: "myDamageUp" };
     if (/^your opponent'?s open \(rc\)/.test(t)) return { what: "oppOpenRC" };
@@ -1115,6 +1117,9 @@ const TextParse = (() => {
     }
     if ((m = t.match(/^reduce the next \[counter-blast\](?: cost)? you pay(?: this turn)?(?: for (that card'?s|this (?:unit|card)'?s|its) (?:abilities|ability|\[auto\] abilities))?(?: this turn)? by (?:①|1|one)$/i))) return [{ type: "cbDiscount", n: 1, ...(m[1] ? { forCard: /that card/i.test(m[1]) ? "last" : "self" } : {}) }];
     if ((m = t.match(/^your world becomes ([A-Z][A-Za-z' ]+?)$/i))) return [{ type: "setWorld", text: m[1].trim() }];
+    if ((m = t.match(/^put the top (?:(\w+) )?cards? of your deck (?:face (up|down) )?in(?:to)? (?:your |the )damage zone(?: face (up|down))?$/i))) return [{ type: "move", from: "deckTop", to: /down/i.test((m[2] || "") + (m[3] || "")) ? "damageDown" : "damageUp", look: m[1] ? toNum(m[1]) : 1, n: m[1] ? toNum(m[1]) : 1, all: true }];
+    if (/^(?:your )?persona ride also increases the \[power\] of your back row units$/i.test(t)) return [{ type: "personaBack" }];
+    if (/^while (?:you are )?paying the cost (?:for|of) \[?stride\]?$/i.test(t) || /^this card gets grade \+\d$/i.test(t) || /^this card may be discarded as (?:a )?grade \d$/i.test(t)) return []; // card fields strideGrade / discardAs
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1136,6 +1141,7 @@ const TextParse = (() => {
     if ((m = t.match(rx(`^look at (the top )?${N} cards? (from the top )?of your deck`)))) { ctx.look = { n: toNum(m[2]) }; return []; }
     if (/^look at the top card of your deck$/i.test(t)) { ctx.look = { n: 1 }; return []; }
     // "look at the same number of cards from the top of your deck as the number of your opponent's open (RC)"
+    if ((m = t.match(/^look at the same number of cards from the top of your deck as the number of (.+)$/i)) && countPhrase(m[1]) && !/open \(RC\)|^cards in your/i.test(m[1])) { const cp = countPhrase(m[1]); ctx.look = { n: 5, count: { what: cp.what, ...(cp.filter ? { filter: cp.filter } : {}) } }; return []; }
     if ((m = t.match(/^look at the same number of cards from the top of your deck as the number of (your opponent'?s open \(RC\)|your open \(RC\)|cards in (your (?:soul|drop|hand|damage zone|order zone|bind zone)))$/i))) {
       const what = /opponent'?s open/i.test(m[1]) ? "oppOpenRC" : /your open/i.test(m[1]) ? "myOpenRC" : (COUNT_ZONES.find(([re]) => rx("^" + re + "$").test((m[2] || "").toLowerCase())) || [])[1] || "mySoul";
       ctx.look = { n: 5, count: { what } }; return [];
@@ -1454,7 +1460,7 @@ const TextParse = (() => {
       // "until end of turn, this unit gets …": the duration comes first
       if (/^(until end of (turn|that battle|the battle|your opponent'?s (?:next )?turn|your next turn|the fight|this fight))$/i.test(t)) { ctx.dur = durOf(t); continue; }
       if (/^if no (?:units?|cards?) (?:were|was) (?:retired|discarded|bound|called)$/i.test(t)) { onlyIf = "didNot"; continue; }
-      const wasM = t.match(/^if an? (.+?) was (?:discarded|retired|revealed|bound|put into [a-z ]+)$/i);
+      const wasM = t.match(/^if an? (.+?) was (?:discarded|retired|revealed|bound|put into [a-z ]+|\[soul-charge\]d?|soul-charged|called)(?: (?:by|with) this effect)?$/i);
       if (wasM && filt(wasM[1]) && Object.keys(filt(wasM[1])).length) { onlyIf = "match"; onlyFilter = filt(wasM[1]); continue; }
       if (/^if you \[stand\] (?:this unit|it)$/i.test(t)) { onlyIf = "did"; continue; }
       const iff = t.match(/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched|rode|imprisoned|healed)( not)?\b[^,]*?(?=,|$)/i);
