@@ -284,6 +284,8 @@ const Game = (() => {
   const zoneOK = (abZone, zone) => !abZone || abZone === "any" || abZone === zone || (abZone === "VC/RC" && (zone === "VC" || zone === "RC"));
   // card zones that hold abilities of their own (CR 11.1.4): [AUTO](Hand), [ACT](Drop), [CONT](G zone)…
   const CARD_ZONES = { hand: "hand", drop: "drop", soul: "soul", damage: "damage", bind: "bind", G: "gUp", crest: "crest" };
+  // card zones whose cards have abilities: the G zone has face up (gUp) and face down (gDeck) cards; both answer to "G Zone" abilities
+  const ZONE_LISTS = [...Object.entries(CARD_ZONES), ["G", "gDeck"]];
   // column of a circle; the opponent's facing column is mirrored (your left faces their right)
   const COL = { fl: "L", bl: "L", vc: "C", bc: "C", fr: "R", br: "R" };
   const MIRROR = { L: "R", C: "C", R: "L" };
@@ -344,7 +346,7 @@ const Game = (() => {
     };
     for (const k of unitsOf(pi)) for (const x of abilitiesAt(pi, k)) add(x.card, k, zoneOf(k), [x]);
     for (const card of (p.orderZone || []).filter((c) => !c.faceDown)) add(card, null, "OZ", ownAbilities(card)); // set orders in the order zone (CR 4.17)
-    for (const [zone, z] of Object.entries(CARD_ZONES)) for (const card of p[z] || []) { // [CONT](G zone) / (Drop)…
+    for (const [zone, z] of Object.entries(CARD_ZONES)) for (const card of p[z] || []) { // [CONT](G zone) / (Drop)… (face up G zone cards only)
       if (!(card.down && zone === "damage") && (card.abilities || []).some((ab) => ab.kind === "CONT" && ab.zone === zone)) add(card, null, zone, ownAbilities(card).filter((x) => x.ab.zone === zone));
     }
     return sum + mods(pi, key, stat);
@@ -376,6 +378,11 @@ const Game = (() => {
     return false;
   }
   // player rules: S.rules (timed) + CONT "playerRule" effects. {pi: the player it binds, what, filter}
+  // a [CONT] effect of this type on the unit (its conditions met)
+  function contHas(pi, key, type) {
+    if (!P(pi).slots[key]) return false;
+    return abilitiesAt(pi, key).some(({ ab, card }) => ab.kind === "CONT" && zoneOK(ab.zone, zoneOf(key)) && (ab.effects || []).some((x) => x.type === type) && (ab.conds || []).every((c) => condOK(pi, c, { key, card })));
+  }
   function ruleOn(pi, what, card) {
     const ok = (r) => r.pi === pi && r.what === what && (!card || match(card, r.filter));
     if ((S.rules || []).some(ok)) return true;
@@ -708,7 +715,7 @@ const Game = (() => {
   // abilities on cards in the hand, drop, soul, damage zone, bind zone or G zone (face up) that listen to this event
   function collectZones(pi, event, extra = {}) {
     const p = P(pi);
-    for (const [zone, z] of Object.entries(CARD_ZONES)) for (const card of p[z] || []) {
+    for (const [zone, z] of ZONE_LISTS) for (const card of p[z] || []) {
       if (card.down && zone === "damage") continue; // face-down cards have no abilities
       if (card === extra.card) continue; // already collected as the event's own card
       if ((card.abilities || []).some((ab) => ab.kind === "AUTO" && ab.when === event && ab.zone === zone)) collect(pi, null, event, { ...extra, card, zone });
@@ -1191,6 +1198,20 @@ const Game = (() => {
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
       // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
+      case "strideSelf": { // "[Stride] this card on your (VC) from face down" (an ability of a G unit in your G zone)
+        const g = ctx.card;
+        const i = g ? p.gDeck.indexOf(g) : -1;
+        if (i < 0) { log("That G unit isn't face down in your G zone"); return { count: 0 }; }
+        p.gDeck.splice(i, 1);
+        const vs = p.slots.vc;
+        if (vs.card.type === "g") toGZone(p, vs.card); // a G unit already on (VC) goes face up to the G zone; the heart stays
+        else { vs.heart = vs.card; vs.heartMate = vs.mate || null; vs.mate = null; }
+        vs.card = g;
+        log(`⇧ ${p.name} strides ${g.name} (heart: ${vs.heart ? vs.heart.name : "-"})`);
+        collect(pi, "vc", "onStride");
+        collectAll(pi, "allyPlacedVC", { from: "G", subject: g });
+        return { count: 1, cards: [g] };
+      }
       case "personaRide": { // "you activate persona ride" (CR 7.15.1.4): front row +10000 this turn, draw a card
         p.personaFront = true; p.personaThisTurn = true; draw(pi, 1);
         log(`✨ ${p.name} activates Persona Ride! Draw 1, front row +10000 this turn`);
@@ -1711,7 +1732,7 @@ const Game = (() => {
   // ACT abilities of cards in your hand / drop / soul / damage / bind / G zone ([ACT](Drop) etc.)
   function zoneActs(pi) {
     const p = P(pi), out = [];
-    for (const [zone, z] of Object.entries(CARD_ZONES)) for (const card of p[z] || []) {
+    for (const [zone, z] of ZONE_LISTS) for (const card of p[z] || []) {
       if (card.down && zone === "damage") continue;
       (card.abilities || []).forEach((ab, i) => {
         if (ab.kind === "ACT" && ab.zone === zone && !ab.granted)
@@ -1722,7 +1743,7 @@ const Game = (() => {
   }
   const activateZone = (uid, i) => run(async () => {
     const pi = S.battle && S.controller !== S.active ? S.controller : S.active, p = P(pi);
-    for (const [zone, z] of Object.entries(CARD_ZONES)) {
+    for (const [zone, z] of ZONE_LISTS) {
       const card = (p[z] || []).find((c) => c.uid === uid);
       if (!card) continue;
       const ab = (card.abilities || [])[i];
@@ -2123,7 +2144,10 @@ const Game = (() => {
         collectAll(ai, "allyHit", { subject: P(ai).slots[b.att] && P(ai).slots[b.att].card }); // "when your vanguard's attack hits"
         await settle();
       }
-    } else if (!over() && P(ai).slots[b.att]) await fire(ai, b.att, "attackNoHit");
+    } else if (!over() && P(ai).slots[b.att]) {
+      if (contHas(ai, b.att, "hitsAnyway")) { collect(ai, b.att, "attackHit"); log(`${P(ai).slots[b.att].card.name}'s "when attack hits" abilities activate anyway`); }
+      await fire(ai, b.att, "attackNoHit");
+    }
     await endBattle();
   });
   // N damage checks for player di (from an attack, or "deal one damage" by an effect)

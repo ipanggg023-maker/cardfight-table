@@ -1074,6 +1074,8 @@ const TextParse = (() => {
     // after "reveal five cards from the top": "call all <X> to (GC) at [Rest] from among them"
     if (ctx.look && (m = t.match(/^call all (.*?) to \(GC\)(?: at \[rest\])?(?: from among them)?$/i))) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, n: 99, all: true, to: "GC", filter: filt(m[1]) || {}, rest: "drop", reveal: true }; ctx.lookMove = e; return [e]; }
     if (ctx.lookMove && /^put the rest into (?:your )?drop(?: zone)?$/i.test(t)) { ctx.lookMove.rest = "drop"; return []; }
+    if (/^\[stride\] this card on your \(vc\)(?: from face down)?$/i.test(t)) return ctx.strideRule ? [] : [{ type: "strideSelf" }];
+    if (/^this unit'?s "when (?:its |this unit'?s )?attack hits" (?:effects|abilities) activate even if the attack did not hit$/i.test(t)) return [{ type: "hitsAnyway" }];
     if (/^discard the top card of your deck$/i.test(t)) return [{ type: "move", from: "deckTop", look: 1, n: 1, all: true, to: "drop" }];
     if (/^(this card is (also )?regarded as "[^"]+"|this card is (regarded as being )?from all clans.*)$/i.test(t)) return []; // card fields (Also named / All clans)
     if (/^this unit is (also )?regarded as "[^"]+"$/i.test(t) && ctx.unconditional) return []; // card field Also named
@@ -1255,6 +1257,7 @@ const TextParse = (() => {
   // ---------- one ability ----------
   const ZONES = { vc: "VC", rc: "RC", "vc/rc": "VC/RC", gc: "GC", "vc/rc/gc": "VC/RC", hand: "hand", drop: "drop", "drop zone": "drop", soul: "soul", "damage zone": "damage", damage: "damage", "bind zone": "bind", "g zone": "G", "order zone": "OZ", "crest zone": "crest" };
   function ability(raw, kindHint, extraAbs) {
+    if (/^\s*\[Stride\]\s*[-‐－]\s*Stride Step\s*[-‐－]/i.test(norm(raw))) return { kind: "CONT", zone: "G", once: "", conds: [], costs: [], effects: [], keyword: "Stride", strideRule: true };
     // orders: "Play this with [COST][Counter-Blast 1]!" is the cost of playing the order
     let playCosts = [];
     const text = norm(raw).replace(/play this with \[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*!\s*/i, (m0, inner) => { const r = costsIn(inner); if (r.costs.length && !r.unread.length) { playCosts = r.costs; return ""; } return m0; });
