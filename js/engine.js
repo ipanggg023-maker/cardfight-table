@@ -295,10 +295,26 @@ const Game = (() => {
       case "paidCount": return m(ctx.paid); // "the number of cards [Soul-Blast] / discarded for this cost"
       case "myOZGradeSum": return (p.orderZone || []).filter((c) => !c.faceDown && match(c, f, env)).reduce((t, c) => t + (+c.grade || 0), 0); // "the sum of the grades of set orders in your order zone"
       case "lastMatch": return (ctx.last && ctx.last.cards ? ctx.last.cards : []).filter((c) => match(c, f, env)).length;
+      case "myPlantGauge": return plantCards(pi).length; // "if you have six or more plant gauges"
       default: return 0;
     }
   }
-  const times = (pi, e, ctx) => (e.per ? countOf(pi, e.per, e.perFilter, ctx) : 1); // "for each …"
+  const times = (pi, e, ctx) => (e.per ? Math.floor(countOf(pi, e.per, e.perFilter, ctx) / Math.max(1, +e.perDiv || 1)) : 1); // "for each …" / "for every three …"
+  // Plant gauge (Estacion): face-up cards under your Blast token (slot.gauge, card.plant)
+  const blastKeys = (pi) => rcOf(pi).filter((k) => P(pi).slots[k] && P(pi).slots[k].card.token && /^blast$/i.test(P(pi).slots[k].card.name));
+  const plantCards = (pi) => unitsOf(pi).flatMap((k) => (P(pi).slots[k] && P(pi).slots[k].gauge ? P(pi).slots[k].gauge.filter((c) => c.plant) : []));
+  async function putPlant(pi, card) { // "put it face up as your Blast token's plant gauge"
+    const ks = blastKeys(pi);
+    if (!ks.length) return false;
+    const [k] = ks.length === 1 ? ks : (await chooseUnits(pi, "Put the plant gauge under which Blast token?", ks.map((key) => ({ pi, key })), 1)).map((u) => u.key);
+    const sl = P(pi).slots[k || ks[0]];
+    card.down = false; card.plant = true;
+    (sl.gauge = sl.gauge || []).push(card);
+    log(`🌱 ${card.name} becomes a plant gauge (${plantCards(pi).length})`);
+    collectAll(pi, "plantGauged", { subject: card });
+    return true;
+  }
+  const inGauge = (pi, card) => unitsOf(pi).some((k) => P(pi).slots[k] && (P(pi).slots[k].gauge || []).includes(card));
   const cmp = (a, op, b) => (op === "le" ? a <= b : op === "eq" ? a === b : op === "lt" ? a < b : op === "gt" ? a > b : a >= b);
   const zoneOf = (key) => (key === "vc" ? "VC" : "RC");
   const zoneOK = (abZone, zone) => !abZone || abZone === "any" || abZone === zone || (abZone === "VC/RC" && (zone === "VC" || zone === "RC"));
@@ -588,6 +604,8 @@ const Game = (() => {
       case "EB": return p.energy >= n;
       case "reveal": return c.from === "self" ? !!ctx.card : (p[ZONE_OF[c.from] || c.from] || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
       case "lockRC": return rcOf(pi).filter((k) => p.slots[k] && !p.slots[k].locked && match(p.slots[k].card, c.filter, { pi, ctx })).length >= n;
+      case "discardPlant": return plantCards(pi).length >= n; // "discard two plant gauges"
+      case "rcToPlant": return blastKeys(pi).length > 0 && rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key && !p.slots[k].locked).length >= (+c.min || n || 1);
       case "payGauge": { const own = ctx.key && p.slots[ctx.key] && p.slots[ctx.key].gauge ? p.slots[ctx.key].gauge.length : 0; return own >= n || unitsOf(pi).reduce((t, k) => t + ((p.slots[k] && p.slots[k].gauge) || []).length, 0) >= n; }
       case "discard": return p.hand.filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
       case "move": return moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : n);
@@ -616,6 +634,26 @@ const Game = (() => {
         const shown = await chooseCards(pi, `Reveal ${n} for the cost`, zone.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
         log(`${p.name} reveals ${shown.map((x) => x.name).join(", ")}`);
         ctx.revealed = shown;
+        break;
+      }
+      case "discardPlant": { // "[COST][discard two plant gauges]"
+        const all = plantCards(pi);
+        const picked = all.length <= n ? all : await chooseCards(pi, `Discard ${n} plant gauge${n > 1 ? "s" : ""}`, all, n, n);
+        for (const c of picked) {
+          for (const k of unitsOf(pi)) { const g = p.slots[k] && p.slots[k].gauge; if (g && g.includes(c)) g.splice(g.indexOf(c), 1); }
+          c.plant = false; p.drop.push(c);
+          collect(pi, null, "plantDiscarded", { card: c, zone: "drop", subject: c });
+        }
+        (ctx.paid = ctx.paid || []).push(...picked);
+        log(`${p.name} discards ${picked.length} plant gauge${picked.length > 1 ? "s" : ""}`);
+        break;
+      }
+      case "rcToPlant": { // "[COST][Put two or more, up to three other rear-guards face up as this unit's plant gauge]"
+        const ks = rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key && !p.slots[k].locked);
+        const lo = +c.min || n || 1, hi = Math.max(lo, +c.max || lo);
+        const ids = await choose(pi, `Put ${lo}${hi > lo ? "–" + hi : ""} rear-guards into the plant gauge`, ks.map((key) => ({ id: key, label: `${slotName(key)}: ${p.slots[key].card.name}`, card: p.slots[key].card })), lo, Math.min(hi, ks.length));
+        const us = ids.map((key) => ({ pi, key }));
+        for (const u of us) { const sl = p.slots[u.key]; if (!sl) continue; const card = sl.card; leaveCircle(pi, u.key, "drop"); p.drop.splice(p.drop.indexOf(card), 1); await putPlant(pi, card); }
         break;
       }
       case "payGauge": { // the gauge of this unit first, else choose a unit with gauge
@@ -750,7 +788,7 @@ const Game = (() => {
   // choose, then the other player; abilities triggered meanwhile join the queue.
   let depth = 0, inCheck = false, qN = 0;
   // events about a card that just changed place: its printed zone is where it was, so the zone isn't checked
-  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed", "boundFromRC", "rcToDeck", "replacedBy", "ozToDrop"]);
+  const ZONE_FREE = new Set(["overDrive", "leftGC", "soulToDrop", "rcToSoul", "returnedHand", "originalDress", "armed", "boundFromRC", "rcToDeck", "replacedBy", "ozToDrop", "plantDiscarded"]);
   function collect(pi, key, event, extra = {}) {
     if (over()) return;
     const list = extra.card ? ownAbilities(extra.card) : key ? abilitiesAt(pi, key) : [];
@@ -939,7 +977,8 @@ const Game = (() => {
   // e.onlyIf: "did" / "didNot" / "match" (its cards include e.onlyFilter) / "noMatch" → "if you did…", "if a grade 3 was revealed…".
   // A "chooseOpts" step asks which option letters (e.opt = "A".."D" on the following steps) to perform.
   async function runEffects(pi, effs, ctx) {
-    let last = null, opts = null;
+    let last = ctx.laterLast || null, opts = null;
+    const laterBatch = {}; // the steps for "the end of that battle / turn" run together then (so "if you paid" sees the cost)
     for (const e of effs) {
       if (over()) break;
       if (e.type === "chooseOpts") {
@@ -954,7 +993,11 @@ const Game = (() => {
         continue;
       }
       if (e.opt && !(opts && opts.has(e.opt))) continue;
-      if (e.later) { (S.later = S.later || []).push({ pi, e: { ...e, later: "" }, ctx: { ...ctx, last }, at: e.later, turn: S.turn }); continue; }
+      if (e.later) {
+        if (!laterBatch[e.later]) (S.later = S.later || []).push(laterBatch[e.later] = { pi, effs: [], ctx: { ...ctx, last, laterLast: last }, at: e.later, turn: S.turn });
+        laterBatch[e.later].effs.push({ ...e, later: "" });
+        continue;
+      }
       if (e.ifCond && !condOK(pi, e.ifCond, ctx)) continue; // "…, and if X, Y" (a later step checks it when it runs) // "at the end of that battle / turn, …"
       if (e.onlyIf) {
         const L = last || { count: 0, cards: [] };
@@ -963,6 +1006,7 @@ const Game = (() => {
         if (ok === false) continue;
       }
       let step = e;
+      if (e.lookMore && (!e.lookMore.cond || condOK(pi, e.lookMore.cond, ctx))) step = { ...step, look: +e.lookMore.n };
       if (e.nCount) { const k = countOf(pi, e.nCount.what, e.nCount.filter, { ...ctx, last }); if (k <= 0) { last = { count: 0, cards: [] }; continue; } step = { ...e, n: k }; }
       const r = await effect(pi, step, { ...ctx, last });
       last = r && typeof r === "object" ? { count: r.count || 0, cards: r.cards || [] } : { count: 1, cards: [] };
@@ -974,7 +1018,7 @@ const Game = (() => {
     const due = (S.later || []).filter((x) => x.at === at || (at === "turn" && x.at === "battle"));
     if (!due.length) return;
     S.later = (S.later || []).filter((x) => !due.includes(x));
-    for (const x of due) { if (over()) break; if (x.e.ifCond && !condOK(x.pi, x.e.ifCond, x.ctx)) continue; log(`⏰ ${x.ctx.card ? x.ctx.card.name + ": " : ""}${SCHEMA.effects[x.e.type] ? SCHEMA.effects[x.e.type].text(x.e) : x.e.type}`); depth++; try { await effect(x.pi, x.e, x.ctx); } finally { depth--; } }
+    for (const x of due) { if (over()) break; if (x.effs) { log(`⏰ ${x.ctx.card ? x.ctx.card.name + ": " : ""}${x.effs.map((e) => (SCHEMA.effects[e.type] ? SCHEMA.effects[e.type].text(e) : e.type)).join(", then ")}`); depth++; try { await runEffects(x.pi, x.effs, x.ctx); } finally { depth--; } continue; } if (x.e.ifCond && !condOK(x.pi, x.e.ifCond, x.ctx)) continue; log(`⏰ ${x.ctx.card ? x.ctx.card.name + ": " : ""}${SCHEMA.effects[x.e.type] ? SCHEMA.effects[x.e.type].text(x.e) : x.e.type}`); depth++; try { await effect(x.pi, x.e, x.ctx); } finally { depth--; } }
     await settle();
   }
   // ---------- Move cards (Ability Language v2): any zone → any zone ----------
@@ -1187,9 +1231,13 @@ const Game = (() => {
           log(`${p.name} puts ${cnt > 1 ? cnt + " " : "a "}${def.name} token${cnt > 1 ? "s" : ""} into the order zone`);
           return { count: out.length, cards: out };
         }
+        if (e.toPlant && blastKeys(pi).length) { // "when a Plant token would be placed on (RC) by this effect, put it face up as your Blast token's plant gauge instead"
+          for (let i = 0; i < cnt; i++) { const t = { ...inst(def), token: true }; await putPlant(pi, t); out.push(t); }
+          return { count: out.length, cards: out };
+        }
         for (let i = 0; i < cnt; i++) {
           const t = { ...inst(def), token: true };
-          const keys = e.where === "empty" ? rcOf(pi).filter((k) => !p.slots[k]) : rcOf(pi);
+          const keys = e.where === "empty" ? rcOf(pi).filter((k) => !p.slots[k]) : e.where === "bc" ? ["bc"] : rcOf(pi);
           if (!keys.length) break;
           const [k] = keys.length === 1 ? keys : await choose(pi, `Call ${t.name} (token) to which circle?`, keys.map((k) => ({ id: k, label: `${slotName(k)}${p.slots[k] ? " (replace " + p.slots[k].card.name + ")" : " (empty)"}` })), 1, 1);
           await place(pi, t, k, "token");
@@ -1221,6 +1269,19 @@ const Game = (() => {
         log(`◆ ${ctx.card.name}: hollowed`);
         collect(pi, k, "hollowed");
         return { count: 1, cards: [ctx.card] };
+      }
+      case "plantGauge": { // "Put this card face up as your Blast token's plant gauge"
+        const card = e.from === "self" ? ctx.card : null;
+        if (!card || !(await putPlant(pi, card))) return { count: 0, cards: [] };
+        return { count: 1, cards: [card] };
+      }
+      case "chooseColumn": { // "choose a column" → that column's rear-guards are "them" for the next steps; e.more {n, cond}: "If …, choose two instead of one"
+        const k = e.more && (!e.more.cond || condOK(pi, e.more.cond, ctx)) ? +e.more.n || 2 : Math.max(1, +e.n || 1);
+        const opt = [["L", "Left column"], ["C", "Center column"], ["R", "Right column"]].map(([id, label]) => ({ id, label }));
+        const cols = new Set(await choose(pi, k > 1 ? `Choose ${k} columns` : "Choose a column", opt, k, k));
+        const cards = rcOf(pi).filter((key) => cols.has(COL[key]) && p.slots[key] && !p.slots[key].locked).map((key) => p.slots[key].card);
+        log(`${p.name} chooses the ${[...cols].map((c) => ({ L: "left", C: "center", R: "right" })[c]).join(" and ")} column${cols.size > 1 ? "s" : ""}`);
+        return { count: cols.size, cards };
       }
       case "setState": { // "they become [X] state", "in harmony", "engorged"…
         const us = await pickUnits(pi, e, ctx);
@@ -1933,6 +1994,7 @@ const Game = (() => {
       }
       log(`${card.name}: no vanguard named "${card.armsName}", it goes to the drop`);
     }
+    if (inGauge(pi, card)) return; // it became a plant gauge
     if (card.setOrder) { p.orderZone.push(card); log(`${card.name} goes to the order zone`); collect(pi, null, "toOrderZone", { card, zone: "OZ", subject: card }); collectAll(pi, "cardToOrderZone", { subject: card }); await settle(); return; } // set order (CR 4.17)
     p.drop.push(card);
   });

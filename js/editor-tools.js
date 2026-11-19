@@ -375,3 +375,43 @@ $("#histBox").addEventListener("click", (e) => {
   renderCard();
   toast("Old version loaded: check it, then Save");
 });
+
+// ↻ Re-read all: every card's own text through today's reader. A card changes only when its abilities come out
+// different and with no more hand steps (✋ Manual) than it has now, so blocks fixed by hand are not made worse.
+// JSON with sorted keys: the database stores objects with its own key order
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
+function rereadPlan(cards) {
+  const manual = (abs) => (abs || []).reduce((n, a) => n + [...(a.effects || []), ...(a.costs || [])].filter((e) => e.type === "manual").length, 0);
+  const out = [];
+  for (const c of cards) {
+    if (c.deleted || !c.text || !String(c.text).trim()) continue;
+    let r;
+    try { r = TextParse.parse(c.text, { type: (c.abilities || []).some((a) => a.kind === "BLITZ") ? "blitz order" : c.type }); } catch { continue; }
+    const abilities = (r.abilities || []).map((a) => { const x = { ...a }; delete x.unread; return x; });
+    const before = manual(c.abilities), after = manual(abilities);
+    if (after > before || canon(abilities) === canon(c.abilities || [])) continue;
+    // icon / card-rule flags the reader found and the card doesn't have yet
+    const flags = {};
+    for (const k of ["kai", "aichi", "personaFromKai", "personaFromAichi"]) if (r[k] && !c[k]) flags[k] = true;
+    out.push({ card: c, next: { ...c, ...flags, abilities }, fewer: before - after });
+  }
+  return out;
+}
+const rereadBtn = document.getElementById("rereadAll");
+if (rereadBtn) {
+  if (typeof DB.canEditCards === "function" && !DB.canEditCards()) rereadBtn.hidden = true;
+  rereadBtn.addEventListener("click", async () => {
+    if (typeof dirty !== "undefined" && dirty && !window.confirm("The open card has unsaved changes. Re-read anyway (they stay unsaved)?")) return;
+    const plan = rereadPlan(await DB.all("cards"));
+    if (!plan.length) return toast("Every card already matches today's reader");
+    const fewer = plan.reduce((n, p) => n + p.fewer, 0);
+    if (!window.confirm(`${plan.length} card(s) get the new reading (${fewer} hand step(s) fewer in total). Each change is kept in 🕘 History. Go ahead?`)) return;
+    await DB.putMany("cards", plan.map((p) => p.next));
+    await reload();
+    // the open card: show the new reading (with unsaved edits it stays as it is; saving it then keeps its own abilities)
+    const open = typeof cur !== "undefined" && cur && plan.find((p) => p.card.id === cur.id);
+    if (open && !dirty) { cur = cards.find((c) => c.id === cur.id) || cur; renderCard(); }
+    renderList();
+    toast(`Re-read ${plan.length} card(s)`);
+  });
+}

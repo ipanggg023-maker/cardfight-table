@@ -442,7 +442,8 @@ $("#cardForm").addEventListener("click", async (e) => {
       // the official stat line ("Normal Unit | Dragon Empire | … | Grade 3 | Power 13000 | …") is read into fields, not kept as text
       const abText = TextParse.splitStats(t).rest;
       if (abText && cur.abilities.length && !window.confirm("Replace the current abilities with the ones read from the text?")) return;
-      const r = TextParse.parse(t, { type: cur.type });
+      // a blitz order is only known from its saved abilities (the text alone reads as a normal order)
+      const r = TextParse.parse(t, { type: (cur.abilities || []).some((a) => a.kind === "BLITZ") ? "blitz order" : cur.type });
       const { abilities, ...statsFound } = r;
       abilities.forEach((a) => delete a.unread);
       // re-reading text of an imported card keeps its printed stats; only flags and abilities are taken
