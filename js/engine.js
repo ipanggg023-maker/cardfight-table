@@ -422,6 +422,7 @@ const Game = (() => {
     if (!P(pi).slots[key]) return false;
     return abilitiesAt(pi, key).some(({ ab, card }) => ab.kind === "CONT" && zoneOK(ab.zone, zoneOf(key)) && (ab.effects || []).some((x) => x.type === type) && (ab.conds || []).every((c) => condOK(pi, c, { key, card })));
   }
+  function ozNote(pi, card, byAbility) { const p = P(pi); if (!p.ozLog || p.ozLog.turn !== S.turn) p.ozLog = { turn: S.turn, list: [] }; p.ozLog.list.push({ card, byAbility }); }
   function ruleOn(pi, what, card) {
     const ok = (r) => r.pi === pi && r.what === what && (!card || match(card, r.filter));
     if ((S.rules || []).some(ok)) return true;
@@ -512,6 +513,13 @@ const Game = (() => {
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
       case "world": { const names = String(c.text || "").toLowerCase().split("|").map((x) => x.trim()); if (names.includes(worldOf(pi).toLowerCase())) return true; return names.includes((p.world || "").toLowerCase()) || names.some((n) => p.states && p.states[n] === S.turn); } // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
+      case "rodeFromHand": return ctx.key === "vc" && ctx.from === "hand"; // "If you rode this unit from hand"
+      case "placedBy": return !!ctx.byCard && match(ctx.byCard, c.filter, { pi }); // "If this unit was placed by the ability of "X""
+      case "lastDid": return !!(ctx.last && ctx.last.count > 0); // "If you revealed a card, or …"
+      case "ozPutThisTurn": { // "if your Strategy card was put into the order zone this turn" / "your card was not put in your order zone by a card's ability this turn"
+        const log = p.ozLog && p.ozLog.turn === S.turn ? p.ozLog.list : [];
+        return log.some((x) => (!c.byAbility || x.byAbility) && match(x.card, c.filter, { pi }));
+      }
       case "sungThisTurn": return p.sungTurn === S.turn; // "if your vanguard sung a Song this turn"
       case "operatedThisTurn": return (p.operatedTurn === S.turn) === (c.not ? false : true); // "if you (did not) operate a Product this turn"
       case "markers": { // "if this unit is on a (RC) with a Dragontree marker", "if you have three or more Dragontree markers"
@@ -538,7 +546,7 @@ const Game = (() => {
       case "drop": return p.drop.length >= n;
       case "hand": return p.hand.length >= n;
       case "persona": return p.personaThisTurn;
-      case "playedOrder": return p.ordersThisTurn > 0;
+      case "playedOrder": return c.filter ? (p.playedLog && p.playedLog.turn === S.turn ? p.playedLog.cards : []).some((x) => match(x, c.filter, { pi })) : p.ordersThisTurn > 0;
       case "targetVC": return !!S.battle && S.battle.tgt === "vc";
       case "targetRC": return !!S.battle && S.battle.tgt !== "vc";
       case "selfFront": return frontOf(pi).includes(ctx.key);
@@ -746,6 +754,14 @@ const Game = (() => {
   // ---------- resolving abilities ----------
   const usedKey = (card, i) => `${card.uid}:${i}`;
   const gameKey = (pi, card, i) => `${pi}:${card.name}:${i}`;
+  function costsOf(pi, ab, ctx) {
+    const cs = ab.costs || [];
+    const ci = ab.costIf;
+    if (!ci || !condOK(pi, ci.cond, ctx)) return cs;
+    if (ci.lose) return [];
+    if (ci.reduce) return cs.map((c) => (c.type === ci.reduce.type ? { ...c, n: Math.max(0, (+c.n || 1) - (+ci.reduce.n || 1)) } : c)).filter((c) => !(c.type === ci.reduce.type && c.n === 0));
+    return cs;
+  }
   function ready(pi, card, ab, i, ctx) {
     const pl = P(pi);
     if (card.regalis && pl.regalisUsed >= 1) return false;       // Regalis Piece: once per game (CR 14.51)
@@ -760,7 +776,7 @@ const Game = (() => {
       const vs = P(pi).slots.vc;
       if (vs.mate || vs.card.type === "g" || P(pi).legionUsed.includes(vs.card.uid)) return false;
     }
-    return (ab.costs || []).every((c) => canPay(pi, c, ctx));
+    return costsOf(pi, ab, ctx).every((c) => canPay(pi, c, ctx));
   }
   async function resolve(pi, card, ab, i, ctx, ask) {
     if (!ready(pi, card, ab, i, ctx)) return false;
@@ -776,8 +792,10 @@ const Game = (() => {
     S.resolving = { pi, uid: card.uid, kind: ab.kind, n: ((S.resolving && S.resolving.n) || 0) + 1 }; // the screen plays a cut-in when n changes
     depth++; // abilities triggered while this resolves wait for the next check timing
     try {
-      for (const c of ab.costs || []) await pay(pi, c, ctx);
-      await runEffects(pi, ab.effects || [], { ...ctx, card });
+      for (const c of costsOf(pi, ab, ctx)) await pay(pi, c, ctx);
+      const prevCause = S.cause;
+      S.cause = { pi, card }; // "placed by the ability of X"
+      try { await runEffects(pi, ab.effects || [], { ...ctx, card }); } finally { S.cause = prevCause; }
     } finally { depth--; }
     await settle();
     return true;
@@ -901,7 +919,7 @@ const Game = (() => {
         log(`♪ ${sl.card.name} and ${card.name} are in harmony`);
       }
     }
-    collect(pi, key, "placedRC", { from, subject: card });
+    collect(pi, key, "placedRC", { from, subject: card, ...(S.cause ? { byCard: S.cause.card, byPi: S.cause.pi } : {}) });
     collect(pi, key, "placed", { from, subject: card }); // "when placed" (VC or RC)
     for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key, from, subject: card });
     collectZones(pi, "allyPlacedRC", { placedKey: key, from, subject: card });
@@ -998,7 +1016,7 @@ const Game = (() => {
         laterBatch[e.later].effs.push({ ...e, later: "" });
         continue;
       }
-      if (e.ifCond && !condOK(pi, e.ifCond, ctx)) continue; // "…, and if X, Y" (a later step checks it when it runs) // "at the end of that battle / turn, …"
+      if (e.ifCond && !condOK(pi, e.ifCond, { ...ctx, last })) continue; // "…, and if X, Y" (a later step checks it when it runs) // "at the end of that battle / turn, …"
       if (e.onlyIf) {
         const L = last || { count: 0, cards: [] };
         const hit = (L.cards || []).some((c) => match(c, e.onlyFilter, { pi, ctx }));
@@ -1077,7 +1095,7 @@ const Game = (() => {
       case "removed": q.removed.push(c); break;
       case "damageUp": c.down = false; q.damage.push(c); break;
       case "damageDown": c.down = true; q.damage.push(c); break;
-      case "orderZone": q.orderZone.push(c); break;
+      case "orderZone": q.orderZone.push(c); ozNote(side, c, true); break;
       case "rideDeck": q.ride.push(c); break;
       case "gUp": c.down = false; q.gUp.push(c); break; // "put this unit into your G zone face up"
       case "automod": c.down = false; q.automod.push(c); log(`⚙ ${c.name} becomes an AutoMOD gauge`); break;
@@ -1275,6 +1293,19 @@ const Game = (() => {
         if (!card || !(await putPlant(pi, card))) return { count: 0, cards: [] };
         return { count: 1, cards: [card] };
       }
+      case "revealPick": { // "choose a grade 3 card … from your ride deck, and you may reveal it" (it stays there)
+        const zone = p[ZONE_OF[e.from] || e.from] || [];
+        const cand = zone.filter((c) => match(c, e.filter, { pi, ctx }));
+        if (!cand.length) return { count: 0, cards: [] };
+        const got = await chooseCards(pi, `Reveal a card from your ${e.from === "rideDeck" ? "ride deck" : e.from}${e.upTo ? " (or none)" : ""}`, cand, e.upTo ? 0 : 1, 1);
+        if (got.length) log(`${p.name} reveals ${got.map((c) => c.name).join(", ")}`);
+        return { count: got.length, cards: got };
+      }
+      case "freeRide": { // "during the ride phase of your next turn, when you would ride from ride deck, you can ride without discarding a card from hand"
+        p.freeRideTurn = S.turn + 2;
+        log(`${p.name} can ride from the ride deck without discarding next turn`);
+        return { count: 1 };
+      }
       case "chooseColumn": { // "choose a column" → that column's rear-guards are "them" for the next steps; e.more {n, cond}: "If …, choose two instead of one"
         const k = e.more && (!e.more.cond || condOK(pi, e.more.cond, ctx)) ? +e.more.n || 2 : Math.max(1, +e.n || 1);
         const opt = [["L", "Left column"], ["C", "Center column"], ["R", "Right column"]].map(([id, label]) => ({ id, label }));
@@ -1349,7 +1380,7 @@ const Game = (() => {
       case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
       // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
       case "cbDiscount": { // "reduce the next [Counter-Blast] cost you pay (for that card's abilities) by ①"
-        const uid = e.forCard === "last" ? ((ctx.last && ctx.last.cards && ctx.last.cards[0]) || {}).uid : e.forCard === "self" ? ctx.card && ctx.card.uid : null;
+        const uid = e.forCard === "vc" ? p.slots.vc.card.uid : e.forCard === "last" ? ((ctx.last && ctx.last.cards && ctx.last.cards[0]) || {}).uid : e.forCard === "self" ? ctx.card && ctx.card.uid : null;
         p.cbDisc = { turn: S.turn, n: +e.n || 1, uid: uid == null ? null : uid };
         log(`${p.name}'s next Counter-Blast this turn is reduced by ${+e.n || 1}`);
         return { count: 1 };
@@ -1815,11 +1846,12 @@ const Game = (() => {
     if (S.phase !== "ride") return err("You can only ride in the ride phase");
     const pi = S.active, p = P(pi), next = nextRide(pi);
     if (!next) return err("No next grade in ride deck");
+    const free = p.freeRideTurn === S.turn && !discardUid;
     const hi = p.hand.findIndex((c) => c.uid === discardUid);
-    if (hi < 0) return err("Choose a card in hand to discard");
+    if (hi < 0 && !free) return err("Choose a card in hand to discard");
     const ok = rideAllowed(pi, next);
     if (ok !== true) return err(ok);
-    p.drop.push(p.hand.splice(hi, 1)[0]);
+    if (!free) p.drop.push(p.hand.splice(hi, 1)[0]); else log(`${p.name} rides from the ride deck without discarding`);
     p.ride.splice(p.ride.indexOf(next), 1);
     next.wasRideDeck = true;
     await doRide(pi, next, false);
@@ -1953,7 +1985,10 @@ const Game = (() => {
     const found = orderAbility(card, kind);
     if (!found) return err(guarding ? "This is not a blitz order" : "This is not a normal order");
     const ctx = { key: null, zone: src === p.drop ? "drop" : "hand", card };
+    if (guarding && ruleOn(pi, "cantBlitz", card)) return err("You can't play blitz orders now");
     src.splice(src.indexOf(card), 1);
+    if (!p.playedLog || p.playedLog.turn !== S.turn) p.playedLog = { turn: S.turn, cards: [] };
+    p.playedLog.cards.push(card);
     p.ordersThisTurn++;
     p.orderTurn = S.turn;
     // A second Regalis Piece goes to the drop without resolving (CR 14.51.2.2.1)
@@ -1995,7 +2030,7 @@ const Game = (() => {
       log(`${card.name}: no vanguard named "${card.armsName}", it goes to the drop`);
     }
     if (inGauge(pi, card)) return; // it became a plant gauge
-    if (card.setOrder) { p.orderZone.push(card); log(`${card.name} goes to the order zone`); collect(pi, null, "toOrderZone", { card, zone: "OZ", subject: card }); collectAll(pi, "cardToOrderZone", { subject: card }); await settle(); return; } // set order (CR 4.17)
+    if (card.setOrder) { p.orderZone.push(card); ozNote(pi, card, false); log(`${card.name} goes to the order zone`); collect(pi, null, "toOrderZone", { card, zone: "OZ", subject: card }); collectAll(pi, "cardToOrderZone", { subject: card }); await settle(); return; } // set order (CR 4.17)
     p.drop.push(card);
   });
 
@@ -2426,7 +2461,7 @@ const Game = (() => {
   return {
     FRONT, RC, UNITS, BACK_OF, frontOf, rcOf, unitsOf,
     newGame, state: () => S, setOnChange: (f) => (onChange = f), setPace: (f) => (pace = f), snapshot, load, checkTiming,
-    power, crit, faceUp, nextRide, boosterFor, canAttack, actList, attackPower, defensePower,
+    power, crit, faceUp, nextRide, rideFree: (pi) => P(pi).freeRideTurn === S.turn, boosterFor, canAttack, actList, attackPower, defensePower,
     answer, mulligan, rideFromDeck, rideFromHand, skipRide, call, move, activate, playOrder,
     toBattle, attack, guard, intercept, confirmGuard, endTurn, energyDraw, judgeOp, testOp, zoneActs, activateZone, overDress, xoverDress, dressTargets, orderZoneActs, activateOrderZone, stride, skipStride, gGuard, canStride, canGGuard, gFaceUp,
     driveOf, canBoostIcon, canInterceptIcon, trigPower, giftPower, worldOf,

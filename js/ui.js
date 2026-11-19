@@ -1265,7 +1265,7 @@ function onHand(uid) {
 function onAction(a, el) {
   switch (a) {
     case "mull": { const ids = [...ui.mull]; ui.mull = new Set(); return act(Game.mulligan(ids)); }
-    case "ride": ui.mode = "rideDiscard"; ui.sel = null; return render();
+    case "ride": if (Game.rideFree(Game.state().active)) return act(Game.rideFromDeck(null)); ui.mode = "rideDiscard"; ui.sel = null; return render(); // no discard this turn (an effect said so)
     case "skipRide": return act(Game.skipRide());
     case "cancel": ui.mode = null; ui.attacker = null; return render();
     case "play": { const id = ui.sel; ui.sel = null; return act(Game.playOrder(id)); }

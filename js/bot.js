@@ -100,7 +100,8 @@ const Bot = (() => {
   function rideMoves(view, seat) {
     const me = view.players[seat], out = [];
     const vcG = me.slots.vc ? +me.slots.vc.card.grade : 0;
-    if (me.hasRideDeck && (me.ride || []).some((c) => +c.grade === vcG + 1) && me.hand.length) out.push({ fn: "rideFromDeck", args: [discardPick(me.hand, vcG).uid] });
+    if (me.hasRideDeck && (me.ride || []).some((c) => +c.grade === vcG + 1) && Game.rideFree(seat)) out.push({ fn: "rideFromDeck", args: [null] }); // free ride (no discard)
+    else if (me.hasRideDeck && (me.ride || []).some((c) => +c.grade === vcG + 1) && me.hand.length) out.push({ fn: "rideFromDeck", args: [discardPick(me.hand, vcG).uid] });
     for (const c of [...me.hand].filter((x) => isUnit(x) && (+x.grade === vcG + 1 || +x.grade === vcG)).sort((a, b) => b.grade - a.grade || b.power - a.power)) out.push({ fn: "rideFromHand", args: [c.uid] });
     out.push({ fn: "skipRide", args: [] });
     return out;
