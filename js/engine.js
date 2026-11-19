@@ -718,6 +718,7 @@ const Game = (() => {
     if (ab.once === "unique") P(pi).uniqueUsed = true;
     if (card.regalis) P(pi).regalisUsed++;
     log(`✦ ${card.name}: ${describeAbility(ab)}`);
+    S.resolving = { pi, uid: card.uid, kind: ab.kind, n: ((S.resolving && S.resolving.n) || 0) + 1 }; // the screen plays a cut-in when n changes
     depth++; // abilities triggered while this resolves wait for the next check timing
     try {
       for (const c of ab.costs || []) await pay(pi, c, ctx);
@@ -1253,7 +1254,7 @@ const Game = (() => {
       case "retire": { const out = []; for (const u of await pickUnits(pi, e, ctx)) { if (u.pi !== pi && restricted(u.pi, u.key, "cantBeRetired")) { log(`${P(u.pi).slots[u.key].card.name} can't be retired`); continue; } if (u.key !== "vc" && P(u.pi).slots[u.key]) { const c = P(u.pi).slots[u.key].card; if (await retireUnit(u.pi, u.key, pi)) { log(`${c.name} is retired`); out.push(c); } } } return { count: out.length, cards: out }; }
       case "bind": for (const u of await pickUnits(pi, e, ctx)) { if (u.key !== "vc") { log(`${P(u.pi).slots[u.key].card.name} is bound`); bindUnit(u.pi, u.key, pi, ctx.key); } } break;
       case "drive": p.driveBonus += amt; break;
-      case "draw": draw(pi, n); return { count: n };
+      case "draw": draw(pi, n); await beat("draw"); return { count: n };
       case "CC": p.damage.filter((d) => d.down).slice(0, n).forEach((d) => (d.down = false)); break;
       case "SC": { const got = []; for (let i = 0; i < n && p.deck.length; i++) { const c = p.deck.pop(); p.soul.push(c); got.push(c); collect(pi, null, "toSoul", { card: c, zone: "soul", subject: c }); collectAll(pi, "soulCharged", { subject: c }); soulEvent(pi, c, "deck"); } return { count: got.length, cards: got }; }
       // Equip gauge (D-VS02…): "put the top card of your deck face down as an equip gauge for this unit"
@@ -1490,13 +1491,14 @@ const Game = (() => {
     const p = P(pi), o = P(1 - pi);
     const mine = unitsAt(pi, unitsOf(pi)), amt = trigPower(c);
     log(`${TRIG[t].icon} ${TRIG[t].name} trigger!`);
-    if (t === "front") { unitsAt(pi, frontOf(pi)).forEach((u) => (p.slots[u.key].pow += amt)); return; }
+    const shown = S.checking && S.checking.card === c ? (S.checking.trig = { type: t, power: amt, crit: 0, to: [] }) : { to: [] }; // what the screen shows for this trigger
+    if (t === "front") { unitsAt(pi, frontOf(pi)).forEach((u) => { p.slots[u.key].pow += amt; shown.to.push(u.key); }); return; }
     if (t === "over") draw(pi, 1);
     const [pu] = await chooseUnits(pi, `${TRIG[t].name} trigger: power +${amt.toLocaleString()} to which unit?`, mine, 1);
-    if (pu) p.slots[pu.key].pow += amt;
+    if (pu) { p.slots[pu.key].pow += amt; shown.to.push(pu.key); }
     if (t === "crit") {
       const [cu] = await chooseUnits(pi, "Critical trigger: critical +1 to which unit?", mine, 1);
-      if (cu) p.slots[cu.key].crit += 1;
+      if (cu) { p.slots[cu.key].crit += 1; shown.crit = 1; if (!shown.to.includes(cu.key)) shown.to.push(cu.key); }
     }
     if (t === "draw") draw(pi, 1);
     if (t === "stand") { // Premium: stand one of your rear-guards
@@ -1529,6 +1531,7 @@ const Game = (() => {
     S.reveal = [];
     log(`— Turn ${S.turn}: ${p.name} —`);
     draw(pi, 1);
+    await beat("draw");
     ruleActions();
     if (over()) return;
     S.phase = "ride";
@@ -1613,6 +1616,7 @@ const Game = (() => {
     vs.heartMate = vs.mate || null; vs.mate = null; // a legion stays a legion as the heart
     vs.card = g;
     log(`⇧ ${p.name} strides ${g.name} (heart: ${vs.heart.name}) · discarded total grade ${total}`);
+    await beat("keyRide");
     collect(pi, "vc", "onStride");
     collectAll(pi, "allyPlacedVC", { from: "G", subject: g });
     await settle();
@@ -1706,6 +1710,7 @@ const Game = (() => {
       p.soul.splice(p.soul.indexOf(old), 1);
       await callAnywhere(pi, old, "soul");
     }
+    await beat(+card.grade >= 3 || card.type === "g" ? "keyRide" : "ride"); // grade 3 / persona rides get the big moment
     collect(pi, null, "riddenUpon", { card: old, zone: "VC", riderKey: "vc", subject: card, from });
     collect(pi, null, "replacedBy", { card: old, zone: "VC", subject: card, placedKey: "vc" }); // "when your other unit is placed on this unit's circle"
     collect(pi, "vc", "placedVC", { from, subject: card });
@@ -1768,6 +1773,7 @@ const Game = (() => {
     if (key === "bc" && ruleOn(pi, "noBC", card)) return err("You can't put a unit card on the back row center (RC)");
     p.hand.splice(p.hand.indexOf(card), 1);
     await place(pi, card, key, "hand");
+    await beat("call");
   });
   const move = (a, b) => run(async () => {
     if (S.phase !== "main") return err("Move units in the main phase");
@@ -2128,6 +2134,7 @@ const Game = (() => {
     collectAll(di, "allyAttacked", { subject: P(di).slots[tgt].card, tgtKey: tgt }); // "when your (grade 3) vanguard is attacked" (also from hand)
     collectAll(ai, "allyAttacks", { subject: p.slots[att].card, attKey: att });
     collectZones(di, "oppAttacks", { subject: p.slots[att].card });
+    await beat("attack"); // the screen shows the attacker, the target and the powers
     await settle();
     if (!S.battle) return;
     if (!P(ai).slots[att] || !P(di).slots[tgt]) { log("A unit left the field; the battle ends"); await endBattle(); return; }
@@ -2190,20 +2197,23 @@ const Game = (() => {
     if (b.handGuards === 1 && ruleOn(di, "mustGuard2")) return err("You must call two or more cards from your hand to guard (or none)");
     if (b.handGuards > 0 && b.handGuards < 3 && ruleOn(di, "mustGuard3")) return err("You must call three or more cards from your hand to guard (or none)");
     S.controller = ai;
+    await beat("guardTotal"); // ATTACK vs DEFENSE, before any check
     if (b.att === "vc") {
       const n = driveOf(p.slots.vc.card) + p.driveBonus;
       for (let i = 0; i < n && !over(); i++) {
         if (!p.deck.length) { lose(ai, "deck is empty"); ruleActions(); return; }
         const c = p.deck.pop();
         S.reveal.push({ type: "Drive", card: c, pi: ai });
-        S.checking = { pi: ai, card: c, type: "Drive" }; // the card in the trigger check zone
+        S.checking = { pi: ai, card: c, type: "Drive", n: i + 1, of: n, stage: "shown", trig: null }; // the card in the trigger check zone
         log(`Drive check: ${c.name}`);
-        await beat("check");
+        await beat("checkShow");
         collectAll(ai, "driveReveal", { subject: c });
         collect(ai, null, "revealedDrive", { card: c, zone: "deck", subject: c });
         await trigger(ai, c, "drive");
+        if (S.checking && S.checking.trig) { S.checking.stage = "trigger"; await beat("checkTrigger"); }
         if (c.trigger === "over") { p.removed.push(c); log(`${c.name} is removed from the game`); } else p.hand.push(c);
         S.checking = null;
+        await beat("checkMove");
       }
     }
     if (over()) return;
@@ -2211,7 +2221,7 @@ const Game = (() => {
     const hit = !b.perfect && atk >= def;
     b.hit = hit; S.lastHit = { turn: S.turn, battle: S.battleNo || 0, hit }; // "if the attack did not hit during that battle"
     log(`${atk.toLocaleString()} vs ${def.toLocaleString()} → ${hit ? "HIT!" : "guarded"}`);
-    await beat(hit ? "hit" : "guard");
+    await beat("result");
     if (hit) {
       if (b.tgt === "vc") {
         await dealDamage(di, crit(ai, b.att));
@@ -2237,14 +2247,17 @@ const Game = (() => {
       if (!d.deck.length) { lose(di, "deck is empty"); ruleActions(); break; }
       const c = d.deck.pop();
       S.reveal.push({ type: "Damage", card: c, pi: di });
-      S.checking = { pi: di, card: c, type: "Damage" };
+      S.checking = { pi: di, card: c, type: "Damage", n: i + 1, of: n, stage: "shown", trig: null };
       log(`Damage check: ${c.name}`);
-      await beat("check");
+      await beat("checkShow");
       collectAll(di, "damageReveal", { subject: c });
       collect(di, null, "revealedDamage", { card: c, zone: "deck", subject: c });
       await trigger(di, c, "damage");
+      if (S.checking && S.checking.trig) { S.checking.stage = "trigger"; await beat("checkTrigger"); }
       S.checking = null;
       if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); S.dmgTurn = S.turn; collectAll(di, "toDamage", { subject: c }); }
+      await beat("checkMove");
+      if (d.damage.length >= 6) await beat("finish"); // the last damage: hold a moment before the game ends
       ruleActions(); // 6 damage is a rule action, checked after each damage check
     }
   }
