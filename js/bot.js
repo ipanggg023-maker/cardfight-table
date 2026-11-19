@@ -15,40 +15,183 @@ const Bot = (() => {
     return !S.busy && S.controller === seat;
   }
 
-  // ---------- decisions (Task 1: simple placeholders; the normal / easy rules replace them) ----------
+  // ---------- decisions ----------
+  const FRONT_RC = ["fl", "fr"], BEHIND = { fl: "bl", vc: "bc", fr: "br" };
+  const shieldOf = (c) => (c && c.type !== "order" && !c.protect ? +c.shield || 0 : 0);
+  const isUnit = (c) => c && c.type !== "order" && c.type !== "g" && !c.protect && !c.token && !c.ticket;
+  const acts = { turn: -1, n: 0 }; // ACT uses this turn (a ready ability without a limit must not loop)
+  let strideTried = -1; // one stride attempt per turn (a refused stride must not loop)
+
   function decide(view, seat, level) {
-    const me = view.players[seat];
     if (view.pending && view.pending.player === seat) return answerMoves(view, seat, level);
     switch (view.phase) {
-      case "mulligan": return [{ fn: "mulligan", args: [[]] }];
+      case "mulligan": return [{ fn: "mulligan", args: [mulliganPick(view, seat, level)] }];
       case "ride": return rideMoves(view, seat, level);
-      case "stride": return [{ fn: "skipStride", args: [] }];
-      case "main": return [{ fn: "toBattle", args: [] }];
+      case "stride":
+        if (strideTried === view.turn) return [{ fn: "skipStride", args: [] }];
+        strideTried = view.turn;
+        return [{ fn: "stride", args: [] }, { fn: "skipStride", args: [] }];
+      case "main": return [...callPlan(view, seat, level), ...actPlan(view, seat, level), { fn: "toBattle", args: [] }];
       case "battle":
-        if (view.battle && view.active !== seat) return [{ fn: "confirmGuard", args: [] }];
-        if (view.active === seat && !view.battle) {
-          const out = [];
-          if (Game.canAttack("vc")) out.push({ fn: "attack", args: ["vc", true, "vc"] });
-          out.push({ fn: "endTurn", args: [] });
-          return out;
-        }
+        if (view.battle && view.active !== seat) return guardPlan(view, seat, level);
+        if (view.active === seat && !view.battle) return [...attackPlan(view, seat, level), { fn: "endTurn", args: [] }];
         return [];
       default: return [];
     }
   }
-  function answerMoves(view, seat) {
-    const P = view.pending, ids = P.options.map((o) => o.id);
+
+  // ---------- choices ----------
+  function answerMoves(view, seat, level) {
+    const P = view.pending, ids = P.options.map((o) => o.id), me = view.players[seat];
     if (ids.includes("skip") && view.judge) return [{ fn: "answer", args: [["skip"]] }]; // a card step the bot can't do by hand
-    if (ids.length === 2 && ids.includes("yes") && ids.includes("no")) return [{ fn: "answer", args: [["no"]] }];
-    return [{ fn: "answer", args: [ids.slice(0, Math.max(P.min, Math.min(1, P.max)))] }];
+    if (ids.length === 2 && ids.includes("yes") && ids.includes("no")) return [{ fn: "answer", args: [[me.hand.length <= 1 ? "no" : "yes"]] }];
+    const n = Math.max(P.min, Math.min(1, P.max));
+    // trigger power / critical: to the attacker still to come, else the vanguard
+    if (/trigger: (power|critical)/i.test(P.prompt) && ids.every((id) => /^\d+:/.test(id))) {
+      const mine = ids.filter((id) => +id.split(":")[0] === seat);
+      const vc = `${seat}:vc`;
+      let pick = vc;
+      if (!/critical/i.test(P.prompt) && view.active === seat) {
+        const att = view.battle && view.battle.att;
+        const next = FRONT_RC.filter((k) => k !== att && me.slots[k] && !me.slots[k].rest).map((k) => `${seat}:${k}`).find((id) => mine.includes(id));
+        if (next && att === "vc") pick = next; // the vanguard is attacking now: help the next attacker
+        else if (att && att !== "vc" && mine.includes(`${seat}:${att}`)) pick = `${seat}:${att}`; // a rear-guard's own drive... (rare) keep it on the attacker
+      }
+      if (!mine.includes(pick)) pick = mine[0] || ids[0];
+      return [{ fn: "answer", args: [[pick]] }];
+    }
+    // "discard cards whose grades total N" (stride cost): highest grades first until the total is reached
+    const tot = P.prompt.match(/grades? total(?:s)? (d+)/i);
+    if (tot && P.options.every((o) => o.card)) {
+      const want = +tot[1], picked = [];
+      let sum = 0;
+      for (const o of [...P.options].sort((a, b) => (+b.card.grade || 0) - (+a.card.grade || 0))) { if (sum >= want || picked.length >= P.max) break; picked.push(o.id); sum += +o.card.grade || 0; }
+      if (picked.length >= P.min) return [{ fn: "answer", args: [picked] }];
+    }
+    return [{ fn: "answer", args: [ids.slice(0, n)] }];
+  }
+
+  // ---------- mulligan and ride ----------
+  function mulliganPick(view, seat, level) {
+    if (level === "easy") return [];
+    const me = view.players[seat], out = [];
+    let g3 = 0, g2 = 0;
+    for (const c of me.hand) {
+      const g = +c.grade;
+      if (g >= 3) { if (++g3 > 1) out.push(c.uid); }
+      else if (g === 2 && me.hasRideDeck) { if (++g2 > 2) out.push(c.uid); }
+    }
+    return out;
+  }
+  // the least useful hand card (to discard for a cost)
+  function discardPick(cards, vcGrade = 0) {
+    const score = (c) => (c.sentinel ? 100 : 0) + (c.trigger ? 40 : 0) + (+c.grade >= 3 && cards.filter((x) => +x.grade >= 3).length > 1 ? -30 : 0) + (+c.grade === 0 && !c.trigger ? -20 : 0) + (+c.power || 0) / 1000;
+    return [...cards].sort((a, b) => score(a) - score(b))[0];
   }
   function rideMoves(view, seat) {
     const me = view.players[seat], out = [];
     const vcG = me.slots.vc ? +me.slots.vc.card.grade : 0;
-    if (me.hasRideDeck && (me.ride || []).some((c) => +c.grade === vcG + 1) && me.hand.length) out.push({ fn: "rideFromDeck", args: [me.hand[me.hand.length - 1].uid] });
-    for (const c of [...me.hand].filter((x) => x.type !== "order" && (+x.grade === vcG || +x.grade === vcG + 1)).sort((a, b) => b.grade - a.grade)) out.push({ fn: "rideFromHand", args: [c.uid] });
+    if (me.hasRideDeck && (me.ride || []).some((c) => +c.grade === vcG + 1) && me.hand.length) out.push({ fn: "rideFromDeck", args: [discardPick(me.hand, vcG).uid] });
+    for (const c of [...me.hand].filter((x) => isUnit(x) && (+x.grade === vcG + 1 || +x.grade === vcG)).sort((a, b) => b.grade - a.grade || b.power - a.power)) out.push({ fn: "rideFromHand", args: [c.uid] });
     out.push({ fn: "skipRide", args: [] });
     return out;
+  }
+
+  // ---------- main phase ----------
+  function callPlan(view, seat, level) {
+    const me = view.players[seat], vcG = me.slots.vc ? +me.slots.vc.card.grade : 0;
+    let hand = me.hand.filter((c) => isUnit(c) && +c.grade <= vcG);
+    if (level === "easy") {
+      const open = ["fl", "fr", "bl", "bc", "br"].filter((k) => !me.slots[k]);
+      return hand.length && open.length ? [{ fn: "call", args: [hand[0].uid, open[0]] }] : [];
+    }
+    // from 3 damage keep 2 shield cards (or a sentinel) in hand
+    const keep = (c) => {
+      if (me.damage.length < 3) return true;
+      const rest = me.hand.filter((x) => x !== c);
+      return rest.some((x) => x.sentinel) || rest.filter((x) => shieldOf(x) > 0).length >= 2;
+    };
+    hand = hand.filter(keep);
+    const out = [];
+    const byPower = [...hand].sort((a, b) => (+b.power || 0) - (+a.power || 0));
+    for (const k of FRONT_RC) {
+      const sl = me.slots[k], best = byPower.find((c) => !c.trigger) || byPower[0];
+      if (!best) break;
+      if (!sl) out.push({ fn: "call", args: [best.uid, k], why: "front" });
+      else if (!sl.locked && (+best.power || 0) >= Game.power(seat, k) + 5000) out.push({ fn: "call", args: [best.uid, k], why: "replace" });
+    }
+    const boosters = hand.filter((c) => +c.grade <= 1 && !c.trigger).sort((a, b) => (+b.power || 0) - (+a.power || 0));
+    for (const [f, b] of Object.entries(BEHIND)) if (me.slots[f] && !me.slots[b] && boosters[0]) out.push({ fn: "call", args: [boosters[0].uid, b], why: "booster" });
+    return out;
+  }
+  function actPlan(view, seat, level) {
+    if (level === "easy") return [];
+    if (acts.turn !== view.turn) { acts.turn = view.turn; acts.n = 0; }
+    if (acts.n >= 3) return [];
+    const out = [];
+    for (const k of ["vc", "fl", "fr", "bl", "bc", "br"]) {
+      if (!view.players[seat].slots[k]) continue;
+      for (const a of Game.actList(seat, k) || []) if (a.ready) out.push({ fn: "activate", args: [k, a.i, a.src || 0], why: "act" });
+    }
+    return out.slice(0, 2);
+  }
+
+  // ---------- battle ----------
+  function attackPlan(view, seat, level) {
+    const opp = 1 - seat, me = view.players[seat];
+    const keys = ["fl", "fr", "vc"].filter((k) => Game.canAttack(k));
+    if (!keys.length) return [];
+    const power = (k) => Game.power(seat, k) + (Game.boosterFor(seat, k) ? Game.power(seat, Game.boosterFor(seat, k)) : 0);
+    const oppVc = Game.power(opp, "vc");
+    let order;
+    if (level === "easy") order = keys;
+    else {
+      const rg = keys.filter((k) => k !== "vc").sort((a, b) => power(b) - power(a));
+      order = view.players[opp].damage.length >= 5 && keys.includes("vc") ? ["vc", ...rg] : [...rg.filter((k) => power(k) >= oppVc), ...rg.filter((k) => power(k) < oppVc), ...(keys.includes("vc") ? ["vc"] : [])];
+    }
+    return order.map((k) => {
+      let tgt = "vc";
+      if (level !== "easy" && k !== "vc" && power(k) < oppVc) {
+        const t = ["fl", "fr"].filter((x) => view.players[opp].slots[x] && Game.power(opp, x) >= 10000 && power(k) >= Game.power(opp, x)).sort((a, b) => Game.power(opp, b) - Game.power(opp, a))[0];
+        if (t) tgt = t;
+      }
+      return { fn: "attack", args: [k, true, tgt] };
+    });
+  }
+  function guardPlan(view, seat, level) {
+    const me = view.players[seat], B = view.battle, done = [{ fn: "confirmGuard", args: [] }];
+    if (B.perfect) return done;
+    const atk = Game.attackPower(), def = Game.defensePower();
+    if (atk < def) return done;
+    const dmg = me.damage.length, onVc = B.tgt === "vc";
+    const need = atk - def + 1 + (B.att === "vc" && level !== "easy" ? 5000 : 0);
+    const cards = me.hand.filter((c) => shieldOf(c) > 0 && !c.sentinel).sort((a, b) => shieldOf(a) - shieldOf(b));
+    const total = cards.reduce((n, c) => n + shieldOf(c), 0);
+    const one = cards.find((c) => shieldOf(c) >= need);
+    // "rear-guard attacks" = attacks made by rear-guards; an attack on a rear-guard only retires it
+    const byVc = B.att === "vc";
+    let guard;
+    if (level === "easy") guard = dmg >= 4 && onVc;
+    else if (!onVc) guard = dmg >= 3 && !!one;
+    else if (dmg >= 4) guard = true;
+    else if (dmg === 3) guard = byVc || !!one;
+    else guard = byVc && !!one;
+    if (!guard) return done;
+    const out = [];
+    // intercept first (normal, 3+ damage): a grade 2 front rear-guard that isn't the attacked unit
+    if (level !== "easy" && dmg >= 3) for (const k of FRONT_RC) {
+      const sl = me.slots[k];
+      if (sl && k !== B.tgt && !sl.locked && Game.canInterceptIcon(sl.card)) out.push({ fn: "intercept", args: [k], why: "intercept" });
+    }
+    if (one) out.push({ fn: "guard", args: [one.uid] });
+    else if (total >= need) out.push({ fn: "guard", args: [cards[cards.length - 1].uid] }); // the biggest first; the next decision adds more
+    else if (dmg >= 5 && onVc && level !== "easy") {
+      const sent = me.hand.find((c) => c.sentinel);
+      if (sent) out.push({ fn: "guard", args: [sent.uid] });
+    }
+    if (!out.length) return done;
+    // an intercept that alone can't help when no hand card follows is still fine: it adds shield
+    return [...out, ...done];
   }
 
   // the move that always works when nothing else did
@@ -102,6 +245,6 @@ const Bot = (() => {
     return { ok: !!(r && r.ok !== false), fn: fb.fn };
   }
 
-  return { LEVELS, THINK_MS, wants, decide, step, fallback, random: Math.random };
+  return { LEVELS, THINK_MS, wants, decide, step, fallback, random: Math.random, _: { guardPlan, attackPlan, callPlan, mulliganPick, discardPick } };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = Bot;
