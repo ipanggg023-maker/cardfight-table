@@ -32,6 +32,8 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 - Formats (2026-11-12): Standard / V Premium / Premium / Premium Extreme per deck, format-aware deck check, editable restriction lists (Formats tab), first vanguard from the main deck + G assist for formats without a ride deck, Quick deck for every format
 - Online play (2026-11-12): lobby "Host online" / "Join online", 5-letter room code, PeerJS; host runs the engine, guest gets redacted snapshots; guest can reload and rejoin mid-game; rematch
 
+- Play flow (2026-11-19, plan docs/superpowers/plans/2026-11-19-play-flow.md): online only (no one-screen play), no Judge panel, table v6 (no playmat, the user's sketch layout, rings, G zone, sideways damage stack, drop pile), paced battle moments (js/pace.js), check zoom with GET TRIGGER, battle panel with drive / critical and a guard-total duel, draw / call / key ride / SKILL feedback, browser-made sounds with mute
+
 ## Next (priority order)
 
 ### 1. Online play polish
@@ -44,7 +46,7 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 > CGS data has no trigger icon. In the Card library tab add "Set triggers for this set": shows all trigger units of the set as large images in a grid with 5 buttons each (crit/front/draw/heal/over). Save to the cards.
 
 ### 4. Game feel
-> Add animations: card slides from hand to circle, rest/stand rotation, drive check card flip in the trigger zone, damage card slides to the damage zone, power number pop. Add optional sound effects (off by default, toggle in the HUD). Respect prefers-reduced-motion.
+> Done 2026-11-19 (play flow). Still open: tune the waits after real play. Older note: add animations: card slides from hand to circle, rest/stand rotation, drive check card flip in the trigger zone, damage card slides to the damage zone, power number pop. Add optional sound effects (off by default, toggle in the HUD). Respect prefers-reduced-motion.
 
 ### 5. Missing rules
 > Implement: Over trigger extra effect, imaginary gifts (Force/Accel/Protect markers), set orders + order zone, "cannot be called" restrictions, opponent-chosen effects, abilities from soul/drop/hand, drop-zone ACT, ride-deck alternative costs.
@@ -52,5 +54,5 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 ### 6. Accounts + cloud save
 > Replace guest Auth with real accounts (Supabase or Firebase free tier). Store cards/decks per user, keep IndexedDB as offline cache. Pages only call Auth.get/set/clear so they don't change.
 
-### 7. Vs CPU
+### 7. Vs CPU (next: bot opponent, then boss events; decisions in docs/superpowers/specs/2026-11-19-play-flow-design.md)
 > Add a simple AI opponent: ride the ride deck, call best power to front row, attack with everything, guard to stay ahead of the attack when damage ≥ 4.
