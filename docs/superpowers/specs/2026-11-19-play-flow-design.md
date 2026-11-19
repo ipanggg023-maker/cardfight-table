@@ -69,6 +69,29 @@ A twin-drive vanguard attack with guard and no triggers: about 0.6 + 0.9 + 2×(1
 
 Short sounds made in the browser (Web Audio synth, no sound files): click (call), whoosh (attack), thud (hit), shield (guard), chime per trigger type, a chord for key rides and the win. A mute button on the table (top-left with the other HUD buttons), saved in localStorage `vt-sound`. No sound until the player has interacted with the page (browser rule).
 
+### Reference: what Vanguard Dear Days 2 does (played 2026-11-19 on the user's PC)
+
+Observed in a free fight, to borrow the clarity, not the look (no copied art, logos or characters):
+
+- **Phase change**: a horizontal band across the middle of the table ("Battle Phase / OPPONENT'S TURN"), about 1 s.
+- **Ride**: a ring of light bursts on the vanguard circle.
+- **Ability resolves**: a "SKILL" cut-in with the unit's art slides in from a corner (bottom-left for you, top-right for the opponent), about 1 s; before that, a panel shows the ability text and the card.
+- **Call**: the hand slides away, every circle you can call to gets a marker, and a framed preview of the card sits on the circle under the cursor.
+- **Power change**: sparks and an up-arrow on the unit; the power number counts up to the new value.
+- **Attack**: chevrons run from the attacker through the guardian circle to the target (orange); the booster also gets chevrons. A battle panel shows the defender's power (shield icon) against the attacker's (sword icon), plus drive and critical counts. The camera tilts toward the attack.
+- **Guard**: guardians lie sideways on the guardian circle, blue chevrons point from them to the defended unit, the defender's total updates in the battle panel, and a "Take the attack?" confirmation ends the step.
+- **Drive / damage check**: the HUD hides and the view pulls back to the whole table, then a diagonal banner ("DRIVE CHECK" / "DAMAGE CHECK") crosses the screen while the view zooms onto the trigger check zone and the card. A trigger adds its icon over the card and big "GET TRIGGER · Front Trigger" text (with the player's portrait). The card then rests in the trigger check zone for about a second before it goes to the hand or the damage zone.
+- **Trigger power**: "Select a unit to gain power" with markers on the units that can take it; a heal opens a picker of the damage cards.
+- **Damage zone**: shows portrait cards with the newest on top. Ours keeps the tabletop way the user asked for: sideways cards stacked down the zone, each over the one before.
+- **Drop**: the top card face up with the count.
+
+What we take from it (changes to the table above):
+- Check zoom: do it as a 2D zoom of the card to the middle with the diagonal "DRIVE CHECK n/2" / "DAMAGE CHECK" banner and, for a trigger, the trigger icon + "GET TRIGGER · <name>" text; no 3D camera.
+- Battle panel: the ATTACK vs DEFENSE readouts by the guardian circle also show the drive and critical counts; numbers count up when they change.
+- Ability cut-in: a short "SKILL" strip with the card's own picture from your corner (bottom-left) or the opponent's (top-right), only for abilities that resolve on their own, not for every cost paid.
+- Call: markers on the circles you can call to and a preview of the card on the circle under the pointer.
+- Trigger power: the units that can take the power glow, as unit choices already do (`fieldPickIds`).
+
 ### Calls made while writing this up (check these)
 
 - While the defender is still choosing guardians, nothing waits: each guardian animates in as it is called. The engine waits only once the guard is confirmed (the guard-total bar).
