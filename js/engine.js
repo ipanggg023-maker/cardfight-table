@@ -209,6 +209,7 @@ const Game = (() => {
       if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
     }
     if (f.kai && !c.kai) return false; // "with a Kai icon"
+    if (f.aichi && !c.aichi) return false; // "with an Aichi icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
     if (f.clanNot && [c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(String(f.clanNot).toLowerCase()))) return false; // not a <World>…
     if (f.nameNot && names.some((x) => x.includes(String(f.nameNot).toLowerCase()))) return false; // "without "X" in its card name"
@@ -540,13 +541,14 @@ const Game = (() => {
       case "byMe": return ctx.by === pi; // by your own card's ability
       case "mainPhase": return S.active === pi && S.phase === "main" && !S.battle;
       case "inRow": return !!ctx && !!ctx.key && (c.row === "back" ? BACK.includes(ctx.key) : c.row === "bc" ? ctx.key === "bc" : frontOf(pi).includes(ctx.key)); // "Back Row (RC):"
+      case "eventFrom": return String(ctx.from || "").toLowerCase() === String(c.from || "").toLowerCase(); // "if this unit was placed from hand"
       case "placedFromThisTurn": { const pf = S.placedFrom && S.placedFrom.turn === S.turn ? S.placedFrom.from[pi] : {}; return (pf[c.from] || 0) >= (+c.n || 1); }
       case "playedFrom": return !!ctx && ctx.zone === c.zone; // "if you played this card from drop"
       case "attackNoHit": return !!S.lastHit && S.lastHit.turn === S.turn && !S.lastHit.hit; // the last battle's attack did not hit
       case "damageThisTurn": return S.dmgTurn === S.turn; // "if a new card was put into any player's damage zone this turn"
       case "noOrderThisTurn": return P(pi).orderTurn !== S.turn;
       case "retiredThisTurn": { const r = S.retiredTurn && S.retiredTurn.turn === S.turn ? S.retiredTurn.n : [0, 0]; return r[c.who === "me" ? pi : 1 - pi] >= (+c.n || 1); }
-      case "battlePhase": return S.active === pi && (S.phase === "battle" || !!S.battle);
+      case "battlePhase": return (S.active === pi && (S.phase === "battle" || !!S.battle)) !== !!c.not; // not: "other than during battle phase"
       case "wentSecond": return S.first !== pi;
       default: return true;
     }
@@ -1204,6 +1206,14 @@ const Game = (() => {
         log(`🔰 ${p.name} gets the crest ${c.name}`);
         return { count: 1, cards: [c] };
       }
+      case "hollow": { // Hollow: this unit becomes hollowed (a state while it stays on its circle)
+        const k = ctx.key, q = P(pi);
+        if (!k || k === "vc" || !q.slots[k] || q.slots[k].card !== ctx.card || hasState(pi, k, "hollowed")) return { count: 0 };
+        addMod(pi, k, { stat: "state", name: "hollowed", until: untilOf(pi, "game") });
+        log(`◆ ${ctx.card.name}: hollowed`);
+        collect(pi, k, "hollowed");
+        return { count: 1, cards: [ctx.card] };
+      }
       case "setState": { // "they become [X] state", "in harmony", "engorged"…
         const us = await pickUnits(pi, e, ctx);
         for (const u of us) addMod(u.pi, u.key, { stat: "state", name: e.name || "?", until: untilOf(pi, e.dur || "turn"), battle: e.dur === "battle" && !!S.battle });
@@ -1705,6 +1715,7 @@ const Game = (() => {
     // Persona Ride (CR 6.3.8): a normal ride from hand onto a vanguard with the same name, both with the icon
     // card.personaFromKai: "the normal ride of this card from a grade 3 card with a Kai icon and a different card name also becomes a persona ride"
     const kaiPersona = (card.personaFromKai && old.kai && +old.grade === 3 && old.name !== card.name)
+      || (card.personaFromAichi && old.aichi && +old.grade === 3 && old.name !== card.name)
       || (old.personaFromName && old.name !== card.name && String(card.name).toLowerCase().includes(String(old.personaFromName).toLowerCase())); // "… a unit with "Thegrea" … on this unit also becomes a Persona Ride"
     if (!opts.effect && fromHand && card.persona && ((old.persona && old.name === card.name) || kaiPersona)) {
       p.personaFront = true;

@@ -94,6 +94,7 @@ const SCHEMA = {
     returnedHand: "When this unit is returned from (RC) to the hand",
     legion: "When your vanguard forms a Legion",
     harmonized: "When this unit becomes in harmony",
+    hollowed: "When this unit becomes hollowed",
     originalDress: "When this card becomes an originalDress",
     stood: "When this unit stands (by an effect or in the stand phase)",
     toDamage: "When a card is put into your damage zone (damage check)",
@@ -178,6 +179,7 @@ const SCHEMA = {
     targetRC: { label: "This battle's attack is on a rear-guard", params: [], text: () => "it attacked a rear-guard" },
     byMe: { label: "It was by your own card's ability", params: [], text: () => "it was by your own card's ability" },
     mainPhase: { label: "During your main phase", params: [], text: () => "during your main phase" },
+    eventFrom: { label: "This card came from a zone (the event's source)", params: [["from", "text", "zone (hand / deck / drop / soul / rideDeck)"]], text: (c) => `this unit was placed from ${c.from || "?"}` },
     noOrderThisTurn: { label: "You did not play an order this turn", params: [], text: () => "you did not play an order this turn" },
     inRow: { label: "This unit is in a row (Back Row (RC) / Front Row (RC) / Back Row Center)", params: [["row", "text", "back / front / bc"]], text: (p) => `this unit is in the ${p.row === "bc" ? "back row center" : (p.row || "back") + " row"}` },
     attackNoHit: { label: "The attack did not hit (that battle)", params: [], text: () => "the attack did not hit" },
@@ -248,6 +250,7 @@ const SCHEMA = {
     ticket: { label: "★ Put ticket(s) into hand (Quick Shield, Persona Shield…: a library card with Ticket ticked)", params: [["name", "text", "ticket card name"], ["n", "num", "how many"], ["who", "side", "to"]],
       text: (p) => `put ${p.n || 1} "${p.name || "?"}" ticket(s) into ${p.who === "opp" ? "your opponent's" : "your"} hand` },
     crest: { label: "★ Get a crest (a library card with type Crest; its abilities work in the crest zone)", params: [["name", "text", "crest card name"]], text: (p) => `put the crest "${p.name || "?"}" into your crest zone` },
+    hollow: { label: "★ Hollow: this unit becomes hollowed", params: [], text: () => "this unit becomes hollowed" },
     setState: { label: "★ Put units into a named state (Mental Pollution, engorged, successful…)", params: [["name", "text", "state name"], ["target", "target"], ["n", "num", "how many (if choosing)"], ["dur", "dur"], ["filter", "filter"]],
       text: (p) => `${tgt(p)} become(s) [${p.name || "?"}] state ${dur(p)}` },
     rideBy: { label: "★ Ride by an effect (Superior Ride: from deck / drop / soul / hand / ride deck / this card)",
@@ -355,6 +358,7 @@ function flt(f, short) {
   if (f.clan) bits.push(`<${f.clan}>`);
   if (Array.isArray(f.names) && f.names.length) bits.push(f.names.map((n) => `"${n}"`).join(" or "));
   if (f.kai) bits.push("with a Kai icon");
+  if (f.aichi) bits.push("with an Aichi icon");
   if (f.skill) bits.push(`with the [${f.skill}] ability`);
   if (f.notName) bits.push(`other than "${f.notName}"`);
   if (f.wasRideDeck) bits.push("that were in the ride deck");
