@@ -33,6 +33,8 @@ Pacing choice (user): **timed**, nobody clicks to continue.
 - Lobby: the Play tile becomes Host / Join (the existing online tiles). Guests may still play online (they never earn coins, as today).
 - "⚖ Fix a mistake" (`#fixBtn`) is removed. Manual card steps are still done on the table (`renderDoing`), as now.
 - The editor's test table ("🧪 Test this card", `?test=`) stays.
+- **No Judge panel anywhere** (user, 2026-11-19): the ⚖ panel (`renderJudge`, `#judge`, its button on the test table) is removed. Card steps the game can't do (effect `manual`) are always done on the table (`renderDoing`: task bar + card menu), in every mode. `Game.judgeOp` stays as the engine call those on-table steps use.
+- **Feel target** (user, after the Dear Days 2 session): Dear Days 2's clarity at about half its waiting. Always one clear question at the top with only the valid choices marked; a small confirmation for every action; big effects only for checks, triggers and key rides; no extra "are you sure?" dialogs for ordinary steps (end phase, take the attack).
 - Engine and rules: no change.
 
 ## Project 2: readable battles
