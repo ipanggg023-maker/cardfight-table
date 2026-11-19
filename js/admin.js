@@ -230,7 +230,7 @@ function renderBossForm() {
 // the form as a row (the chosen deck is copied in, because decks are private to their owner)
 function bossFromForm() {
   const b = B.sel, id = $("#bDeck").value, d = id && B.decks.find((x) => x.id === id);
-  const deck = d ? { name: d.name, format: d.format, energy: !!d.energy, ride: d.ride || [], main: d.main || [], g: d.g || [], starter: d.starter || null } : b.deck;
+  const deck = d ? { name: d.name, format: d.format, energy: !!d.energy, ride: d.ride || [], main: d.main || [], g: d.g || [], starter: d.starter || null, gUnlock: !!d.gUnlock } : b.deck;
   const adv = {};
   if ($("#bA7").checked) adv.maxDamage = 7;
   if ($("#bA1").checked) adv.extraDraw = 1;

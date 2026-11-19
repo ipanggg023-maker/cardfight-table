@@ -188,7 +188,9 @@ async function startGame() {
 // ---------- boss events (supabase/008_bosses.sql): the bot with the boss's deck, level and advantages ----------
 const BOSS = new URLSearchParams(location.search).get("boss"); // a boss id, or "try" (the admin page's preview)
 async function loadBossDef() {
-  if (BOSS === "try") { try { return { ...JSON.parse(sessionStorage.getItem("vt-boss-try") || "null"), try: true }; } catch { return null; } }
+  if (BOSS === "try") {
+    try { const t = JSON.parse(sessionStorage.getItem("vt-boss-try") || "null"); return t && t.deck ? { ...t, try: true } : null; } catch { return null; }
+  }
   const me = Auth.get();
   if (!me || me.guest) return { guest: true };
   const cl = await Cloud.client();
@@ -207,6 +209,11 @@ async function setupBoss() {
   if (!def) return say("No boss to try: open it from the admin page.");
   if (def.guest) return say(`Sign in to fight bosses. <a href="login.html">Sign in</a>`);
   if (def.closed) return say(`${def.name ? esc(def.name) + ": t" : "T"}his event is closed.`);
+  // every boss card must be in this browser's card library, or the fight can't start
+  const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
+  const { deck, missing } = deckFromLayout(def.deck || {}, byId);
+  if (!deck.main.length) return say("This boss has no deck. Ask the admin to check it.");
+  if (missing.length) return say(`This boss's deck uses ${missing.length} card(s) that aren't in the card library: ${esc(missing.slice(0, 5).join(", "))}${missing.length > 5 ? "…" : ""}. Ask the admin to check this boss's deck.`);
   ui.bossDef = def;
   const adv = def.adv || {};
   const perks = [adv.maxDamage > 6 ? `loses at ${adv.maxDamage} damage` : "", adv.extraDraw ? `+${adv.extraDraw} card at the start` : "", adv.vcPower ? `vanguard +${fmt(adv.vcPower)} on your turn` : ""].filter(Boolean).join(" · ");
@@ -222,7 +229,7 @@ async function startBoss() {
   const mine = await DB.loadDeck($("#d1").value);
   const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
   const r = deckFromLayout(def.deck || {}, byId);
-  if (r.missing.length) return toast(`The boss deck has ${r.missing.length} card(s) this device doesn't have yet. Open the editor once to sync cards, then try again.`);
+  if (r.missing.length || !r.deck.main.length) return toast("This boss's deck can't be built on this device. Ask the admin to check it.");
   const name = $("#n1").value.trim() || "Player";
   Object.assign(ui, { bot: { seat: 1, level: def.level === "easy" ? "easy" : "normal" }, boss: { id: def.id, reward: def.reward || 0, try: !!def.try, game: ((ui.boss && ui.boss.game) || 0) + 1, claimed: 0 }, online: null, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   Game.newGame([name, def.name], [mine, r.deck], { first: null, extras: await DB.extras(), boss: { seat: 1, ...(def.adv || {}) } });
