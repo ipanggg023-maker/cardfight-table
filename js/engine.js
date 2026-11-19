@@ -278,6 +278,7 @@ const Game = (() => {
       case "oppRC": return units(o, rcOf(1 - pi));
       case "oppUnits": return units(o, unitsOf(1 - pi));
       case "battleNo": return S.battleNo || 0;
+      case "myVCAttacks": return P(pi).vcAttacks && P(pi).vcAttacks.turn === S.turn ? P(pi).vcAttacks.n : 0; // "if your vanguard attacked two or more times this turn"
       case "myColumn": return col ? units(p, unitsOf(pi).filter((k) => COL[k] === col && k !== ctx.key)) : 0;
       case "oppColumn": return col ? units(o, unitsOf(1 - pi).filter((k) => COL[k] === MIRROR[col])) : 0;
       case "imprisoned": return m((p.orderZone || []).filter((c) => c.imprisoned !== undefined));
@@ -482,9 +483,13 @@ const Game = (() => {
   }
 
   // ---------- conditions & costs ----------
+  const SELF_NOT = new Set(["operatedThisTurn", "battlePhase"]); // conditions that read c.not themselves
   function condOK(pi, c, ctx) {
     const p = P(pi), o = P(1 - pi), n = +c.n || 0;
+    if (c.not && !SELF_NOT.has(c.type)) return !condOK(pi, { ...c, not: false }, ctx); // "if you did not …"
     switch (c.type) {
+      case "any": return (c.of || []).some((x) => condOK(pi, x, ctx)); // "if A, or B"
+      case "all": return (c.of || []).every((x) => condOK(pi, x, ctx));
       case "myTurn": return S.active === pi;
       case "oppTurn": return S.active !== pi;
       case "legion": return !!p.slots.vc.mate;
@@ -938,7 +943,10 @@ const Game = (() => {
     for (const e of effs) {
       if (over()) break;
       if (e.type === "chooseOpts") {
-        const letters = [...new Set(effs.filter((x) => x.opt).map((x) => x.opt))].sort();
+        // an option whose own cost can't be paid can't be chosen
+        const letters = [...new Set(effs.filter((x) => x.opt).map((x) => x.opt))].sort()
+          .filter((L) => !effs.some((x) => x.opt === L && x.type === "payCost" && !(x.costs || []).every((c) => canPay(pi, c, ctx))));
+        if (!letters.length) { opts = new Set(); last = { count: 0, cards: [] }; continue; }
         const opt = letters.map((L) => ({ id: L, label: `${L}: ${effs.filter((x) => x.opt === L).map((x) => SCHEMA.effects[x.type] ? SCHEMA.effects[x.type].text(x) : x.type).join(", then ")}` }));
         const k = Math.max(1, +e.n || 1);
         opts = new Set(await choose(pi, `Choose ${k} of the following`, opt, Math.min(k, opt.length), Math.min(k, opt.length)));
@@ -1437,7 +1445,7 @@ const Game = (() => {
       case "payCost": { // a second cost in the middle of an ability: "If X, [COST][…], Y" (the next steps need it paid)
         const costs = e.costs || [];
         if (!costs.length || !costs.every((c) => canPay(pi, c, ctx))) { log(`${ctx.card ? ctx.card.name + ": " : ""}can't pay ${SCHEMA.effects.payCost.text(e)}`); return { count: 0, cards: [] }; }
-        if (!(await yesNo(pi, `${ctx.card ? ctx.card.name + ": " : ""}pay ${costs.map((c) => (SCHEMA.costs[c.type] ? SCHEMA.costs[c.type].text(c) : c.type)).join(" & ")}?`))) return { count: 0, cards: [] };
+        if (!e.must && !(await yesNo(pi, `${ctx.card ? ctx.card.name + ": " : ""}pay ${costs.map((c) => (SCHEMA.costs[c.type] ? SCHEMA.costs[c.type].text(c) : c.type)).join(" & ")}?`))) return { count: 0, cards: [] };
         for (const c of costs) await pay(pi, c, ctx);
         return { count: 1, cards: [] };
       }
@@ -2146,6 +2154,7 @@ const Game = (() => {
     if (bk) p.slots[bk].rest = true;
     S.battle = { att, tgt, boostKey: bk, guards: [], perfect: false, shieldBonus: 0 };
     S.battleNo = (S.battleNo || 0) + 1; // "the Nth battle of that turn"
+    if (att === "vc") p.vcAttacks = p.vcAttacks && p.vcAttacks.turn === S.turn ? { turn: S.turn, n: p.vcAttacks.n + 1 } : { turn: S.turn, n: 1 };
     S.reveal = [];
     log(`${p.slots[att].card.name}${bk ? " (boosted)" : ""} attacks ${P(di).slots[tgt].card.name}`);
     collectAll(ai, "attackStep"); // "at the beginning of your attack step" (resolves with the attack's abilities)

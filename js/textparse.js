@@ -628,6 +628,15 @@ const TextParse = (() => {
     const out = [];
     let m, read = 0;
     const add = (c, len) => { out.push(c); read += len || 1; };
+    // "if A, or B": either one
+    const orParts = t.split(/,\s*or\s+(?=(?:if |you |your |this |it |there ))/i);
+    if (orParts.length > 1) {
+      const rs = orParts.map((x, i) => condsIn(i === 0 || /^if /i.test(x) ? x : "if " + x));
+      if (rs.every((r) => r.conds.length)) return { conds: [{ type: "any", of: rs.map((r) => (r.conds.length === 1 ? r.conds[0] : { type: "all", of: r.conds })) }], read: rs.reduce((s, r) => s + r.read, 0) };
+    }
+    if ((m = t.match(rx(`if your vanguard attacked ${N} or more times this turn`)))) add({ type: "count", what: "myVCAttacks", op: "ge", n: toNum(m[1]) });
+    if (/if you did not persona ride this turn|you did not persona ride this turn/i.test(t)) add({ type: "persona", not: true });
+    if (/all of your rear-guards have different card names from this card|(?:you )?do not have (?:another|a) rear-guard with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0, filter: { sameNameSelf: true, other: true } });
     if (/during your turn/i.test(t) && !/opponent/i.test(t.match(/during your[^,]*turn/i)[0])) add({ type: "myTurn" });
     if (/during your opponent'?s turn/i.test(t)) add({ type: "oppTurn" });
     if ((m = t.match(/limit-?break (\d)/i))) add({ type: "limitBreak", n: +m[1] });
@@ -1288,7 +1297,7 @@ const TextParse = (() => {
     if (ctx.pick && /^put (it|them) into (your )?drop$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "drop", n: P.n, upTo: P.upTo, filter: P.filter }]; }
     if ((m = t.match(rx(`^discard ${N} (.*?)cards? from your hand`)))) return [{ type: "move", from: "hand", to: "drop", n: toNum(m[1]), filter: filt(m[2]) }];
     if (/^bind (it|them)$/i.test(t) && ctx.pick) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "bind", n: P.n, upTo: P.upTo, filter: P.filter }]; }
-    if ((m = t.match(/^call this card to (a |an |your )?(back row |front row )?(open )?\(rc\)/i))) return [{ type: "move", from: "self", to: "RC" }];
+    if ((m = t.match(/^call this card to (a |an |your )?(back row |front row )?(open )?\(rc\)( as \[rest\])?/i))) return [{ type: "move", from: "self", to: "RC", ...(m[4] ? { asRest: true } : {}) }];
     if ((m = t.match(rx(`^your opponent chooses (up to )?${N} (.*?)cards? from (his or her|their) (hand|drop|soul|damage zone)$`)))) { ctx.pick = { from: "opp" + m[5][0].toUpperCase() + m[5].slice(1).replace(" zone", ""), n: toNum(m[2]), upTo: !!m[1], filter: filt(m[3]), chooser: "opp" }; return []; }
     if ((m = t.match(rx(`^your opponent chooses (up to )?${N} of (his or her|their) (.*?)rear-guards?$`)))) { ctx.pick = { from: "oppRC", n: toNum(m[2]), upTo: !!m[1], filter: filt(m[4]), chooser: "opp" }; return []; }
     if (ctx.pick && ctx.pick.chooser === "opp" && /^(discards?|retires?|puts?|binds?) (it|them)( into (his or her|their) (soul|drop|hand))?/i.test(t)) {
@@ -1334,7 +1343,13 @@ const TextParse = (() => {
       cur += ch;
     }
     out.push(cur);
-    return out.map((x) => x.trim()).filter(Boolean);
+    // "if A, or B": the "or" part belongs to the condition before it
+    const merged = [];
+    for (const x of out.map((y) => y.trim()).filter(Boolean)) {
+      if (/^or (you|your|if|this|there|it)\b/i.test(x) && merged.length && /^(and )?if\b/i.test(merged[merged.length - 1])) merged[merged.length - 1] += ", " + x;
+      else merged.push(x);
+    }
+    return merged;
   }
 
   // ---------- one ability ----------
@@ -1404,7 +1419,7 @@ const TextParse = (() => {
     }
     rest = rest.replace(/you may pay the cost\.? if you do,?/i, "").replace(/^play this with\s*/i, "").trim();
     // new style cost: [COST][…]
-    m = rest.match(/\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?/i);
+    m = rest.split("・")[0].match(/\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?/i); // a [COST] inside a bullet belongs to that option
     let condText = "";
     if (m) {
       condText = rest.slice(0, m.index);
@@ -1419,7 +1434,10 @@ const TextParse = (() => {
     // conditions: only the "if …," clauses that come before the first effect apply to the whole ability
     const cl = clauses(rest.replace(/^\s*[,!.]\s*/, "").replace(/^play this with\s*[,!]?\s*/i, ""));
     const effectClauses = [];
-    const isCond = (c) => /^(if|during|when|play this (only )?if)\b/i.test(c) && !/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched)\b|^if not\b/i.test(c);
+    const isCond0 = (c) => /^(if|during|when|play this (only )?if)\b/i.test(c) && !/^if you (do(?! not)|did(?! not persona)|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched)\b|^if not\b/i.test(c);
+    // "…, and all of your rear-guards have different card names from this card, …": a statement after "and" that reads as a condition
+    const stateCond = (c) => !/\b(gets?|draw|call|put|retire|choose|look|search|bind|discard|\[stand\]|\[rest\]|reveal)\b/i.test(c) && /^(all of your|you (do|did) not|you have|your (opponent'?s )?(vanguard|soul|drop|hand|damage))/i.test(c) && condsIn("if " + c).conds.length > 0;
+    const isCond = (c) => isCond0(c) || stateCond(c.replace(/^and\s+/i, ""));
     // text before a [COST] that already does something ("this unit gets +2000, and if …, [COST][…], …"):
     // those effects don't depend on the cost, so they become a separate ability with the same timing
     const preCl = clauses(condText).filter((c) => c !== "§");
@@ -1563,6 +1581,19 @@ const TextParse = (() => {
         if (c === "§") { oCond = null; continue; }
         const cc = c.replace(/^(and then|and|then)\s+/i, "");
         if (/^if\b/i.test(cc) && !/^if you (do|did)\b/i.test(cc)) { const r = condsIn(cc); if (r.conds.length === 1) { oCond = r.conds[0]; continue; } }
+        // "・[COST][Soul-Blast 1], and call this card to (RC)": choosing this option pays its cost
+        const opc = cc.match(/^\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?\s*(?:and\s+)?([\s\S]*)$/i);
+        if (opc) {
+          const r = costsIn(opc[1]);
+          if (r.costs.length && !r.unread.length) {
+            ab.effects.push({ type: "payCost", costs: r.costs, must: true, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) });
+            if (!opc[2].trim()) continue;
+            const es2 = effectOf(opc[2].trim(), octx);
+            if (es2 === null) ab.effects.push({ type: "manual", text: opc[2].trim(), opt: o.letter, onlyIf: "did" });
+            else es2.forEach((e) => ab.effects.push({ ...e, opt: o.letter, onlyIf: "did", ...(oCond ? { ifCond: oCond } : {}) }));
+            continue;
+          }
+        }
         const es = effectOf(c, octx);
         if (es === null) ab.effects.push({ type: "manual", text: c, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) });
         else es.forEach((e) => ab.effects.push({ ...e, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) }));
@@ -1587,7 +1618,7 @@ const TextParse = (() => {
     if (kind === "CONT") {
       ab.effects = ab.effects.map((e) => (e.type === "power" || e.type === "crit") ? (({ dur, ...x }) => x)(e) : e);
     }
-    ab.effects = ab.effects.filter((e) => !(e.type === "manual" && !String(e.text || "").replace(/[s,.!、]/g, ""))); // nothing left to do by hand
+    ab.effects = ab.effects.filter((e) => !(e.type === "manual" && !String(e.text || "").replace(/[\s,.!、・]/g, ""))); // nothing left to do by hand
     // merge consecutive manual steps into one
     const merged = [];
     for (const e of ab.effects) {
