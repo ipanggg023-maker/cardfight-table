@@ -247,3 +247,4 @@ button.danger { border-color: var(--red); color: var(--red); }
 
 .boxes-admin .fromset { display: flex; gap: 6px; margin-top: 8px; }
 .boxes-admin .fromset select { flex: 1; min-width: 0; height: 36px; }
+.boss-tile { border-color: #e85d7480 !important; background: linear-gradient(135deg, #e85d7418, transparent 60%); }

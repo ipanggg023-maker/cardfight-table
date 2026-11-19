@@ -19,6 +19,7 @@
     <button data-atab="matches">Matches</button>
     <button data-atab="packs">Packs</button>
     <button data-atab="log">Admin log</button>
+    <button data-atab="bosses">Bosses</button>
     <a href="store.html" class="playlink">Store</a>
     <a href="lobby.html" class="playlink">← Lobby</a>
   </nav>
@@ -47,6 +48,14 @@
   <section id="a-packs" class="atab" hidden>
     <div class="store-head"><h1>Packs opened</h1><span class="muted">Last 200 packs</span></div>
     <div class="atable-wrap"><table class="atable" id="kTable"></table></div>
+  </section>
+
+  <section id="a-bosses" class="atab" hidden>
+    <div class="store-head"><h1>Boss events</h1><span class="muted">The bot with your deck and advantages, open for a limited time; a win pays once per player</span></div>
+    <div class="admin-split">
+      <div class="atable-wrap"><table class="atable" id="bTable"></table><button id="bNew" class="go" style="margin-top:10px">+ New boss</button></div>
+      <aside id="bDetail" class="box-edit adetail"><p class="muted">Pick a boss, or make a new one.</p></aside>
+    </div>
   </section>
 
   <section id="a-log" class="atab" hidden>

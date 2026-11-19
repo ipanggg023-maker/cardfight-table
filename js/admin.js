@@ -2,6 +2,7 @@
 // Every change goes through admin_* functions on the server, which check the admin role again
 // (supabase/001_accounts.sql, 003_store.sql, 005_admin.sql) and write to admin_log.
 const $ = (s) => document.querySelector(s);
+const fmt = (n) => (+n || 0).toLocaleString("en-US");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const A = { users: [], byId: {}, cards: {}, boxes: {}, sel: null, owned: null, cardQ: "", loaded: {} };
 const me = Auth.get();
@@ -37,7 +38,7 @@ document.querySelectorAll("[data-atab]").forEach((b) => b.addEventListener("clic
 function showTab(t) {
   document.querySelectorAll("[data-atab]").forEach((x) => x.classList.toggle("on", x.dataset.atab === t));
   document.querySelectorAll(".atab").forEach((s) => (s.hidden = s.id !== "a-" + t));
-  ({ players: renderPlayers, matches: renderMatches, packs: renderPacks, log: renderLog })[t]();
+  ({ players: renderPlayers, matches: renderMatches, packs: renderPacks, log: renderLog, bosses: renderBosses })[t]();
 }
 
 // ---------- players ----------
@@ -171,6 +172,108 @@ async function renderMatches() {
       <td class="muted small">${esc(nameOf(m.p1))}: ${rep(m.report1)}<br>${esc(nameOf(m.p2))}: ${rep(m.report2)}</td></tr>`).join("")
     || `<tr><td colspan="6" class="muted">No online matches yet.</td></tr>`}</tbody>`;
 }
+
+// ---------- boss events (supabase/008_bosses.sql) ----------
+const B = { list: null, sel: null, wins: [], decks: [], noTable: false };
+const toLocal = (iso) => { const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+const bossOpen = (b) => b.active && Date.now() >= Date.parse(b.starts_at) && Date.now() <= Date.parse(b.ends_at);
+async function renderBosses() {
+  if (!B.list) {
+    $("#bTable").innerHTML = `<tbody><tr><td class="muted">Loading…</td></tr></tbody>`;
+    try {
+      const cl = await Cloud.client();
+      const { data, error } = await cl.from("bosses").select("*").order("starts_at", { ascending: false });
+      if (error) throw error;
+      B.list = data;
+      const w = await cl.from("boss_wins").select("*").order("at", { ascending: false }).limit(1000);
+      B.wins = w.error ? [] : w.data;
+      B.decks = await DB.all("decks");
+    } catch (e) {
+      B.noTable = true;
+      $("#bTable").innerHTML = `<tbody><tr><td class="muted">Run <b>supabase/008_bosses.sql</b> in the Supabase SQL editor first. (${esc(e.message || e)})</td></tr></tbody>`;
+      $("#bNew").hidden = true;
+      return;
+    }
+  }
+  const wins = (id) => B.wins.filter((w) => w.boss_id === id).length;
+  $("#bTable").innerHTML = `<thead><tr><th>Boss</th><th>Open</th><th>Dates</th><th class="num">Reward</th><th class="num">Beaten</th></tr></thead>
+    <tbody>${B.list.map((b) => `<tr data-boss="${b.id}" class="${B.sel && B.sel.id === b.id ? "on" : ""}" style="cursor:pointer">
+      <td><b>${esc(b.name)}</b><br><span class="muted small">${esc(b.blurb || "")}</span></td>
+      <td>${bossOpen(b) ? '<span class="st st-paid">open</span>' : b.active ? '<span class="st">scheduled / ended</span>' : '<span class="st st-mismatch">off</span>'}</td>
+      <td class="muted small">${when(b.starts_at)}<br>→ ${when(b.ends_at)}</td>
+      <td class="num">${fmt(b.reward)}</td><td class="num">${wins(b.id)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No bosses yet.</td></tr>`}</tbody>`;
+  renderBossForm();
+}
+function renderBossForm() {
+  const box = $("#bDetail"), b = B.sel;
+  if (!b) { box.innerHTML = `<p class="muted">Pick a boss, or make a new one.</p>`; return; }
+  const adv = b.adv || {};
+  const deckOpts = B.decks.map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
+  const winners = B.wins.filter((w) => w.boss_id === b.id);
+  box.innerHTML = `<h3 style="margin-top:0">${b.id ? "Edit boss" : "New boss"}</h3>
+    <label>Name <input id="bName" maxlength="60" value="${esc(b.name || "")}"></label>
+    <label>One line <input id="bBlurb" maxlength="140" value="${esc(b.blurb || "")}"></label>
+    <label>Boss deck <select id="bDeck"><option value="">${b.deck ? "Keep: " + esc(b.deck.name || "saved deck") : "Pick one of your decks"}</option>${deckOpts}</select></label>
+    <label>Bot level <select id="bLevel"><option value="normal">Normal</option><option value="easy" ${b.level === "easy" ? "selected" : ""}>Easy</option></select></label>
+    <fieldset><legend>Advantages</legend>
+      <label class="chk"><input type="checkbox" id="bA7" ${adv.maxDamage > 6 ? "checked" : ""}> Loses at 7 damage</label>
+      <label class="chk"><input type="checkbox" id="bA1" ${adv.extraDraw ? "checked" : ""}> +1 card at the start</label>
+      <label class="chk"><input type="checkbox" id="bAP" ${adv.vcPower ? "checked" : ""}> Vanguard +5000 on your turn</label>
+    </fieldset>
+    <label>Reward (coins) <input id="bReward" type="number" min="0" max="100000" value="${+b.reward || 0}"></label>
+    <label>Starts <input id="bStart" type="datetime-local" value="${toLocal(b.starts_at || new Date().toISOString())}"></label>
+    <label>Ends <input id="bEnd" type="datetime-local" value="${toLocal(b.ends_at || new Date(Date.now() + 7 * 864e5).toISOString())}"></label>
+    <label class="chk"><input type="checkbox" id="bActive" ${b.active !== false ? "checked" : ""}> Active</label>
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button id="bSave" class="go">Save</button><button id="bTry">Try this boss</button>${b.id ? '<button id="bDel">Delete</button>' : ""}</div>
+    ${b.id ? `<h4>Beaten by (${winners.length})</h4>${winners.map((w) => `<p class="small">${who(w.owner)} · ${when(w.at)} · ${w.turns} turns · +${fmt(w.coins)}</p>`).join("") || '<p class="muted small">Nobody yet.</p>'}` : ""}`;
+}
+// the form as a row (the chosen deck is copied in, because decks are private to their owner)
+function bossFromForm() {
+  const b = B.sel, id = $("#bDeck").value, d = id && B.decks.find((x) => x.id === id);
+  const deck = d ? { name: d.name, format: d.format, energy: !!d.energy, ride: d.ride || [], main: d.main || [], g: d.g || [], starter: d.starter || null } : b.deck;
+  const adv = {};
+  if ($("#bA7").checked) adv.maxDamage = 7;
+  if ($("#bA1").checked) adv.extraDraw = 1;
+  if ($("#bAP").checked) adv.vcPower = 5000;
+  return { name: $("#bName").value.trim(), blurb: $("#bBlurb").value.trim(), deck, level: $("#bLevel").value, adv, reward: Math.max(0, +$("#bReward").value || 0),
+    starts_at: new Date($("#bStart").value).toISOString(), ends_at: new Date($("#bEnd").value).toISOString(), active: $("#bActive").checked };
+}
+document.addEventListener("click", async (e) => {
+  const tr = e.target.closest("[data-boss]");
+  if (tr) { B.sel = B.list.find((b) => String(b.id) === tr.dataset.boss) || null; return renderBosses(); }
+  if (e.target.id === "bNew") { B.sel = { name: "", blurb: "", level: "normal", adv: { maxDamage: 7 }, reward: 50, active: true }; return renderBossForm(); }
+  if (e.target.id === "bTry") {
+    const row = bossFromForm();
+    if (!row.deck) return toast("Pick the boss deck first", true);
+    sessionStorage.setItem("vt-boss-try", JSON.stringify({ ...row, name: row.name || "Boss", id: 0 }));
+    return window.open("index.html?boss=try", "_blank");
+  }
+  if (e.target.id === "bSave") {
+    const row = bossFromForm();
+    if (!row.name) return toast("Give the boss a name", true);
+    if (!row.deck) return toast("Pick the boss deck", true);
+    if (!(Date.parse(row.ends_at) > Date.parse(row.starts_at))) return toast("The end must be after the start", true);
+    try {
+      const cl = await Cloud.client();
+      const q = B.sel.id ? cl.from("bosses").update(row).eq("id", B.sel.id).select("*").single() : cl.from("bosses").insert(row).select("*").single();
+      const { data, error } = await q;
+      if (error) throw error;
+      B.list = null; B.sel = data;
+      toast("Saved");
+      return renderBosses();
+    } catch (err) { return toast(err.message, true); }
+  }
+  if (e.target.id === "bDel" && B.sel && B.sel.id && confirm(`Delete the boss "${B.sel.name}"? Its winners list goes too.`)) {
+    try {
+      const cl = await Cloud.client();
+      const { error } = await cl.from("bosses").delete().eq("id", B.sel.id);
+      if (error) throw error;
+      B.list = null; B.sel = null;
+      toast("Deleted");
+      return renderBosses();
+    } catch (err) { return toast(err.message, true); }
+  }
+});
 
 // ---------- packs ----------
 async function renderPacks() {

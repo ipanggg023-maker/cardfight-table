@@ -54,5 +54,5 @@ Status as of 2026-11-12. Each task is written so it can be pasted into Claude Co
 ### 6. Accounts + cloud save
 > Replace guest Auth with real accounts (Supabase or Firebase free tier). Store cards/decks per user, keep IndexedDB as offline cache. Pages only call Auth.get/set/clear so they don't change.
 
-### 7. Vs CPU: done 2026-11-19 (js/bot.js, Easy / Normal). Next: boss events (decisions in docs/superpowers/specs/2026-11-19-play-flow-design.md)
+### 7. Vs CPU: done 2026-11-19 (js/bot.js, Easy / Normal). Boss events done 2026-11-19 (supabase/008_bosses.sql, admin Bosses tab, lobby tile)
 > Add a simple AI opponent: ride the ride deck, call best power to front row, attack with everything, guard to stay ahead of the attack when damage ≥ 4.
