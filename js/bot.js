@@ -40,7 +40,7 @@ const Bot = (() => {
         if (strideTried === view.turn) return [{ fn: "skipStride", args: [] }];
         strideTried = view.turn;
         return [{ fn: "stride", args: [] }, { fn: "skipStride", args: [] }];
-      case "main": return [...callPlan(view, seat, level), ...actPlan(view, seat, level), { fn: "toBattle", args: [] }];
+      case "main": return [...callPlan(view, seat, level), ...actPlan(view, seat, level), ...orderPlan(view, seat, level), { fn: "toBattle", args: [] }];
       case "battle":
         if (view.battle && view.active !== seat) return guardPlan(view, seat, level);
         if (view.active === seat && !view.battle) return [...attackPlan(view, seat, level), { fn: "endTurn", args: [] }];
@@ -70,7 +70,7 @@ const Bot = (() => {
       return [{ fn: "answer", args: [[pick]] }];
     }
     // "discard cards whose grades total N" (stride cost): highest grades first until the total is reached
-    const tot = P.prompt.match(/grades? total(?:s)? (d+)/i);
+    const tot = P.prompt.match(/grades? total(?:s)? (\d+)/i);
     if (tot && P.options.every((o) => o.card)) {
       const want = +tot[1], picked = [];
       let sum = 0;
@@ -139,9 +139,29 @@ const Bot = (() => {
     if (acts.n >= 3) return [];
     const out = [];
     for (const k of ["vc", "fl", "fr", "bl", "bc", "br"]) {
-      if (!view.players[seat].slots[k]) continue;
-      for (const a of Game.actList(seat, k) || []) if (a.ready) out.push({ fn: "activate", args: [k, a.i, a.src || 0], why: "act" });
+      const sl = view.players[seat].slots[k];
+      if (!sl) continue;
+      for (const a of Game.actList(seat, k) || []) {
+        if (!a.ready) continue;
+        // an ability whose steps are all done by hand would be skipped: don't pay its cost
+        const ab = !a.src && typeof a.i === "number" ? (sl.card.abilities || [])[a.i] : null;
+        if (ab && (ab.effects || []).length && ab.effects.every((e) => e.type === "manual")) continue;
+        out.push({ fn: "activate", args: [k, a.i, a.src || 0], why: "act" });
+      }
     }
+    return out.slice(0, 2);
+  }
+  // orders from hand (the engine allows one a turn plus extras), then the Energy Generator draw
+  function orderPlan(view, seat, level) {
+    if (level === "easy") return [];
+    const me = view.players[seat], out = [];
+    for (const c of me.hand) {
+      if (c.type !== "order" || c.protect || c.ticket) continue;
+      const ab = (c.abilities || []).find((a) => a.kind === "ORDER");
+      if (ab && (ab.effects || []).length && ab.effects.every((e) => e.type === "manual")) continue;
+      out.push({ fn: "playOrder", args: [c.uid], why: "order" });
+    }
+    if (me.useEnergy && me.energy >= 7 && me.egTurn !== view.turn) out.push({ fn: "energyDraw", args: [], why: "energy" });
     return out.slice(0, 2);
   }
 
@@ -247,7 +267,11 @@ const Bot = (() => {
     for (const m of moves) {
       if (refused >= 3) break;
       const r = await run(m);
-      if (r && r.ok !== false) return { ok: true, fn: m.fn };
+      if (r && r.ok !== false) {
+        if (m.fn === "activate") acts.n++; // at most 3 ability uses a turn
+        if (m.fn === "answer" && view.judge && m.args[0][0] === "skip") note(`Bot skips: ${view.judge.text}`); // a card step it can't do by hand
+        return { ok: true, fn: m.fn };
+      }
       refused++;
     }
     const fb = fallback(Game.snapshot(seat), seat);

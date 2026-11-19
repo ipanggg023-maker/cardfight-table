@@ -237,3 +237,43 @@ test("a long pause before the bot's own choice doesn't deadlock", async () => {
   assert.equal(r2.ok, true);
   assert.ok(Date.now() - t0 < 12000);
 });
+
+// ---------- final review fixes ----------
+test("a premium bot strides when its hand can pay", async () => {
+  let strides = 0;
+  for (let i = 0; i < 3; i++) {
+    const { S } = await play(["normal", "normal"], "premium");
+    strides += S.log.filter((l) => /strides /.test(l)).length;
+  }
+  assert.ok(strides >= 3, `strides over 3 games: ${strides}`);
+});
+
+test("a skipped manual step is logged", async () => {
+  const { Game, Bot, S } = botMain();
+  S.players[1].slots.vc.card.abilities = [{ kind: "ACT", zone: "VC", once: "", conds: [], costs: [], effects: [{ type: "manual", text: "do the thing" }] }];
+  const act = Game.activate("vc", 0);
+  for (let i = 0; i < 5 && !S.judge; i++) await tick();
+  await Bot.step(1, "normal");
+  await act;
+  assert.ok(S.log.some((l) => l.startsWith("Bot skips: do the thing")), S.log.slice(0, 4).join(" / "));
+});
+
+test("the bot plays an order from its hand", async () => {
+  const { Game, TextParse: TP, Bot } = load();
+  Game.newGame(["P0", "Bot"], [deck(TP, "standard", "A"), deck(TP, "standard", "B")], { first: 1 });
+  const S = Game.state(), me = S.players[1];
+  Object.assign(S, { phase: "main", active: 1, controller: 1, turn: 4, pending: null });
+  for (const k of ["fl", "fr", "bl", "bc", "br"]) me.slots[k] = sl(mk(TP, "full" + k, 1));
+  const order = { ...mk(TP, "Order", 1, { type: "order", shield: 0 }), abilities: [{ kind: "ORDER", once: "", conds: [], costs: [], effects: [{ type: "draw", n: 1 }] }] };
+  me.hand = [order, mk(TP, "Keep1", 1), mk(TP, "Keep2", 1)];
+  const moves = Bot.decide(Game.snapshot(1), 1, "normal");
+  assert.ok(moves.some((m) => m.fn === "playOrder" && m.args[0] === order.uid), moves.map((m) => m.fn).join(","));
+});
+
+test("no paying for an ability the bot would skip", async () => {
+  const { Game, Bot, S } = botMain();
+  S.players[1].slots.vc.card.abilities = [{ kind: "ACT", zone: "VC", once: "", conds: [], costs: [{ type: "SB", n: 1 }], effects: [{ type: "manual", text: "unread" }] }];
+  S.players[1].soul.push({ ...S.players[1].deck.pop() });
+  const moves = Bot.decide(Game.snapshot(1), 1, "normal");
+  assert.ok(!moves.some((m) => m.fn === "activate"), moves.map((m) => m.fn).join(","));
+});
