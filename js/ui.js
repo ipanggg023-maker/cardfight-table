@@ -709,7 +709,6 @@ function render() {
   if (hEl && hEl.textContent !== hTxt) hEl.textContent = hTxt;
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
-  renderJudge(S, v);
   renderDoing(S, v);
   if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
@@ -1014,7 +1013,7 @@ document.addEventListener("touchstart", (e) => {
 ["touchend", "touchmove", "touchcancel"].forEach((ev) => document.addEventListener(ev, () => { clearTimeout(pressT); pressT = null; }, { passive: true }));
 document.addEventListener("click", (e) => { if (e.target.closest("[data-unpin]")) { e.stopPropagation(); unpinInfo(); } }, true);
 window.addEventListener("resize", () => { if (infoDock() && infoEl().hidden && infoUid) showInfo(infoUid); if (Game.state()) scheduleRender(); });
-// ---------- Judge panel: do card text by hand (Manual blocks), or fix a mistake in hot-seat ----------
+// ---------- card steps done on the table (Manual blocks): task bar + card menu ----------
 // Online it only works while a Manual effect is open (both players see what was done in the log).
 // ---------- card steps the game can't do by itself: done on the table (no panel) ----------
 // A bar at the top shows the card and its text with Done / Skip. Click any card (field, hand, drop, damage, order zone,
@@ -1127,53 +1126,6 @@ document.addEventListener("click", (e) => {
   if (zb) { e.stopPropagation(); e.preventDefault(); return showZone(zb.dataset.zone); }
 }, true);
 
-const J = { pi: null, uid: null };
-const judgeAllowed = (S) => !!S && S.winner === null && (!ui.online || !!S.judge);
-function renderJudge(S, v) {
-  const box = $("#judge");
-  $("#judgeBtn").hidden = !(ui.test && judgeAllowed(S)); // card steps are done on the table (renderDoing); the panel stays for the test table and "Fix a mistake"
-  if (box.hidden || !judgeAllowed(S)) { if (!judgeAllowed(S)) box.hidden = true; return; }
-  if (J.pi === null) J.pi = v;
-  const p = S.players[J.pi];
-  const cardBtn = (c, where) => `<button class="jc${J.uid === c.uid ? " on" : ""}" data-juid="${c.uid}" title="${esc(where)}">${c.hidden ? "?" : esc(c.name)}${c.down ? " (face down)" : ""}</button>`;
-  const zone = (label, cards, open = true) => `<details ${open ? "open" : ""}><summary>${label} (${cards.length})</summary><div class="jrow">${cards.map((c) => cardBtn(c, label)).join("") || '<span class="muted">empty</span>'}</div></details>`;
-  const field = Game.unitsOf(J.pi).filter((k) => p.slots[k]).map((k) => {
-    const sl = p.slots[k];
-    return `<div class="junit"><b>${esc(k.toUpperCase())}</b> ${cardBtn(sl.card, "field")} <small>${fmt(Game.power(J.pi, k))}${sl.rest ? " · rest" : ""}${sl.locked ? " · locked" : ""}</small>
-      <button data-jop="power" data-k="${k}" data-a="5000">+5k</button><button data-jop="power" data-k="${k}" data-a="-5000">−5k</button>
-      <button data-jop="crit" data-k="${k}" data-a="1">★+1</button><button data-jop="crit" data-k="${k}" data-a="-1">★−1</button>
-      <button data-jop="rest" data-k="${k}" data-a="${sl.rest ? 0 : 1}">${sl.rest ? "Stand" : "Rest"}</button>${k !== "vc" ? `<button data-jop="lock" data-k="${k}">${sl.locked ? "Unlock" : "Lock"}</button>` : ""}</div>`;
-  }).join("");
-  const sel = J.uid !== null && [...p.hand, ...p.deck, ...p.drop, ...p.soul, ...p.damage, ...p.bind, ...(p.removed || []), ...(p.orderZone || []), ...(p.gUp || []), ...(p.gDeck || []), ...Game.unitsOf(J.pi).map((k) => p.slots[k] && p.slots[k].card).filter(Boolean)].find((c) => c.uid === J.uid);
-  const dests = [["hand", "Hand"], ["deckTop", "Deck top"], ["deckBottom", "Deck bottom"], ["drop", "Drop"], ["soul", "Soul"], ["damage", "Damage ↑"], ["damageDown", "Damage ↓"], ["bind", "Bind"], ["removed", "Removed"], ["orderZone", "Order zone"], ["automod", "AutoMOD"], ...Game.rcOf(J.pi).map((k) => [k, "RC " + k.toUpperCase()])];
-  setHTML($("#judgeBody"), `
-    ${S.judge ? `<p class="jtask">✋ ${esc(S.judge.text)}</p>${S.pending && S.pending.player === v ? `<div class="jrow"><button class="go" data-opt="done">Done ✓</button><button data-opt="skip">Skip (do nothing)</button></div>` : `<p class="muted">Waiting for ${esc(S.players[S.judge.by].name)} to press Done.</p>`}` : '<p class="muted">Move cards by hand when a card does something the game can\'t. Everything you do is written in the log.</p>'}
-    <div class="jtabs">${S.players.map((pl, i) => `<button data-jpi="${i}" class="${J.pi === i ? "on" : ""}">${esc(pl.name)}</button>`).join("")}</div>
-    ${sel ? `<div class="jmove"><b>${esc(sel.name)}</b> → ${dests.map(([d, l]) => `<button data-jto="${d}">${l}</button>`).join("")}${p.damage.includes(sel) ? '<button data-jop="flip">Flip</button>' : ""}<button data-jop="cancel">✕</button></div>` : '<p class="muted">Pick a card, then where it goes.</p>'}
-    <h4>Field</h4>${field || '<span class="muted">no units</span>'}
-    ${zone("Hand", p.hand)}${zone("Drop", p.drop)}${zone("Soul", p.soul, false)}${zone("Damage", p.damage)}${zone("Bind", p.bind, false)}${zone("Removed", p.removed || [], false)}${zone("Order zone", p.orderZone || [], false)}${(p.automod || []).length ? zone("AutoMOD", p.automod, false) : ""}
-    ${zone("Deck (top last)", p.deck, false)}
-    <div class="jrow"><button data-jop="draw">Draw 1</button><button data-jop="shuffle">Shuffle deck</button>${p.useEnergy ? '<button data-jop="energy" data-a="1">Energy +1</button><button data-jop="energy" data-a="-1">Energy −1</button>' : ""}</div>`);
-}
-async function judge(op) { const r = await Game.judgeOp({ pi: J.pi, ...op }); if (r && !r.ok) toast(r.msg); render(); }
-$("#judge").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  if (b.dataset.jpi !== undefined) { J.pi = +b.dataset.jpi; J.uid = null; return render(); }
-  if (b.dataset.juid !== undefined) { J.uid = J.uid === +b.dataset.juid ? null : +b.dataset.juid; return render(); }
-  if (b.dataset.jto) { const uid = J.uid; J.uid = null; return judge({ op: "move", uid, to: b.dataset.jto }); }
-  const op = b.dataset.jop;
-  if (op === "cancel") { J.uid = null; return render(); }
-  if (op === "flip") { const uid = J.uid; J.uid = null; return judge({ op: "flip", uid }); }
-  if (op === "power" || op === "crit") return judge({ op, key: b.dataset.k, amount: +b.dataset.a });
-  if (op === "rest") return judge({ op, key: b.dataset.k, value: b.dataset.a === "1" });
-  if (op === "lock") return judge({ op, key: b.dataset.k });
-  if (op === "energy") return judge({ op, amount: +b.dataset.a });
-  if (op === "draw" || op === "shuffle") return judge({ op });
-});
-$("#judgeBtn").addEventListener("click", () => { $("#judge").hidden = !$("#judge").hidden; render(); });
-$("#judgeClose").addEventListener("click", () => { $("#judge").hidden = true; });
-$("#fixBtn").addEventListener("click", () => { if (!judgeAllowed(Game.state())) return toast("Fixing by hand is for hot-seat games"); $("#logDrawer").hidden = true; $("#judge").hidden = false; render(); });
 $("#logBtn").addEventListener("click", () => { $("#logDrawer").hidden = !$("#logDrawer").hidden; render(); });
 $("#logClose").addEventListener("click", () => ($("#logDrawer").hidden = true));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; if (infoPinned) unpinInfo(); else if (!document.body.classList.contains("info-dock")) $("#info").hidden = true; } });
@@ -1201,7 +1153,7 @@ else Loader.wait(TEST && !ONLINE ? startTest(TEST) : loadSetup());
 
 // ---------- test table (editor → 🧪 Test this card) ----------
 // A solo table: you (seat 0) with the test card ×4 in the deck (or in the G deck), plain filler cards, and a dummy opponent.
-// The 🧪 panel puts the card in hand / on VC / on RC, fires any event on any circle, and fills zones. The ⚖ Judge panel does the rest.
+// The 🧪 panel puts the card in hand / on VC / on RC, fires any event on any circle, and fills zones. Card steps the game can't do are done on the table (click a card for its menu).
 const testFiller = () => {
   const u = (g, extra = {}) => ({ id: "test-g" + g + (extra.trigger || ""), name: extra.trigger ? `Test ${TRIG[extra.trigger].name}` : `Test Unit G${g}`,
     grade: g, type: extra.trigger ? "trigger" : "unit", power: [5000, 8000, 10000, 13000][g], shield: g === 3 ? 0 : g === 0 ? 5000 : 5000 + (g === 1 ? 0 : 5000),
@@ -1255,7 +1207,7 @@ function renderTest(S) {
       <button data-t="fill" data-z="damage" data-n="5">Damage to 5</button><button data-t="opp" data-z="damage">Opponent +1 damage</button><button data-t="energy">Energy +3</button></div>
     <h4>Phase</h4>
     <div class="jrow"><span class="muted">Now: turn ${S.turn}, ${esc(S.phase)}${S.active ? " (dummy's turn)" : ""}</span>${S.phase === "ride" ? '<button data-t="skipRide">Skip ride → main</button>' : ""}${S.phase === "main" && S.active === 0 ? '<button data-t="battle">To battle</button>' : ""}<button data-t="restart">Start over</button></div>
-    <p class="muted small">The ⚖ Judge panel moves any card anywhere and changes power, critical, rest/stand. Turn 1 can't attack: end the turn twice to attack. Watch the log (☰) for ✦ ability lines.</p>`);
+    <p class="muted small">Click any card on the table during a card step to move it or change its power. Turn 1 can't attack: end the turn twice to attack. Watch the log (☰) for ✦ ability lines.</p>`);
 }
 $("#testBody").addEventListener("change", (e) => { if (e.target.id === "ttKey") T.key = e.target.value; if (e.target.id === "ttEvent") T.event = e.target.value; });
 $("#testBody").addEventListener("click", async (e) => {
