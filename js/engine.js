@@ -86,6 +86,14 @@ const Game = (() => {
       queue: [], loss: [null, null], // waiting AUTO abilities; pending losses (decided at check timing)
       extras: Object.fromEntries((opts.extras || []).map((c) => [String(c.name).toLowerCase(), c])),
     };
+    // boss events: advantages for the boss seat only (a normal game has none)
+    S.players.forEach((p) => (p.maxDamage = 6));
+    if (opts.boss) {
+      const b = opts.boss, bp = S.players[b.seat];
+      if (+b.maxDamage > 6) bp.maxDamage = +b.maxDamage;
+      S.boss = { seat: b.seat, vcPower: +b.vcPower || 0 };
+      if (+b.extraDraw > 0) for (let i = 0; i < +b.extraDraw && bp.deck.length; i++) bp.hand.push(bp.deck.pop());
+    }
     depth = 0; inCheck = false; qN = 0;
     log(`Game start! ${P(first).name} goes first (draws on turn 1 but can't attack)`);
     // Energy Generator: the player who went second Energy-Charges 3 when it is placed in the crest zone
@@ -156,7 +164,7 @@ const Game = (() => {
       ["drop", "soul", "bind", "damage", "removed", "deck", "hand", "orderZone", "gUp"].forEach((z) => { if ((p[z] || []).some((c) => c.token && !(z === "orderZone" && c.ozToken))) p[z] = p[z].filter((c) => !c.token || (z === "orderZone" && c.ozToken)); });
       ["drop", "soul", "bind", "damage", "removed", "deck"].forEach((z) => { if (p[z].some((c) => c.ticket)) p[z] = p[z].filter((c) => !c.ticket); });
     });
-    S.players.forEach((p, pi) => { if (p.damage.length >= 6 && !S.loss[pi]) S.loss[pi] = "6 damage"; });
+    S.players.forEach((p, pi) => { const lim = p.maxDamage || 6; if (p.damage.length >= lim && !S.loss[pi]) S.loss[pi] = `${lim} damage`; });
     const [a, b] = S.loss;
     if (!a && !b) return;
     if (S.battle) { // the game ends mid-battle: guardians still go to the drop (G guardians to the G zone) so the final table shows every card
@@ -441,7 +449,8 @@ const Game = (() => {
     const heart = s.heart ? origPower(pi, s.heart) + (s.heartMate ? origPower(pi, s.heartMate) : 0) : 0; // stride: the heart's power is added (CR 6.5.2)
     const mate = s.mate ? origPower(pi, s.mate) : 0; // legion: the mate's power is added (CR 6.4)
     const base = s.deleted ? 0 : origPower(pi, s.card); // Delete: power drops by its printed power (CR 7.32)
-    return Math.max(0, base + heart + mate + s.pow + s.powB + persona + giftPower(pi, key) + cont(pi, key, "power"));
+    const boss = S.boss && S.boss.seat === pi && key === "vc" && S.active !== pi ? S.boss.vcPower : 0; // boss event: vanguard power on the opponent's turns
+    return Math.max(0, base + heart + mate + s.pow + s.powB + persona + boss + giftPower(pi, key) + cont(pi, key, "power"));
   }
   function crit(pi, key) {
     const s = P(pi).slots[key];
@@ -2259,7 +2268,7 @@ const Game = (() => {
       S.checking = null;
       if (c.trigger === "over") { d.removed.push(c); log(`${c.name} is removed from the game`); } else { d.damage.push(c); S.dmgTurn = S.turn; collectAll(di, "toDamage", { subject: c }); }
       await beat("checkMove");
-      if (d.damage.length >= 6) await beat("finish"); // the last damage: hold a moment before the game ends
+      if (d.damage.length >= (d.maxDamage || 6)) await beat("finish"); // the last damage: hold a moment before the game ends
       ruleActions(); // 6 damage is a rule action, checked after each damage check
     }
   }
