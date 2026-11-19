@@ -80,7 +80,7 @@ function preloadPictures() {
   if (typeof Net !== "undefined") Object.values(Net.images).forEach((u) => u && Pics.load(u));
 }
 // Online: you may only act when the engine is waiting on your seat.
-const myMove = () => !ui.online || Game.state().controller === ui.online.seat;
+const myMove = () => (ui.online ? Game.state().controller === ui.online.seat : ui.bot ? Game.state().controller === 0 : true);
 
 // ---------- setup ----------
 async function loadSetup() {
@@ -95,6 +95,13 @@ async function loadSetup() {
   const me = typeof Auth !== "undefined" && Auth.get();
   if (me) $("#n1").value = me.name;
   if (ONLINE && !ui.netReady) setupOnline();
+  if (BOT) {
+    $("#botBox").hidden = false;
+    $("#d2").innerHTML = `<option value="same">Same as mine</option>` + opts;
+    $("#botLevel").value = Bot.LEVELS.includes(BOT) ? BOT : "normal";
+    $("#setup h1").textContent = "Play vs Bot";
+    $("#n1Label").textContent = "Your name";
+  }
 }
 
 // ---------- online setup (host / join) ----------
@@ -174,9 +181,36 @@ async function startGame() {
   if (!$("#d1").value) return toast("Build a deck in the Card & deck editor first");
   if (ONLINE === "join") return joinOnline();
   if (ONLINE === "host") return startHosted().catch((e) => toast(e.message));
+  if (BOT) return startBot().catch((e) => toast(e.message));
 }
-// online: your seat; the editor's test table: whoever must act (the tester plays both sides there)
-const view = () => (ui.online ? ui.online.seat : Game.state().controller);
+// ---------- vs the bot (js/bot.js): a local game, the bot plays seat 1 ----------
+const BOT = new URLSearchParams(location.search).get("bot"); // "easy" | "normal"
+async function startBot() {
+  const mine = await DB.loadDeck($("#d1").value);
+  const botDeck = $("#d2").value === "same" ? mine : await DB.loadDeck($("#d2").value);
+  const level = Bot.LEVELS.includes($("#botLevel").value) ? $("#botLevel").value : "normal";
+  const name = $("#n1").value.trim() || "Player";
+  Object.assign(ui, { bot: { seat: 1, level }, online: null, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+  Game.newGame([name, `Bot · ${level === "easy" ? "Easy" : "Normal"}`], [mine, botDeck], { first: null, extras: await DB.extras() });
+  $("#setup").hidden = true;
+  $("#win").hidden = true;
+  const loading = loadingTable("Shuffling decks…");
+  render();
+  await loading;
+}
+// after every redraw: if the bot must act, it thinks for a moment, then makes one move
+function botTick() {
+  if (!ui.bot || ui.botTimer || !Bot.wants(ui.bot.seat)) return;
+  ui.botThinking = true;
+  ui.botTimer = setTimeout(async () => {
+    try { await Bot.step(ui.bot.seat, ui.bot.level); }
+    catch (e) { console.error(e); }
+    finally { ui.botTimer = 0; ui.botThinking = false; scheduleRender(); }
+  }, document.hidden ? 0 : Bot.THINK_MS);
+  scheduleRender();
+}
+// online: your seat; vs the bot: seat 0; the editor's test table: whoever must act
+const view = () => (ui.online ? ui.online.seat : ui.bot ? 0 : Game.state().controller);
 
 // ---------- card drawing ----------
 // A card is drawn in three parts so an existing card element can be updated in place
@@ -382,7 +416,7 @@ function renderSide(root, pi, side) {
   const acts = S.controller === pi && S.winner === null;
   setHTML(P.plate, `<div class="cp-av" style="--h:${hue(p.name)}">${esc((p.name || "?").trim().charAt(0).toUpperCase())}</div>
     <div class="cp-main">
-      <div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}${acts ? '<span class="actmark" title="This player acts now">● acting</span>' : ""}</div>
+      <div class="pname">${esc(p.name)}${pi === S.active ? '<span class="turnmark">TURN</span>' : ""}${acts ? '<span class="actmark" title="This player acts now">● acting</span>' : ""}${ui.bot && pi === ui.bot.seat && ui.botThinking ? '<span class="thinking">thinking…</span>' : ""}</div>
       <div class="cp-stats"><span class="st dmg${p.damage.length >= 5 ? " hot" : ""}" title="Damage"><small>Damage</small><b>${p.damage.length}/6</b></span><span class="st" title="Cards in deck"><small>Deck</small><b>${p.deck.length}</b></span><span class="st" title="Cards in hand"><small>Hand</small><b>${p.hand.length}</b></span></div>
       <div class="chips">${chip("Soul", p.soul.length, "", "soul")}${chip("CB", Game.faceUp(p), "cb", "", "Face-up damage you can Counter-Blast")}${p.useEnergy ? chip("Energy", p.energy, "en") : ""}${p.bind.length ? chip("Bind", p.bind.length, "", "bind") : ""}${p.removed && p.removed.length ? chip("Removed", p.removed.length, "", "removed") : ""}${(p.orderZone || []).length ? chip("Orders", p.orderZone.length, "oz", "orderZone") : ""}${(p.automod || []).length ? chip("AutoMOD", p.automod.length, "am", "automod") : ""}${Game.worldOf(pi) ? chip("World", esc(Game.worldOf(pi)), "world") : ""}${p.giftType ? chip("Gift", `${p.giftType[0].toUpperCase() + p.giftType.slice(1)} ${(p.giftVariant || {})[p.giftType] || ""}`, "gift") : ""}${(p.gDeck && p.gDeck.length) || (p.gUp && p.gUp.length) ? chip("G zone", `${(p.gDeck || []).length}·${(p.gUp || []).length}↑`, "gz", "gzone") : ""}</div>
     </div>`);
@@ -890,7 +924,9 @@ function render() {
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
   if (S.winner !== null) reportMatch(S); else if (!$("#winCoins").hidden) $("#winCoins").hidden = true;
   if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
+  if (ui.bot) $("#winBtn").textContent = "Play again";
   FX.after(S);
+  botTick();
 }
 // the player plates sit beside the mats when the screen has room on the right; otherwise inside the mat (between order and damage)
 function placePlates() { document.body.classList.add("plate-out"); }
@@ -928,7 +964,7 @@ function actionsHTML(S, v) {
   const b = (id, text, cls = "", data = "") => `<button data-act="${id}" class="${cls}" ${data}>${text}</button>`;
   const hint = (t) => `<p class="hint">${t}</p>`;
   if (S.winner !== null) return b("restart", "New game", "go");
-  if (ui.online && S.controller !== v) return hint(S.pending ? `${esc(S.players[S.controller].name)} is choosing…` : S.battle ? `${esc(S.players[S.controller].name)} is guarding…` : `${esc(S.players[S.controller].name)}'s move…`);
+  if ((ui.online || ui.bot) && S.controller !== v) return hint(S.pending ? `${esc(S.players[S.controller].name)} is choosing…` : S.battle ? `${esc(S.players[S.controller].name)} is guarding…` : `${esc(S.players[S.controller].name)}'s move…`);
   if (S.pending) return hint("Waiting for a choice…");
   const isActive = v === S.active;
   if (S.phase === "mulligan") return hint("Tap cards to send back") + b("mull", ui.mull.size ? `Redraw ${ui.mull.size}` : "Keep hand", "go");
@@ -1106,6 +1142,7 @@ function onAction(a, el) {
         loadingTable("Shuffling decks…");
         return render();
       }
+      if (ui.bot) { $("#win").hidden = true; return startBot().catch((e) => toast(e.message)); }
       return Loader.go("lobby.html");
   }
 }
@@ -1325,7 +1362,7 @@ $("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value
 Game.setOnChange(() => { scheduleRender(); if (ui.online && ONLINE === "host") Net.pushState(); });
 const TEST = new URLSearchParams(location.search).get("test"); // card id: open the test table for that card
 // every match is online (host / join); the only local table is the editor's test table
-if (!ONLINE && !TEST) Loader.go("lobby.html");
+if (!ONLINE && !TEST && !BOT) Loader.go("lobby.html");
 else Loader.wait(TEST && !ONLINE ? startTest(TEST) : loadSetup());
 
 // ---------- test table (editor → 🧪 Test this card) ----------

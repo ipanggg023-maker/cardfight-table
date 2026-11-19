@@ -226,13 +226,15 @@ const Bot = (() => {
     if (typeof Game[m.fn] !== "function") return { ok: false, msg: "no such action" };
     let done = null;
     const p = Promise.resolve(Game[m.fn](...m.args)).then((r) => (done = r || { ok: true }));
-    for (let i = 0; i < 200 && !done; i++) {
-      await tick();
+    // keep watching while the action runs (on-screen pauses can take seconds): a choice for anyone means the move is made
+    const t0 = Date.now();
+    while (!done) {
+      await new Promise((r) => setTimeout(r, 20));
       const S = Game.state();
-      if (!done && S.pending) return { ok: true, waiting: true }; // the action goes on after the choice
+      if (!done && S && S.pending) return { ok: true, waiting: true }; // the action goes on after the choice
+      if (!done && Date.now() - t0 > 120000) return { ok: true, waiting: true }; // never hang the bot loop
     }
-    if (!done) { await p; }
-    return done || { ok: true };
+    return done;
   }
 
   // make one move for this seat

@@ -217,3 +217,23 @@ test("easy random move", async () => {
     assert.notEqual(rnd, own);
   } finally { Bot.random = realRandom; }
 });
+
+// ---------- found in the browser: long on-screen pauses must not stop the bot answering its own choices ----------
+test("a long pause before the bot's own choice doesn't deadlock", async () => {
+  const { Game, TextParse: TP, Bot } = load();
+  Game.newGame(["P0", "Bot"], [deck(TP, "standard", "A"), deck(TP, "standard", "B")], { first: 1 });
+  const S = Game.state(), me = S.players[1];
+  Object.assign(S, { phase: "main", active: 1, controller: 1, turn: 4, pending: null });
+  me.slots.vc = sl(mk(TP, "BotVC", 2, { power: 10000 }));
+  for (const k of ["fl", "fr", "bl", "bc", "br"]) me.slots[k] = null;
+  me.hand = [{ ...mk(TP, "Asker", 2, { power: 12000 }), abilities: TP.abilities("[AUTO](RC):When this unit is placed on (RC), you may draw a card.") }];
+  Game.setPace(() => new Promise((r) => setTimeout(r, 4500))); // the call pause lasts longer than the old 200-tick wait (~3 s)
+  const t0 = Date.now();
+  const r = await Promise.race([Bot.step(1, "normal"), new Promise((res) => setTimeout(() => res("timeout"), 9000))]);
+  assert.notEqual(r, "timeout", "Bot.step returned");
+  assert.ok(S.pending && S.pending.player === 1, "the bot's own yes/no is waiting");
+  assert.ok(Bot.wants(1));
+  const r2 = await Bot.step(1, "normal");
+  assert.equal(r2.ok, true);
+  assert.ok(Date.now() - t0 < 12000);
+});

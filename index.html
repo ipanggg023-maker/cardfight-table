@@ -53,6 +53,10 @@
       <label><span id="n1Label">Player 1</span> <input id="n1" value="Player 1" maxlength="20"></label>
       <label>Deck <select id="d1"></select></label>
     </div>
+    <div id="botBox" class="grid2" hidden>
+      <label>Bot's deck <select id="d2"></select></label>
+      <label>Level <select id="botLevel"><option value="easy">Easy</option><option value="normal">Normal</option></select></label>
+    </div>
     <div id="onlineBox" class="onlinebox" hidden>
       <div class="host-only"><small>Room code</small><b id="roomCode">·····</b></div>
       <label class="join-only">Room code <input id="joinCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
@@ -118,6 +122,7 @@
 <script src="js/net.js"></script>
 <script src="js/pace.js"></script>
 <script src="js/sound.js"></script>
+<script src="js/bot.js"></script>
 <script src="js/ui.js"></script>
 <script>mountUserChip();</script>
 </body>

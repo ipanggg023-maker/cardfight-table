@@ -837,3 +837,8 @@ body.game { --violet: #b896ff; }
 .czoom.aside .czc, .czoom.aside.in .czc { transform: scale(.42); transform-origin: right center; }
 .czoom.aside .czb { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .czoom.aside .czc, .czoom.aside.in .czc { transform: scale(.42); } }
+
+/* bot opponent: its plate shows when it is thinking */
+.plate .thinking { font: 600 .7rem var(--display); color: var(--cyan); letter-spacing: .06em; animation: thinking 1s ease-in-out infinite; }
+@keyframes thinking { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .plate .thinking { animation: none; } }
