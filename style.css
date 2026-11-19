@@ -804,3 +804,29 @@ body.game { --violet: #b896ff; }
 .gc .gcards .gw > .card.mini { width: calc(var(--mh) * 0.16); height: calc(var(--mh) * 0.22); }
 .gc .gcards .gw + .gw { margin-left: calc(var(--mh) * -0.02); }
 .gc .itag { top: 50%; bottom: auto; transform: translate(-50%, -50%); z-index: 2; }
+
+/* ---- v6 moments: drawn card, opponent's draw, key ride cut-in, SKILL strip, call preview ---- */
+.hand .hc.drawn { transform: translateY(-14%) scale(1.08); z-index: 3; box-shadow: 0 0 0 2px var(--cyan); border-radius: 8px; transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+.flyback { position: fixed; z-index: 55; width: calc(var(--cw) * .7); aspect-ratio: .73; border-radius: 6px; pointer-events: none;
+  background: repeating-linear-gradient(45deg, #1b2f4f 0 8px, #172a47 8px 16px); border: 1px solid #3b5f8f; box-shadow: 0 6px 14px #000a; }
+.cutin { position: fixed; left: 0; right: 0; top: 50%; z-index: 58; pointer-events: none; display: grid; justify-items: center; gap: 2px; padding: 14px 0;
+  transform: translateY(-50%) scaleY(0); opacity: 0; transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .22s;
+  background: linear-gradient(90deg, #0000, #070d18f0 20%, #070d18f0 80%, #0000); border-block: 1px solid #f2b94b66; }
+.cutin[hidden] { display: none; }
+.cutin.on { transform: translateY(-50%) scaleY(1); opacity: 1; }
+.cutin small { font: 700 .9rem var(--display); letter-spacing: .3em; color: var(--gold); }
+.cutin b { font: 700 clamp(1.4rem, 3.4vw, 2.4rem) var(--display); color: #fff; }
+.cutin.theirs small { color: var(--red); } .cutin.theirs { border-color: #e85d7466; }
+.skillstrip { position: fixed; z-index: 57; pointer-events: none; display: flex; align-items: center; gap: 10px; padding: 8px 18px 8px 8px; border-radius: 12px;
+  background: #070d18f0; border: 1px solid var(--gold); box-shadow: 0 10px 30px #000c; opacity: 0; transition: transform .26s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+.skillstrip.mine { left: 16px; bottom: 140px; transform: translateX(-120%); }
+.skillstrip.theirs { right: 16px; top: 140px; transform: translateX(120%); border-color: var(--red); }
+.skillstrip.on { transform: translateX(0); opacity: 1; }
+.skillstrip .ssp { width: 64px; height: 88px; border-radius: 6px; background: center / cover no-repeat #24426d; flex: none; }
+.skillstrip .sst { display: grid; }
+.skillstrip small { font: 700 .8rem var(--display); letter-spacing: .3em; color: var(--gold); }
+.skillstrip.theirs small { color: var(--red); }
+.skillstrip b { font: 700 1rem var(--display); color: #fff; max-width: 260px; }
+.slot .cpreview { position: absolute; inset: 0; display: grid; place-items: center; opacity: .55; pointer-events: none; z-index: 2; }
+.slot .cpreview .card { outline: 2px dashed var(--green); }
+@media (prefers-reduced-motion: reduce) { .cutin, .skillstrip, .hand .hc.drawn { transition: none; } }

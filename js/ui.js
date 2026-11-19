@@ -424,14 +424,18 @@ function renderHand(hand, picked) {
   for (const c of hand) {
     let el = have.get(String(c.uid));
     if (el) { have.delete(String(c.uid)); patchCard(el.firstElementChild, c); }
-    else { el = document.createElement("div"); el.dataset.hand = c.uid; el.innerHTML = cardHTML(c); }
-    const cls = "hc" + picked(c);
+    else {
+      el = document.createElement("div"); el.dataset.hand = c.uid; el.innerHTML = cardHTML(c);
+      if (box.dataset.ready && !FX_FAST()) { el.dataset.drawn = "1"; setTimeout(() => { delete el.dataset.drawn; el.classList.remove("drawn"); }, 600); }
+    }
+    const cls = "hc" + picked(c) + (el.dataset.drawn ? " drawn" : "");
     if (el.className !== cls) el.className = cls;
     const want = prev ? prev.nextSibling : box.firstChild;
     if (want !== el) box.insertBefore(el, want);
     prev = el;
   }
   have.forEach((el) => el.remove());
+  box.dataset.ready = "1"; // the first hand of a game doesn't count as "drawn"
 }
 // Engine updates can come in bursts (abilities, triggers): draw at most once per frame.
 // The timeout covers background tabs, where animation frames are paused.
@@ -631,6 +635,93 @@ const FX = (() => {
     reset() { prev = null; prevWhere = new Map(); lastN = 0; lastView = null; lastBattle = ""; pow = new Map(); if (layer) layer.innerHTML = ""; },
   };
 })();
+// ---------- moments: the opponent's draw, key ride cut-in, SKILL strip ----------
+const MO = { oppHand: null, ride: "", resolveN: 0, logN: -1 };
+function renderMoments(S, v) {
+  // a new game: the log counter starts again (the guest's state is a new object after every snapshot, so identity can't tell)
+  const fresh = (S.logN || 0) < MO.logN || MO.logN < 0;
+  MO.logN = S.logN || 0;
+  if (fresh) { MO.oppHand = null; MO.ride = ""; MO.resolveN = (S.resolving && S.resolving.n) || 0; }
+  const reduced = FX_FAST();
+  // the opponent drew: a card back flies from their deck to their plate (their cards stay hidden)
+  const oh = S.players[1 - v].hand.length;
+  if (MO.oppHand !== null && oh > MO.oppHand && !reduced && S.phase !== "mulligan") {
+    const P = $("#opp")._parts;
+    if (P) flyBack(P.deck, P.plate, Math.min(3, oh - MO.oppHand));
+  }
+  MO.oppHand = oh;
+  // key ride (grade 3+ / persona / stride): the name across the middle
+  if (S.beat === "keyRide") {
+    const pi = S.active, vc = S.players[pi].slots.vc, key = `${S.turn}:${pi}:${vc && vc.card.uid}`;
+    if (vc && key !== MO.ride) {
+      MO.ride = key;
+      const kind = vc.heart ? "STRIDE" : S.players[pi].personaThisTurn ? "PERSONA RIDE" : "RIDE";
+      cutIn(vc.card, kind, pi === v);
+    }
+  }
+  // an ability resolves: a short SKILL strip with the card's picture from its owner's corner
+  const R = S.resolving;
+  if (R && R.n !== MO.resolveN) {
+    MO.resolveN = R.n;
+    if (R.kind === "AUTO" && !reduced) { const c = cardByUid(S, R.uid); if (c) skillStrip(c, R.pi === v); }
+  }
+}
+function cardByUid(S, uid) {
+  if (seen.has(uid)) return seen.get(uid);
+  for (const p of S.players) {
+    for (const s of Object.values(p.slots)) if (s && s.card && s.card.uid === uid) return s.card;
+    for (const z of ["hand", "drop", "soul", "orderZone", "damage", "bind", "gUp"]) { const c = (p[z] || []).find((x) => x.uid === uid); if (c) return c; }
+  }
+  return null;
+}
+function flyBack(from, to, n) {
+  if (!from || !to) return;
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+  for (let i = 0; i < n; i++) {
+    const g = document.createElement("div");
+    g.className = "flyback";
+    g.style.left = a.left + a.width / 2 + "px"; g.style.top = a.top + a.height / 2 + "px";
+    document.body.appendChild(g);
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+    const an = g.animate([{ transform: "translate(-50%,-50%) scale(1)", opacity: 1 }, { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.5)`, opacity: .2 }], { duration: 420, delay: i * 90, easing: "cubic-bezier(.4,0,.6,1)", fill: "both" });
+    an.onfinish = an.oncancel = () => g.remove();
+    setTimeout(() => g.remove(), 900 + i * 90);
+  }
+}
+function cutIn(card, kind, mine) {
+  let el = $("#cutin");
+  if (!el) { el = document.createElement("div"); el.id = "cutin"; el.setAttribute("aria-live", "polite"); document.body.appendChild(el); }
+  el.className = "cutin" + (mine ? " mine" : " theirs");
+  el.innerHTML = `<small>${esc(kind)}</small><b>${esc(card.name)}</b>`;
+  el.hidden = false;
+  void el.offsetWidth;
+  el.classList.add("on");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.classList.remove("on"); setTimeout(() => (el.hidden = true), 300); }, 1000);
+}
+function skillStrip(card, mine) {
+  const el = document.createElement("div");
+  el.className = "skillstrip" + (mine ? " mine" : " theirs");
+  const src = Pics.url(card);
+  el.innerHTML = `<span class="ssp"${src ? ` style="background-image:url('${esc(src.replace(/'/g, "%27"))}')"` : ""}></span><span class="sst"><small>SKILL</small><b>${esc(card.name)}</b></span>`;
+  document.body.appendChild(el);
+  void el.offsetWidth;
+  el.classList.add("on");
+  setTimeout(() => { el.classList.remove("on"); setTimeout(() => el.remove(), 300); }, 900);
+}
+// call: a translucent preview of the picked hand card on the circle under the pointer
+document.addEventListener("mouseover", (e) => {
+  const slot = e.target.closest && e.target.closest("#me .slot.can-drop");
+  document.querySelectorAll(".cpreview").forEach((p) => { if (!slot || p.parentElement !== slot) p.remove(); });
+  if (!slot || slot.querySelector(".cpreview") || !ui.sel) return;
+  const S = Game.state(), c = S && S.players[view()].hand.find((x) => x.uid === ui.sel);
+  if (!c || (slot.querySelector(":scope > .card") && slot.dataset.key === "vc" && S.phase !== "ride")) return;
+  const p = document.createElement("div");
+  p.className = "cpreview";
+  p.innerHTML = cardHTML(c, {}, null, null, "");
+  slot.appendChild(p);
+});
+
 // numbers that count up to their new value (text only, a timer, no layout animation)
 const NUMS = {};
 function setNum(k, v) {
@@ -782,6 +873,7 @@ function render() {
   renderPending(S, v);
   renderDoing(S, v);
   renderCheckZoom(S, v);
+  renderMoments(S, v);
   if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
