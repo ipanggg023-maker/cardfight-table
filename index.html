@@ -57,17 +57,12 @@
       <label><span id="n1Label">Player 1</span> <input id="n1" value="Player 1" maxlength="20"></label>
       <label>Deck <select id="d1"></select></label>
       <div class="matpick" data-seat="1"></div>
-      <label class="p2">Player 2 <input id="n2" value="Player 2" maxlength="20"></label>
-      <label class="p2">Deck <select id="d2"></select></label>
-      <div class="matpick p2" data-seat="2"></div>
     </div>
     <div id="onlineBox" class="onlinebox" hidden>
       <div class="host-only"><small>Room code</small><b id="roomCode">·····</b></div>
       <label class="join-only">Room code <input id="joinCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE"></label>
       <p id="netStatus" class="muted"></p>
     </div>
-    <label class="p2 firstrow">Who goes first <select id="firstP"><option value="">Random (official)</option><option value="0">Player 1</option><option value="1">Player 2</option></select></label>
-    <label class="chk" id="hotseatRow"><input type="checkbox" id="hotseat" checked> Hide hands (pass the device between turns)</label>
     <button id="startBtn" class="go big">Start game</button>
     <details class="rules">
       <summary>Quick rules</summary>
@@ -100,12 +95,6 @@
   </div>
 </div>
 
-<div id="curtain" class="overlay curtain" hidden>
-  <div class="panel">
-    <p id="curtainText"></p>
-    <button id="curtainBtn" class="go big">Ready</button>
-  </div>
-</div>
 
 <div id="win" class="overlay" hidden>
   <div class="panel">

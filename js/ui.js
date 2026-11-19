@@ -5,7 +5,7 @@ const fmt = (n) => n.toLocaleString("en-US");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
 const hue = (s) => [...String(s || "x")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
 
-const ui = { sel: null, mode: null, attacker: null, boost: true, unitSel: null, mull: new Set(), pick: new Set(), hotseat: true, shown: 0, online: null };
+const ui = { sel: null, mode: null, attacker: null, boost: true, unitSel: null, mull: new Set(), pick: new Set(), online: null };
 const seen = new Map(); // uid -> card, for the info panel
 const ONLINE = new URLSearchParams(location.search).get("online"); // "host" | "join" | null
 const imgOf = (c) => (typeof Net !== "undefined" ? Net.img(c) : c.image || "");
@@ -94,11 +94,9 @@ async function loadSetup() {
   }).join("") || `<option value="">No decks yet: build one in the editor</option>`;
   $("#d1").innerHTML = opts;
   const me = typeof Auth !== "undefined" && Auth.get();
-  if (me) { $("#n1").value = me.name; if (me.lastP2) $("#n2").value = me.lastP2; }
-  $("#d2").innerHTML = opts;
-  if (decks[1]) $("#d2").value = decks[1].id;
+  if (me) $("#n1").value = me.name;
   await Mats.probe();
-  [1, 2].forEach(renderMatPick);
+  renderMatPick(1);
   if (ONLINE && !ui.netReady) setupOnline();
 }
 
@@ -108,7 +106,6 @@ async function setupOnline() {
   ui.netReady = true;
   document.body.classList.add("online", "online-" + ONLINE);
   $("#onlineBox").hidden = false;
-  $("#hotseatRow").hidden = true;
   $("#n1Label").textContent = "Your name";
   $("#setup h1").textContent = ONLINE === "host" ? "Host online" : "Join online";
   const btn = $("#startBtn");
@@ -127,7 +124,7 @@ function onNet(ev) {
     netStatus(`${ev.name} joined with “${ev.deck.name}”. Press Start when ready.`);
     Object.assign($("#startBtn"), { disabled: false, textContent: "Start game" });
   } else if (ev.type === "start") {    // guest: host started the match
-    Object.assign(ui, { online: { seat: ev.seat }, mats: ev.mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+    Object.assign(ui, { online: { seat: ev.seat }, mats: ev.mats, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
     $("#setup").hidden = true;
     $("#win").hidden = true;
     $("#netLost").hidden = true;
@@ -170,7 +167,7 @@ async function startHosted() {
   const deck = await DB.loadDeck($("#d1").value);
   const names = [$("#n1").value.trim() || "Host", ui.guest.name || "Guest"];
   const mats = [Mats.resolve(1, Mats.choice(1)), ui.guest.mat || { key: "classic", img: "" }];
-  Object.assign(ui, { online: { seat: 0 }, mats, hotseat: false, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+  Object.assign(ui, { online: { seat: 0 }, mats, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   $("#setup").hidden = true;
   Net.startHosted(names, [deck, ui.guest.deck], mats, [(() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })(), ui.guest.uid || null], await DB.extras());
   const loading = loadingTable("Shuffling decks…");
@@ -205,23 +202,9 @@ async function startGame() {
   if (!$("#d1").value) return toast("Build a deck in the Card & deck editor first");
   if (ONLINE === "join") return joinOnline();
   if (ONLINE === "host") return startHosted().catch((e) => toast(e.message));
-  if (typeof Auth !== "undefined" && Auth.get()) Auth.set({ ...Auth.get(), lastP2: $("#n2").value.trim() });
-  try {
-    const decks = [await DB.loadDeck($("#d1").value), await DB.loadDeck($("#d2").value)];
-    if (decks[0].format !== decks[1].format) toast(`Different formats: ${FORMATS[decks[0].format].label} vs ${FORMATS[decks[1].format].label}. Each deck plays by its own setup.`);
-    ui.hotseat = $("#hotseat").checked;
-    ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
-    const fp = $("#firstP").value;
-    Game.newGame([$("#n1").value.trim() || "Player 1", $("#n2").value.trim() || "Player 2"], decks, { first: fp === "" ? null : +fp, extras: await DB.extras() });
-    toast(`${Game.state().players[Game.state().first].name} goes first`);
-    Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
-    $("#setup").hidden = true;
-    const loading = loadingTable("Shuffling decks…");
-    render();
-    await loading;
-  } catch (e) { toast(e.message); }
 }
-const view = () => (ui.online ? ui.online.seat : ui.hotseat ? ui.shown : Game.state().controller);
+// online: your seat; the editor's test table: whoever must act (the tester plays both sides there)
+const view = () => (ui.online ? ui.online.seat : Game.state().controller);
 
 // ---------- card drawing ----------
 // A card is drawn in three parts so an existing card element can be updated in place
@@ -438,13 +421,13 @@ function renderRail(S) {
   const ph = S.phase === "stride" ? "ride" : S.phase;
   const i = PHASES.findIndex(([k]) => k === ph);
   const mine = S.active === v;
-  const head = S.phase === "mulligan" ? "Mulligan" : ui.online || !ui.hotseat ? `${mine ? "Your" : "Opponent's"} turn <b>${S.turn}</b>` : `Turn <b>${S.turn}</b> · ${esc(S.players[S.active].name)}`;
+  const head = S.phase === "mulligan" ? "Mulligan" : `${mine ? "Your" : "Opponent's"} turn <b>${S.turn}</b>`;
   setHTML($("#rail"), `<div class="ph-head${mine ? " mine" : ""}">${head}</div>${S.phase === "mulligan" ? "" : PHASES.map(([k, l], j) =>
     `<div class="ph${j === i ? " on" : j < i ? " done" : ""}"><span>${S.phase === "stride" && k === "ride" ? "Stride" : l}</span>${j === i ? `<small class="ph-hint"></small>` : ""}</div>`).join("")}`);
   const beat = S.winner !== null ? "" : S.phase === "mulligan" ? "mulligan" : `${S.turn}`;
   if (beat && beat !== lastBeat) { // a new turn: a quick strip across the middle
     lastBeat = beat;
-    showBanner(S.phase === "mulligan" ? "Mulligan" : ui.online || !ui.hotseat ? `${mine ? "Your" : "Opponent's"} turn ${S.turn}` : `Turn ${S.turn} · ${S.players[S.active].name}`, S.phase === "mulligan" ? "" : "Stand & Draw");
+    showBanner(S.phase === "mulligan" ? "Mulligan" : `${mine ? "Your" : "Opponent's"} turn ${S.turn}`, S.phase === "mulligan" ? "" : "Stand & Draw");
   }
 }
 let bannerT;
@@ -689,8 +672,6 @@ function FX_FAST() { return !!(window.matchMedia && matchMedia("(prefers-reduced
 function render() {
   const S = Game.state();
   if (!S) return;
-  if (ui.hotseat && ui.shown !== S.controller && S.winner === null) return showCurtain();
-  $("#curtain").hidden = true;
   const v = view();
   preloadPictures(); // cheap after the first time: every picture is already in the cache
   FX.before();
@@ -741,12 +722,12 @@ function render() {
 function placePlates() { document.body.classList.add("plate-out"); }
 
 // ---------- coins from online matches (supabase/004_matches.sql) ----------
-// Both players report; the server pays when both agree. Hot-seat games never pay (one person could play both sides).
+// Both players report; the server pays when both agree. Test-table games never pay.
 const reported = new Set();
 function reportMatch(S) {
   const box = $("#winCoins"), m = ui.online && typeof Net !== "undefined" ? Net.match : null;
   const me = Auth.get();
-  if (!m || !me || me.guest) { box.hidden = !ui.hotseat || !me || me.guest; box.textContent = "Local games don't give coins. Play online to earn coins."; return; }
+  if (!m || !me || me.guest) { box.hidden = true; return; }
   if (reported.has(m.id)) return;
   reported.add(m.id);
   const seat = ui.online.seat, opp = m.uids[1 - seat];
@@ -860,16 +841,6 @@ function renderPending(S, v) {
   $("#choiceOk").textContent = `Confirm (${ui.pick.size}${p.min === p.max ? "/" + p.max : ", " + p.min + "–" + p.max})`;
 }
 
-function showCurtain() {
-  const S = Game.state();
-  let why = "Your turn";
-  if (S.pending) why = "You have a choice to make";
-  else if (S.phase === "mulligan") why = "Choose cards to redraw";
-  else if (S.battle) why = "You are being attacked: choose guardians";
-  $("#curtainText").innerHTML = `Pass the device to <b>${esc(S.players[S.controller].name)}</b><br><span>${why}</span>`;
-  $("#curtain").hidden = false;
-  $("#choice").hidden = true;
-}
 
 // ---------- interaction ----------
 let toastT;
@@ -961,7 +932,7 @@ function onAction(a, el) {
         loadingTable("Shuffling decks…");
         return render();
       }
-      $("#setup").hidden = false; $("#win").hidden = true; return loadSetup();
+      return Loader.go("lobby.html");
   }
 }
 function onOpt(id) {
@@ -1211,7 +1182,6 @@ $("#choiceOk").addEventListener("click", () => {
   ui.pick.clear();
 });
 $("#startBtn").addEventListener("click", startGame);
-$("#curtainBtn").addEventListener("click", () => { ui.shown = Game.state().controller; render(); });
 $("#winBtn").addEventListener("click", () => onAction("restart"));
 $("#zoneClose").addEventListener("click", () => ($("#zone").hidden = true));
 $("#zoneCards").addEventListener("click", (e) => { const b = e.target.closest("[data-playdrop]"); if (!b) return; $("#zone").hidden = true; act(Game.playOrder(+b.dataset.playdrop)); });
@@ -1225,7 +1195,9 @@ $("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value
 // Host: every engine change goes to the guest too.
 Game.setOnChange(() => { scheduleRender(); if (ui.online && ONLINE === "host") Net.pushState(); });
 const TEST = new URLSearchParams(location.search).get("test"); // card id: open the test table for that card
-Loader.wait(TEST && !ONLINE ? startTest(TEST) : loadSetup());
+// every match is online (host / join); the only local table is the editor's test table
+if (!ONLINE && !TEST) Loader.go("lobby.html");
+else Loader.wait(TEST && !ONLINE ? startTest(TEST) : loadSetup());
 
 // ---------- test table (editor → 🧪 Test this card) ----------
 // A solo table: you (seat 0) with the test card ×4 in the deck (or in the G deck), plain filler cards, and a dummy opponent.
@@ -1248,12 +1220,11 @@ function testDeck(card) {
 }
 async function startTest(id) {
   const card = (await DB.all("cards")).find((c) => c.id === id);
-  if (!card) { toast("Test card not found. Save it in the editor first."); return loadSetup(); }
+  if (!card) { toast("Test card not found. Save it in the editor first."); return Loader.go("editor.html"); }
   ui.test = { card };
-  ui.hotseat = false;
   ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
   Game.newGame(["Tester", "Dummy"], [testDeck(card), testDeck(null)], { first: 0, extras: await DB.extras() });
-  Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set(), shown: -1 });
+  Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   await Game.mulligan([]);
   await Game.mulligan([]);
   $("#setup").hidden = true;

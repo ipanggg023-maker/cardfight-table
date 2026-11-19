@@ -86,7 +86,6 @@ button:disabled { cursor: not-allowed; }
 .skin-mat .hero .brand svg, .skin-mat .lobby-main .brand svg { display: none; }
 
 /* ---------- online play (index.html?online=host|join) ---------- */
-body.online .p2 { display: none; }
 .onlinebox { margin: 4px 0 12px; display: grid; gap: 6px; }
 .onlinebox .host-only, .onlinebox .join-only { display: none; }
 body.online-host .onlinebox .host-only { display: flex; align-items: baseline; gap: 12px; }
