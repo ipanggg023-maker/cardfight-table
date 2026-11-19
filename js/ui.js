@@ -681,9 +681,9 @@ const FX = (() => {
     reset() { prev = null; prevWhere = new Map(); lastN = 0; lastView = null; lastBattle = ""; pow = new Map(); if (layer) layer.innerHTML = ""; },
   };
 })();
-// Drive / damage checks and battle results wait a moment on screen so both players can follow them
-Game.setPace((kind) => new Promise((ok) => setTimeout(ok, document.hidden || FX_FAST() ? 60 : kind === "check" ? 650 : 420)));
-function FX_FAST() { return !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) || !!ui.test; }
+// Every battle moment waits on screen (js/pace.js) so both players can follow it; the test table and hidden tabs barely wait
+Game.setPace((kind) => new Promise((ok) => setTimeout(ok, Pace.ms(kind, { reduced: FX_FAST(), hidden: document.hidden, test: !!ui.test }))));
+function FX_FAST() { return !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches); }
 
 // ---------- full render ----------
 function render() {
@@ -882,7 +882,8 @@ function toast(m) {
 }
 async function act(promise) {
   const res = await promise;
-  if (res && !res.ok) toast(res.msg);
+  // a click while a battle moment is still showing is refused by the engine; no toast for that
+  if (res && !res.ok && !(Game.state() && Game.state().busy && /finish the current choice/i.test(res.msg || ""))) toast(res.msg);
   render();
 }
 
