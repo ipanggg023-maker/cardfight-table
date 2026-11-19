@@ -526,7 +526,8 @@ body.game .hand .hint { pointer-events: none; transform: translateY(-40%); }
     repeating-linear-gradient(45deg, #1d3052 0 6px, #142342 6px 12px); }
 .cback.side { border-radius: 4px; }
 /* deck / ride deck: a face-down pile with the count on it */
-.mz.deck, .mz.deck .cback { inset: 3% 6%; }
+.mz.deck { background: none; border-radius: 8px; }
+.mz.deck .cback { inset: 3% 6%; }
 .mz.deck small, .mz.ride small, .mz.drop small { position: relative; z-index: 2; background: #000b; padding: 0 5px; border-radius: 4px; }
 .mz.deck b, .mz.ride b, .mz.drop b { position: relative; z-index: 2; background: #000c; padding: 0 8px; border-radius: 8px; margin-top: 2px; }
 .mz.deck.low b { color: var(--red); }
@@ -535,7 +536,8 @@ body.game .hand .hint { pointer-events: none; transform: translateY(-40%); }
 .mz.ride small { font-size: .46rem; letter-spacing: .06em; padding: 0 2px; } .mz.ride b { font-size: .85rem; padding: 0 4px; }
 button.mz.ride:not([data-zone]) { cursor: default; } button.mz.ride:not([data-zone]):hover { outline: 0; }
 /* drop: the top card's picture */
-.mz.drop, .mz .zc { position: absolute; inset: 3% 5%; width: auto; height: auto; padding: 3px; font-size: .55rem; box-shadow: 0 3px 8px #0009; }
+.mz.drop { background: #0006; align-content: end; padding-bottom: 6%; }
+.mz .zc { position: absolute; inset: 3% 5%; width: auto; height: auto; padding: 3px; font-size: .55rem; box-shadow: 0 3px 8px #0009; }
 .mz .zc .cs, .mz .zc .ctop { display: none; }
 /* order zone: set orders side by side (Songs face down) */
 .mz.order { display: block; }
@@ -830,3 +832,8 @@ body.game { --violet: #b896ff; }
 .slot .cpreview { position: absolute; inset: 0; display: grid; place-items: center; opacity: .55; pointer-events: none; z-index: 2; }
 .slot .cpreview .card { outline: 2px dashed var(--green); }
 @media (prefers-reduced-motion: reduce) { .cutin, .skillstrip, .hand .hc.drawn { transition: none; } }
+/* while a choice is open during a check ("to which unit?"), the zoomed card moves to the right edge so the units stay visible */
+.czoom.aside { place-items: center end; padding-right: 1.5vw; }
+.czoom.aside .czc, .czoom.aside.in .czc { transform: scale(.42); transform-origin: right center; }
+.czoom.aside .czb { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .czoom.aside .czc, .czoom.aside.in .czc { transform: scale(.42); } }

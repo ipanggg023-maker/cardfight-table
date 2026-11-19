@@ -765,6 +765,8 @@ function renderCheckZoom(S, v) {
     if (CZ.uid !== null) checkZoomOut(box, v);
     return;
   }
+  // a choice is open ("to which unit?"): the card moves aside so the units you pick from stay visible
+  box.classList.toggle("aside", !!S.pending);
   const key = `${chk.card.uid}:${chk.stage}`;
   if (key === CZ.key) return;
   const fresh = CZ.uid !== chk.card.uid;
@@ -781,6 +783,7 @@ function renderCheckZoom(S, v) {
     void box.offsetWidth; // start the zoom-in transition from the small state
     box.classList.add("in");
   }
+  box.classList.toggle("aside", !!S.pending); // again: a new check resets the classes above
   const tag = box.querySelector(".czt");
   if (t && tag) {
     tag.style.setProperty("--c", CZ_COLOR[t.type] || "#f2b94b");

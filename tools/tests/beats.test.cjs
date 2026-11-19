@@ -94,3 +94,17 @@ test("an interceptor is marked in the battle", async () => {
   assert.equal(r.ok, true);
   assert.deepEqual([...S.battle.intercepted], [uid]);
 });
+
+test("the call pause comes before the called unit's abilities", async () => {
+  const { Game, TP, S } = table();
+  const p = S.players[0];
+  Object.assign(S, { phase: "main" });
+  const c = { ...unit(TP, "cl", "Caller", 1, "[AUTO](RC):When this unit is placed on (RC), draw a card."), uid: 99001 };
+  p.hand.push(c);
+  const order = [];
+  Game.setPace((k) => { order.push(`${k}:${(S.resolving && S.resolving.n) || 0}`); return Promise.resolve(); });
+  const r = Game.call(c.uid, "fl"); await settle(Game); await r;
+  const callAt = order.findIndex((x) => x.startsWith("call:"));
+  assert.ok(callAt >= 0, "a call pause happened");
+  assert.equal(order[callAt], "call:0", "nothing had resolved yet at the call pause");
+});

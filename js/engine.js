@@ -833,7 +833,7 @@ const Game = (() => {
     collectAll(1 - pi, "oppBound", { subject: c, byPi, byKey });
   }
   // from = where the card came from ("hand", "deck", "drop", "soul", "bind", "damage"…), for "when placed from hand" etc.
-  async function place(pi, card, key, from = "") {
+  async function place(pi, card, key, from = "", opts = {}) {
     const p = P(pi);
     if (p.slots[key]) { const oldC = p.slots[key].card; collect(pi, null, "replacedBy", { card: oldC, zone: "RC", subject: card, placedKey: key }); log(`${oldC.name} was replaced and retired`); retireBy(pi, key, null); }
     p.slots[key] = slot(card);
@@ -852,6 +852,7 @@ const Game = (() => {
     for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key, from, subject: card });
     collectZones(pi, "allyPlacedRC", { placedKey: key, from, subject: card });
     collectAll(1 - pi, "oppPlacedRC", { from, subject: card });
+    if (opts.beat) await beat(opts.beat); // the screen shows the call before the unit's abilities resolve
     await settle();
   }
   async function callAnywhere(pi, card, from = "", row = "") {
@@ -1773,8 +1774,7 @@ const Game = (() => {
     if (ruleOn(pi, "cantCall", card)) return err(`${card.name} can't be called now`);
     if (key === "bc" && ruleOn(pi, "noBC", card)) return err("You can't put a unit card on the back row center (RC)");
     p.hand.splice(p.hand.indexOf(card), 1);
-    await place(pi, card, key, "hand");
-    await beat("call");
+    await place(pi, card, key, "hand", { beat: "call" });
   });
   const move = (a, b) => run(async () => {
     if (S.phase !== "main") return err("Move units in the main phase");
