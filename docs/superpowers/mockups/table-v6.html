@@ -31,11 +31,11 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); f
 .field { position: absolute; left: 700px; top: 470px; width: 620px; height: 365px; border: 1px solid var(--line);
   border-radius: 18px; background: linear-gradient(180deg, rgba(19,36,61,.55), rgba(12,23,41,.35)); }
 .circle { position: absolute; width: 136px; height: 136px; margin: -68px 0 0 -68px; border-radius: 50%;
-  border: 2px solid var(--line2); display: grid; place-items: center; }
+  background: url(../../../assets/mat/rc.png) center / 112% 112% no-repeat; opacity: 1; display: grid; place-items: center; }
 .circle::after { content: attr(data-l); position: absolute; top: 50%; left: -14px; transform: translateY(-50%);
   font: 700 13px var(--display); color: var(--muted); background: var(--bg2); padding: 0 6px; border-radius: 6px; }
-.circle.vc { border-color: var(--gold); box-shadow: 0 0 0 6px rgba(242,185,75,.08) inset; }
-.circle.vc::after { color: var(--gold); }
+.circle.vc { background-image: url(../../../assets/mat/vc.png); background-size: 124% 124%; }
+.circle.vc::after { color: var(--cyan); }
 /* zones: boxes with a label and a count */
 .zone { position: absolute; border: 1px solid var(--line); border-radius: 12px; background: rgba(16,30,52,.6); }
 .zone .zl { position: absolute; top: 6px; left: 10px; font: 600 12px var(--display); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
@@ -62,14 +62,14 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); f
 .soul { position: absolute; top: -8px; right: -8px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; background: #2a1f4f; border: 1px solid var(--violet);
   font: 700 13px var(--display); display: grid; place-items: center; }
 /* the middle: guardian circle with attack / defense */
-#gc { position: absolute; left: 1010px; top: 450px; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
-  border: 2px solid var(--cyan); box-shadow: 0 0 24px rgba(95,208,255,.25), 0 0 0 8px rgba(95,208,255,.06) inset; display: grid; place-items: center; background: rgba(7,13,24,.7); }
-#gc::after { content: "G"; position: absolute; top: 6px; font: 700 14px var(--display); color: var(--cyan); }
+#gc { position: absolute; left: 1010px; top: 450px; width: 220px; height: 110px; margin: -55px 0 0 -110px;
+  background: url(../../../assets/mat/gc.png) center / contain no-repeat; display: grid; place-items: center; }
+#gc::after { content: "G"; font: 700 16px var(--display); color: var(--green); }
 .readout { position: absolute; top: 450px; transform: translateY(-50%); text-align: center; font-family: var(--display); }
 .readout b { display: block; font-size: 30px; line-height: 1; }
 .readout span { font-size: 12px; letter-spacing: .12em; color: var(--muted); }
-#atk { left: 800px; } #atk b { color: var(--red); }
-#def { left: 1110px; } #def b { color: var(--cyan); }
+#atk { left: 770px; } #atk b { color: var(--red); }
+#def { left: 1140px; } #def b { color: var(--cyan); }
 /* frame: phases top-left, plates in the corners, detail panel, hand, action dock */
 #rail { position: absolute; left: 22px; top: 18px; font-family: var(--display); }
 #rail .t { font-size: 15px; color: var(--cyan); letter-spacing: .1em; }
