@@ -1,14 +1,14 @@
 // Loads the browser engine into a Node vm context for tests (no DOM).
 const fs = require("fs"), vm = require("vm"), path = require("path");
 const ROOT = path.join(__dirname, "..", "..");
-const FILES = ["js/cards.js", "js/schema.js", "js/formats.js", "js/textparse.js", "js/engine.js"];
+const FILES = ["js/cards.js", "js/schema.js", "js/formats.js", "js/textparse.js", "js/engine.js", "js/bot.js"];
 
 function load() {
   const ctx = { console, setTimeout, clearTimeout, Promise, structuredClone };
   vm.createContext(ctx);
   const src = FILES.map((f) => fs.readFileSync(path.join(ROOT, f), "utf8")).join("\n;\n");
-  vm.runInContext(src + "\n;this.Game = Game; this.TextParse = TextParse;", ctx);
-  return { Game: ctx.Game, TextParse: ctx.TextParse };
+  vm.runInContext(src + "\n;this.Game = Game; this.TextParse = TextParse; this.Bot = typeof Bot !== 'undefined' ? Bot : null;", ctx);
+  return { Game: ctx.Game, TextParse: ctx.TextParse, Bot: ctx.Bot };
 }
 
 // a plain unit card (abilities read from text when given)
