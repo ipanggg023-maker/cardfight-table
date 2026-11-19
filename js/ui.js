@@ -78,7 +78,6 @@ function preloadPictures() {
     [...p.deck, ...p.hand, ...p.ride, ...p.soul, ...p.damage, ...p.drop, ...p.bind, ...(p.gDeck || []), ...(p.gUp || []), ...Object.values(p.slots).filter(Boolean).flatMap((s) => [s.card, s.heart, s.mate, s.heartMate, ...(s.under || []), ...(s.arms || [])].filter(Boolean)), ...(p.orderZone || [])].forEach((c) => Pics.url(c));
   });
   if (typeof Net !== "undefined") Object.values(Net.images).forEach((u) => u && Pics.load(u));
-  (ui.mats || []).forEach((m) => m && m.img && Pics.load(m.img));
 }
 // Online: you may only act when the engine is waiting on your seat.
 const myMove = () => !ui.online || Game.state().controller === ui.online.seat;
@@ -95,8 +94,6 @@ async function loadSetup() {
   $("#d1").innerHTML = opts;
   const me = typeof Auth !== "undefined" && Auth.get();
   if (me) $("#n1").value = me.name;
-  await Mats.probe();
-  renderMatPick(1);
   if (ONLINE && !ui.netReady) setupOnline();
 }
 
@@ -124,7 +121,7 @@ function onNet(ev) {
     netStatus(`${ev.name} joined with “${ev.deck.name}”. Press Start when ready.`);
     Object.assign($("#startBtn"), { disabled: false, textContent: "Start game" });
   } else if (ev.type === "start") {    // guest: host started the match
-    Object.assign(ui, { online: { seat: ev.seat }, mats: ev.mats, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+    Object.assign(ui, { online: { seat: ev.seat }, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
     $("#setup").hidden = true;
     $("#win").hidden = true;
     $("#netLost").hidden = true;
@@ -154,7 +151,7 @@ async function joinOnline() {
   try {
     const deck = await DB.loadDeck($("#d1").value);
     const name = $("#n1").value.trim() || "Guest";
-    await Net.join($("#joinCode").value, { name, deck, mat: Mats.resolve(1, Mats.choice(1)), uid: (() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })() }, onNet);
+    await Net.join($("#joinCode").value, { name, deck, uid: (() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })() }, onNet);
     btn.textContent = "Connected";
     netStatus("Connected! Waiting for the host to start…");
   } catch (e) {
@@ -166,38 +163,13 @@ async function startHosted() {
   if (!ui.guest) return;
   const deck = await DB.loadDeck($("#d1").value);
   const names = [$("#n1").value.trim() || "Host", ui.guest.name || "Guest"];
-  const mats = [Mats.resolve(1, Mats.choice(1)), ui.guest.mat || { key: "classic", img: "" }];
-  Object.assign(ui, { online: { seat: 0 }, mats, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+  Object.assign(ui, { online: { seat: 0 }, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   $("#setup").hidden = true;
-  Net.startHosted(names, [deck, ui.guest.deck], mats, [(() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })(), ui.guest.uid || null], await DB.extras());
+  Net.startHosted(names, [deck, ui.guest.deck], [(() => { const u = Auth.get(); return u && !u.guest ? u.id : null; })(), ui.guest.uid || null], await DB.extras());
   const loading = loadingTable("Shuffling decks…");
   render();
   await loading;
 }
-function renderMatPick(seat) {
-  const box = document.querySelector(`.matpick[data-seat="${seat}"]`);
-  const cur = Mats.choice(seat), custom = Mats.customImg(seat);
-  box.innerHTML = `<span class="mp-label">Playmat</span><div class="mp-row">${Object.entries(MATS).filter(([, m]) => !m.missing).map(([k, m]) => {
-    const th = k === "custom" ? custom : m.thumb;
-    return `<button type="button" class="mp${cur === k ? " on" : ""}" data-mat="${k}" title="${esc(m.name)}">
-      ${th ? `<img src="${esc(th)}" alt="">` : `<span class="mp-ph">${k === "custom" ? "＋" : "Classic"}</span>`}<small>${esc(k === "custom" && custom ? "My image" : m.name)}</small></button>`;
-  }).join("")}</div><input type="file" accept="image/*" hidden>`;
-}
-document.addEventListener("click", async (e) => {
-  const b = e.target.closest(".mp");
-  if (!b) return;
-  const box = b.closest(".matpick"), seat = +box.dataset.seat;
-  if (b.dataset.mat === "custom" && (!Mats.customImg(seat) || b.classList.contains("on"))) return box.querySelector("input").click();
-  Mats.remember(seat, b.dataset.mat);
-  renderMatPick(seat);
-});
-document.addEventListener("change", async (e) => {
-  const inp = e.target.closest(".matpick input[type=file]");
-  if (!inp || !inp.files[0]) return;
-  const seat = +inp.closest(".matpick").dataset.seat;
-  try { await Mats.saveCustom(seat, inp.files[0]); Mats.remember(seat, "custom"); renderMatPick(seat); }
-  catch (err) { toast(err.message); }
-});
 async function startGame() {
   if (!$("#d1").value) return toast("Build a deck in the Card & deck editor first");
   if (ONLINE === "join") return joinOnline();
@@ -273,9 +245,8 @@ const boxCSS = (r, opp) => {
 };
 // Damage box i (0–5) inside the damage zone, as top/height % of the zone (mirrored on the opponent's mat)
 function dmgBox(i, opp) {
-  const D = MAT_LAYOUT.damage, h = D[3] - D[1], [t, b] = MAT_LAYOUT.dmgSlots[i];
-  const top = ((t - D[1]) / h) * 100, bot = ((b - D[1]) / h) * 100;
-  return `top:${opp ? 100 - bot : top}%;height:${bot - top}%`;
+  const [top, bot] = MAT_LAYOUT.dmgSlots[i];
+  return `top:${opp ? 100 - bot : top}%;height:${bot - top}%;z-index:${i + 1}`;
 }
 const backHTML = (cls = "") => `<span class="cback${cls}"></span>`;
 // a small picture of a card for the zones (order zone, drop top, trigger zone): hover / right-click works like any card
@@ -284,12 +255,12 @@ const zoneCard = (c, extra = "") => cardHTML(c, {}, null, null, " zc" + extra);
 // The mat and its zone boxes are built once; later calls only patch what changed (pictures are never re-created).
 function renderSide(root, pi, side) {
   const S = Game.state(), p = S.players[pi], v = view(), opp = side === "opp";
-  const mat = (ui.mats && ui.mats[pi]) || { key: "classic", img: "" };
   const L = MAT_LAYOUT;
-  const skey = `${pi}|${mat.key}|${mat.img ? mat.img.length + mat.img.slice(-24) : ""}`;
+  const skey = `${pi}|v6`;
   if (root._skey !== skey) {
     root._skey = skey;
-    root.innerHTML = `<div class="mat ${mat.img ? "img" : "classic"} ${side}" style="${mat.img ? `--matimg:url('${esc(mat.img)}')` : ""}">
+    root.innerHTML = `<div class="mat classic v6 ${side}">
+      <div class="mz field" style="${boxCSS(L.field, opp)}"></div>
       <div class="mz order" style="${boxCSS(L.order, opp)}" title="Order zone"><small class="zl">Order</small><div class="ozc"></div></div>
       <div class="mz damage" style="${boxCSS(L.damage, opp)}" title="Damage zone">${L.dmgSlots.map((_, i) => `<div class="dslot" style="${dmgBox(i, opp)}"><i>${i + 1}</i></div>`).join("")}</div>
       <div class="mz trig" style="${boxCSS(L.trigger, opp)}" title="Trigger check zone"><small class="zl">Trigger check</small><div class="tzc"></div></div>
@@ -297,6 +268,7 @@ function renderSide(root, pi, side) {
       <button class="mz drop" style="${boxCSS(L.drop, opp)}" data-zone="${pi}:drop" title="Drop zone (click to see every card)"></button>
       <button class="mz ride" style="${boxCSS(L.ride, opp)}" title="Ride deck"></button>
       <div class="mz crest" style="${boxCSS(L.crest, opp)}" title="Crest zone"></div>
+      <button class="mz gzone" style="${boxCSS(L.gzone, opp)}" data-zone="${pi}:gzone" title="G zone (click to see the cards)"></button>
       <div class="plate" style="${boxCSS(L.plate, opp)}"></div>
       ${Object.keys(L.slots).map((key) => {
         const [x, y] = L.slots[key];
@@ -307,7 +279,7 @@ function renderSide(root, pi, side) {
     const q = (s) => root.querySelector(s);
     root._parts = {
       plate: q(".plate"), order: q(".mz.order .ozc"), damage: [...root.querySelectorAll(".dslot")], trig: q(".mz.trig"), tzc: q(".mz.trig .tzc"),
-      deck: q(".mz.deck"), drop: q(".mz.drop"), ride: q(".mz.ride"), crest: q(".mz.crest"),
+      deck: q(".mz.deck"), drop: q(".mz.drop"), ride: q(".mz.ride"), crest: q(".mz.crest"), gzone: q(".mz.gzone"),
       slots: Object.fromEntries([...root.querySelectorAll(".slot")].map((el) => [el.dataset.key, el])),
     };
   }
@@ -373,8 +345,8 @@ function renderSide(root, pi, side) {
     const c = p.damage[i];
     if (c) seen.set(c.uid, c);
     const src = c && !c.down ? Pics.url(c) : "";
-    setHTML(box, `<i>${i + 1}</i>${c ? `<div class="dmgc${c.down ? " down" : ""}${i === 0 ? " big" : ""}" data-uid="${c.uid}" title="${esc(c.name)}${c.down ? " (face down)" : ""}"
-      style="${src ? `background-image:url('${esc(src.replace(/'/g, "%27"))}')` : ""}">${c.down ? backHTML(" side") : ""}<span>${esc(c.name)}</span></div>` : ""}`);
+    const pic = src ? ` style="background-image:url('${esc(src.replace(/'/g, "%27"))}')"` : "";
+    setHTML(box, `<i>${i + 1}</i>${c ? `<div class="dmgc${c.down ? " down" : ""}" data-uid="${c.uid}" title="${esc(c.name)}${c.down ? " (face down)" : ""}">${c.down ? backHTML(" side") : `<b class="dpic"${pic}></b>`}<span>${esc(c.name)}</span></div>` : ""}`);
     box.classList.toggle("on", !!c);
   });
   // extra damage beyond 6 (rare: a draw game check) still shows as a count
@@ -391,7 +363,11 @@ function renderSide(root, pi, side) {
   setHTML(P.deck, `${p.deck.length ? backHTML() : ""}<small>Deck</small><b>${p.deck.length}</b>`);
   P.deck.classList.toggle("low", p.deck.length > 0 && p.deck.length <= 5);
   const topDrop = p.drop[p.drop.length - 1];
-  setHTML(P.drop, `${topDrop ? zoneCard(topDrop) : ""}<small>Drop</small><b>${p.drop.length}</b>`);
+  setHTML(P.drop, `${p.drop.length > 2 ? '<span class="dpile b"></span>' : ""}${p.drop.length > 1 ? '<span class="dpile"></span>' : ""}${topDrop ? zoneCard(topDrop) : ""}<small>Drop</small><b>${p.drop.length}</b>`);
+  // ---- G zone: face-down G deck (count) + the newest face-up G unit ----
+  const gUp = p.gUp || [], gDown = p.gDeck || [];
+  setHTML(P.gzone, `${gDown.length ? backHTML(" g") : ""}${gUp.length ? zoneCard(gUp[gUp.length - 1], " gup") : ""}<small>G zone</small><b>${gDown.length}<em>·</em>${gUp.length}</b>`);
+  P.gzone.classList.toggle("has", !!(gUp.length || gDown.length));
   const rideMine = pi === v;
   if (rideMine) P.ride.dataset.zone = `${pi}:ride`; else delete P.ride.dataset.zone;
   P.ride.hidden = !p.hasRideDeck && !p.ride.length;
@@ -694,7 +670,6 @@ function render() {
   if (S.reveal.length && !side) mid += `<span class="reveal">${S.reveal.map((r) => `<span class="rv ${r.card.trigger ? "rt" : ""}">${r.type}: ${esc(r.card.name)} ${r.card.trigger ? TRIG[r.card.trigger].icon : ""}</span>`).join("")}</span>`;
   setHTML($("#mid"), mid);
   document.querySelector(".center").classList.toggle("fighting", !!S.battle);
-  document.body.classList.toggle("mats-classic", ui.mats ? ui.mats.every((m) => !m.img) : true);
   const guards = S.battle ? S.battle.guards : [];
   const shield = guards.reduce((n, c) => n + (c.shield || 0), 0);
   setHTML($("#gc"), guards.length
@@ -1174,7 +1149,6 @@ async function startTest(id) {
   const card = (await DB.all("cards")).find((c) => c.id === id);
   if (!card) { toast("Test card not found. Save it in the editor first."); return Loader.go("editor.html"); }
   ui.test = { card };
-  ui.mats = [Mats.resolve(1, Mats.choice(1)), Mats.resolve(2, Mats.choice(2))];
   Game.newGame(["Tester", "Dummy"], [testDeck(card), testDeck(null)], { first: 0, extras: await DB.extras() });
   Object.assign(ui, { sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
   await Game.mulligan([]);

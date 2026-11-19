@@ -168,22 +168,9 @@ button.ptile:hover { border-color: var(--cyan); }
   .ptiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
-/* ---- playmat skin (html.skin-mat), art from the CGS community playmat ---- */
+/* ---- logo banner (html.skin-mat, lobby toggle) ---- */
 .vg-banner { display: none; }
 .skin-mat .vg-banner { display: block; width: min(340px, 80%); height: auto; filter: drop-shadow(0 6px 18px #0009); }
-.skin-mat body.game { background: #0b0d13; }
-.skin-mat .table { background: radial-gradient(ellipse at 50% 50%, #1a1f2b 0%, #12151d 60%, #0b0d13 100%); }
-.skin-mat .slot { border-color: transparent; }
-.skin-mat .slot::before { content: ""; position: absolute; left: 50%; top: 50%; width: calc(var(--cw) * 1.12); aspect-ratio: 1;
-  transform: translate(-50%, -50%); background: url(assets/mat/rc.png) center / contain no-repeat; opacity: .75; pointer-events: none; }
-.skin-mat .slot.vcs::before { width: calc(var(--cw) * 1.4); background-image: url(assets/mat/vc.png); opacity: .9; }
-.skin-mat .slot > * { position: relative; z-index: 1; }
-.skin-mat .slot .sl { position: absolute; z-index: 1; color: #d8c27a; }
-.skin-mat .center { position: relative; }
-.skin-mat .center::before { content: ""; position: absolute; left: 50%; top: 50%; width: min(560px, 90%); height: 320%;
-  transform: translate(-50%, -50%); background: url(assets/mat/gc.png) center / contain no-repeat; opacity: .5; pointer-events: none; }
-.skin-mat .center > * { position: relative; z-index: 1; }
-.skin-mat .center { background: #0b0d1366; }
 
 /* ---- HUD layout v3: field first, everything else on the edges (DD2-style) ---- */
 body.game { display: block; padding: 0; height: 100vh; overflow: hidden; }
@@ -302,7 +289,7 @@ body.game .center { justify-self: center; display: grid; grid-template-columns: 
 .center::before { display: none !important; }
 .gc { position: relative; width: calc(var(--cw) * 2.4); height: 100%; display: grid; place-items: center; align-content: center; gap: 2px;
   border: 1px dashed #6fd39a66; border-radius: 50%; }
-.skin-mat .gc { border: 0; background: url(assets/mat/gc.png) center / 100% 100% no-repeat; }
+.gc { border: 0; background: url(assets/mat/gc.png) center / 100% 100% no-repeat; }
 .gc .gl { font: 600 .68rem var(--display); letter-spacing: .14em; color: #6fd39acc; text-transform: uppercase; }
 .gc .gcards { display: flex; justify-content: center; }
 .gc .gcards .card.mini { --cw: calc(var(--ch) * 0.42); width: calc(var(--ch) * 0.44); height: calc(var(--ch) * 0.58); padding: 3px 4px; font-size: .55rem; }
@@ -325,8 +312,8 @@ body.game .center { justify-self: center; display: grid; grid-template-columns: 
 
 /* ---- v4: each player's half is a playmat (js/mats.js). Cards sit on the printed circles. ---- */
 body.game {
-  --mw: min(64vw, calc((100vh - 64px) / 2.5 / 0.5085));
-  --mh: calc(var(--mw) * 0.5085);
+  --mw: min(64vw, calc((100vh - 64px) / 2.5 / 0.3609));
+  --mh: calc(var(--mw) * 0.3609);
   --ch: calc(var(--mh) * 0.3); --cw: calc(var(--ch) * 0.73);
 }
 body.game .table { grid-template-rows: auto 0 auto 1fr; gap: 0; justify-items: center; padding-top: 8px; }
@@ -334,19 +321,13 @@ body.game .side { width: var(--mw); display: block; }
 body.game .side.opp, body.game .side.me { align-self: auto; }
 .mat { position: relative; width: var(--mw); height: var(--mh); overflow: hidden; }
 .mat.opp { border-radius: 12px 12px 0 0; } .mat.me { border-radius: 0 0 12px 12px; }
-.mat.img::before { content: ""; position: absolute; inset: 0; background: var(--matimg) center / 100% 100% no-repeat; }
-.mat.opp.img::before { transform: rotate(180deg); }
-.mat.img.opp::after, .mat.img.me::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
-.mat.img.opp::after { background: linear-gradient(#0000 70%, #0005); } .mat.img.me::after { background: linear-gradient(#0005, #0000 30%); }
 .mat.classic { background: radial-gradient(ellipse at 50% 60%, #17304f, #0c1729 70%); border: 1px solid #1f3554; }
 .mat.classic.opp { background: radial-gradient(ellipse at 50% 40%, #17304f, #0c1729 70%); }
 
 .mat .slot { position: absolute; transform: translate(-50%, -50%); border: 0; z-index: 1; }
-.mat.img .slot::before { display: none !important; }
 .mat.classic .slot::before { content: ""; position: absolute; left: 50%; top: 50%; width: calc(var(--cw) * 1.3); aspect-ratio: 1; transform: translate(-50%, -50%);
   background: url(assets/mat/rc.png) center / contain no-repeat; opacity: .7; pointer-events: none; display: block !important; }
 .mat.classic .slot.vcs::before { width: calc(var(--cw) * 1.6); background-image: url(assets/mat/vc.png); opacity: .9; }
-.mat.img .slot .sl { display: none; }
 .mat .slot > .card { position: relative; z-index: 1; box-shadow: 0 6px 14px #0009; }
 
 .mz { position: absolute; z-index: 1; display: grid; place-items: center; align-content: center; gap: 0; font-family: var(--display); color: var(--fg); }
@@ -354,7 +335,6 @@ body.game .side.opp, body.game .side.me { align-self: auto; }
 .mz small { font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: #ffffffb0; }
 .mz b { font-size: clamp(1rem, calc(var(--mh) * 0.07), 1.7rem); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .mz.deck, .mz.drop { background: #000a; border-radius: 10px; }
-.mat.img .mz.deck { background: #0008; }
 button.mz { padding: 0; border: 0; cursor: pointer; font: inherit; }
 button.mz:hover { outline: 2px solid var(--cyan); }
 .mz.drop .top { font: 600 .6rem var(--body); color: var(--muted); max-width: 92%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
@@ -384,21 +364,12 @@ body.game .center { width: var(--mw); height: 0; overflow: visible; z-index: 4; 
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: calc(var(--mw) * 0.04); padding: 0; }
 body.game .center .gc { width: calc(var(--mh) * 0.44); height: calc(var(--mh) * 0.36); border-radius: 50%; }
 .skin-mat .gc, .gc { background: none; border: 0; }
-.mats-classic .gc { background: url(assets/mat/gc.png) center / 100% 100% no-repeat; }
+.gc { background: url(assets/mat/gc.png) center / 100% 100% no-repeat; }
 .gc .gl { display: none; }
 .pw { background: #000c; border: 1px solid #ffffff1a; border-radius: 10px; padding: 4px 12px; }
 .pw:empty { display: none; }
 .pw.atk { justify-self: end; } .pw.def { justify-self: start; }
 
-/* setup: playmat picker */
-.matpick { grid-column: 1 / -1; display: grid; gap: 4px; margin-bottom: 6px; }
-.mp-label { font-size: .85rem; color: var(--muted); }
-.mp-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.mp { display: grid; gap: 3px; padding: 4px; border-radius: 9px; font: inherit; font-size: .7rem; }
-.mp img, .mp-ph { width: 100%; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 5px; display: grid; place-items: center; background: #0c1729; color: var(--muted); font-size: .8rem; }
-.mp.on { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
-.mp small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
-.panel:has(.matpick) { width: min(640px, 100%); }
 
 @media (max-width: 900px) {
   body.game { --mw: calc(100vw - 32px); }
@@ -406,7 +377,7 @@ body.game .center .gc { width: calc(var(--mh) * 0.44); height: calc(var(--mh) * 
   .chip small { display: none; }
 }
 /* v4.1 sizing tweaks */
-body.game { --mw: min(66vw, calc((100vh - 84px) / 2.36 / 0.5085)); }
+body.game { --mw: min(66vw, calc((100vh - 84px) / 2.36 / 0.3609)); }
 .mz.info { padding: 6px 8px; gap: 4px; overflow: hidden; }
 .mz.info .chips { gap: 3px; }
 .chip { padding: 1px 6px; } .chip b { font-size: .82rem; } .chip small { font-size: .46rem; }
@@ -414,7 +385,7 @@ body.game { --mw: min(66vw, calc((100vh - 84px) / 2.36 / 0.5085)); }
 .gc .gcards .card.mini .cn { display: none; }
 .gc .gcards .card.mini + .card.mini { margin-left: calc(var(--mh) * -0.04); }
 body.game .hand { padding-top: 10px; }
-body.game { --mw: min(66vw, calc((100vh - 80px) / 2.28 / 0.5085)); }
+body.game { --mw: min(66vw, calc((100vh - 80px) / 2.28 / 0.3609)); }
 .mz.info .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
 .mz.info .chip { min-width: 0; }
 /* centre row sits exactly on the seam between the two mats */
@@ -425,7 +396,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 /* ---------- performance (60 fps) ----------
    Only transform and opacity animate. Cards and slots are isolated so a change in one does not
    repaint the whole table. The playmat picture gets its own GPU layer and is never re-decoded. */
-.mat.img::before { will-change: transform; transform: translateZ(0); }
 .slot { contain: layout style; transition: box-shadow .15s; }
 .card { contain: layout style; backface-visibility: hidden; }
 .mat .slot > .card { transition: transform .25s ease, opacity .25s ease; }
@@ -440,7 +410,6 @@ body.game .center .gc { height: calc(var(--mh) * 0.3); width: calc(var(--mh) * 0
 /* Imaginary gifts: accel circles sit outside the mat edges; marker badges on circles; legion mate label */
 .mat { overflow: visible; }
 .mat .slot.accel { border: 1px dashed var(--cyan); border-radius: 9px; }
-.mat.img .slot.accel .sl { display: block; }
 .slot .mk { position: absolute; left: 50%; bottom: -2px; transform: translate(-50%, 100%); z-index: 3; font: 700 .58rem var(--display);
   color: #10213a; background: var(--gold); border-radius: 6px; padding: 1px 5px; white-space: nowrap; pointer-events: none; }
 .card .heart.mate { color: #9fd7ff; }
@@ -538,7 +507,7 @@ body.game.info-dock .info img { max-height: 40vh; width: auto; max-width: 100%; 
 
 /* ===== Standard table v5 (2026-11-13): every zone on its printed spot, a bigger field, a peeking hand, animations ===== */
 /* the two mats get the whole height: the hand peeks up from the bottom edge and rises when you point at it */
-body.game { --mw: min(66vw, calc((100vh - 20px) / 2.19 / 0.5085)); }
+body.game { --mw: min(66vw, calc((100vh - 20px) / 2.19 / 0.3609)); }
 body.game .hand { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 5; padding: 0 8px; margin: 0;
   max-width: min(62vw, calc(100vw - 440px)); min-width: 0; justify-content: center; pointer-events: none; }
 body.game .hand > * { pointer-events: auto; }
@@ -552,14 +521,12 @@ body.game .hand .hint { pointer-events: none; transform: translateY(-40%); }
 /* zones */
 .mz[hidden], .soulb[hidden] { display: none !important; }
 .mz .zl { position: absolute; left: 6px; top: 4px; font: 600 .5rem var(--display); letter-spacing: .12em; text-transform: uppercase; color: #ffffff70; pointer-events: none; }
-.mat.img .mz .zl { display: none; }
 .cback { position: absolute; inset: 0; border-radius: 7%/5%; border: 2px solid #3a5a8c; box-shadow: inset 0 0 0 2px #0b1424, 0 3px 8px #0008;
   background: radial-gradient(circle at 50% 50%, #f2b94b66 0 9%, #0000 10%), radial-gradient(circle at 50% 50%, #0000 0 22%, #5fd0ff22 23% 25%, #0000 26%),
     repeating-linear-gradient(45deg, #1d3052 0 6px, #142342 6px 12px); }
 .cback.side { border-radius: 4px; }
 /* deck / ride deck: a face-down pile with the count on it */
-.mz.deck, .mat.img .mz.deck { background: none; border-radius: 8px; }
-.mz.deck .cback { inset: 3% 6%; }
+.mz.deck, .mz.deck .cback { inset: 3% 6%; }
 .mz.deck small, .mz.ride small, .mz.drop small { position: relative; z-index: 2; background: #000b; padding: 0 5px; border-radius: 4px; }
 .mz.deck b, .mz.ride b, .mz.drop b { position: relative; z-index: 2; background: #000c; padding: 0 8px; border-radius: 8px; margin-top: 2px; }
 .mz.deck.low b { color: var(--red); }
@@ -568,8 +535,7 @@ body.game .hand .hint { pointer-events: none; transform: translateY(-40%); }
 .mz.ride small { font-size: .46rem; letter-spacing: .06em; padding: 0 2px; } .mz.ride b { font-size: .85rem; padding: 0 4px; }
 button.mz.ride:not([data-zone]) { cursor: default; } button.mz.ride:not([data-zone]):hover { outline: 0; }
 /* drop: the top card's picture */
-.mz.drop, .mat.img .mz.drop { background: #0006; align-content: end; padding-bottom: 6%; }
-.mz .zc { position: absolute; inset: 3% 5%; width: auto; height: auto; padding: 3px; font-size: .55rem; box-shadow: 0 3px 8px #0009; }
+.mz.drop, .mz .zc { position: absolute; inset: 3% 5%; width: auto; height: auto; padding: 3px; font-size: .55rem; box-shadow: 0 3px 8px #0009; }
 .mz .zc .cs, .mz .zc .ctop { display: none; }
 /* order zone: set orders side by side (Songs face down) */
 .mz.order { display: block; }
@@ -581,7 +547,6 @@ button.mz.ride:not([data-zone]) { cursor: default; } button.mz.ride:not([data-zo
 .mz.damage { display: block !important; }
 .dslot { position: absolute; left: 0; right: 0; }
 .dslot > i { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font: 700 .7rem var(--display); color: #ffffff40; font-style: normal; }
-.mat.img .dslot > i { display: none; }
 .mat.classic .dslot { border: 1px dashed #29446a; border-radius: 5px; }
 .dmgc { position: absolute; inset: 2px 3px; display: flex; align-items: flex-end; padding: 0 6px 2px; border-radius: 5px; overflow: hidden; min-height: 0;
   background: linear-gradient(90deg, #c8364f, #7d1d2f); background-size: cover; background-position: center 30%; border: 1px solid #ff8a9a88; box-shadow: 0 2px 6px #0009; gap: 0; }
@@ -691,7 +656,7 @@ body.game .plate .chips, body.game.plate-out .plate .chips { display: flex; flex
 body.game .plate .chip { display: inline-grid !important; padding: 1px 6px; }
 body.game .plate .chip small { display: block !important; }
 /* card detail: left column between the phase list and your plate */
-body.game.info-dock .info { top: 250px; bottom: 136px; }
+body.game.info-dock .info { top: 264px; bottom: 136px; }
 body.game.info-dock .info img { max-height: 26vh; }
 /* right column: revealed cards under the opponent's plate; turn cut-in across the middle */
 .reveal-box { top: 136px; }
@@ -752,3 +717,33 @@ body.doing .mat .slot:not(:has(> .card)) { box-shadow: 0 0 0 1px #5fd0ff55 inset
 body.doing .mz.drop, body.doing .mz.deck, body.doing .mz.damage, body.doing .mz.order { cursor: pointer; }
 body.doing .table [data-uid], body.doing #zoneCards [data-uid] { cursor: pointer; }
 body.doing #rail .ph-hint { display: none; }
+
+/* ---- v6 table (2026-11-19): no playmat picture; the user's sketch layout (js/mats.js), yellow / blue rings, G zone ---- */
+body.game { --violet: #b896ff; }
+.mat.v6 { background: none; border: 0; border-radius: 0; overflow: visible; }
+.mat.v6 .mz.field { z-index: 0; border: 1px solid #29446a; border-radius: 16px; background: linear-gradient(180deg, #13243d8c, #0c172959); }
+.mat.v6.opp .mz.field { background: linear-gradient(0deg, #13243d8c, #0c172959); }
+.mat.v6 .mz { border: 1px solid #29446a; border-radius: 10px; background: #101e3499; }
+.mat.v6 .mz.trig { border-color: #f2b94b80; }
+.mat.v6 .mz.gzone { border-color: #b896ff8c; }
+.mat.v6 .mz.gzone small { color: var(--violet); }
+.mz.gzone b em { font-style: normal; opacity: .5; margin: 0 3px; }
+.mz.gzone .cback.g { position: absolute; left: 10%; top: 16%; width: 46%; aspect-ratio: .73; filter: hue-rotate(60deg) brightness(.9); }
+.mz.gzone .card.gup { position: absolute; right: 8%; bottom: 22%; width: 52%; height: auto; aspect-ratio: .73; }
+.mz.drop { overflow: visible; }
+.mz.drop .dpile { position: absolute; left: 50%; top: 50%; width: 58%; aspect-ratio: .73; border-radius: 6px; background: #1b2f4f; border: 1px solid #3b5f8f;
+  transform: translate(-46%, -50%) rotate(4deg); opacity: .7; }
+.mz.drop .dpile.b { transform: translate(-54%, -50%) rotate(-6deg); opacity: .5; }
+.mat.v6 .dslot { left: 4%; right: 4%; container-type: size; border: 1px dashed #29446a99; border-radius: 6px; }
+.mat.v6 .dmgc { inset: 0; padding: 0 6px 2px; background: #1b2f4f; border: 1px solid #4a6fa3; box-shadow: 0 3px 8px #000a; }
+.mat.v6 .dmgc .dpic { position: absolute; left: 50%; top: 50%; width: 100cqh; height: 100cqw; transform: translate(-50%, -50%) rotate(-90deg);
+  background: center / cover no-repeat #24426d; }
+.mat.v6.opp .dmgc .dpic { transform: translate(-50%, -50%) rotate(90deg); }
+/* v6: leave a column of at least 200px left of the table for the card detail panel (it never covers the opponent's zones) */
+@media (min-width: 1100px) {
+  body.game { --mw: min(66vw, calc(100vw - 470px), calc((100vh - 20px) / 2.19 / 0.3609)); }
+}
+/* v6 damage stack: each card shows its top strip (the next card covers the rest), so the name sits at the top; mirrored for the opponent */
+.mat.v6.me .dmgc { align-items: flex-start; padding-top: 3px; }
+.mat.v6.me .dmgc::after { background: linear-gradient(180deg, #000c, #0000 55%); }
+.mat.v6.opp .dmgc::after { background: linear-gradient(0deg, #000c, #0000 55%); }

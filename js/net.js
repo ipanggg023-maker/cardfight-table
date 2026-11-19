@@ -15,7 +15,7 @@ const Net = (() => {
   const waiting = new Map();   // request id -> resolve (guest)
   const images = {};           // card id -> image (cards from the other PC arrive without pictures)
   let on = () => {};           // event callback (ui.js): ({type, ...})
-  let game = null;             // host: {names, decks, mats, uids} of the current match
+  let game = null;             // host: {names, decks, uids} of the current match
   let match = null;            // both: {id, uids: [host account id, guest account id]} for coin rewards (null ids = guests)
   const newMatchId = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
 
@@ -73,7 +73,7 @@ const Net = (() => {
     if (m.t === "hello") {
       collectImages(m.deck);
       if (game && Game.state()) { pushStart(); on({ type: "back" }); return; }   // guest came back mid-game
-      on({ type: "joined", name: m.name, deck: m.deck, mat: m.mat, uid: typeof m.uid === "string" ? m.uid : null });
+      on({ type: "joined", name: m.name, deck: m.deck, uid: typeof m.uid === "string" ? m.uid : null });
       return;
     }
     if (m.t === "act") {
@@ -87,8 +87,8 @@ const Net = (() => {
     }
   }
   // Called by the host's UI once both players are known.
-  function startHosted(names, decks, mats, uids = [null, null], extras = []) {
-    game = { names, decks, mats, uids, extras };
+  function startHosted(names, decks, uids = [null, null], extras = []) {
+    game = { names, decks, uids, extras };
     extras.forEach((c) => c.image && (images[c.id] = c.image));
     match = { id: newMatchId(), uids };
     decks.forEach(collectImages);
@@ -96,11 +96,11 @@ const Net = (() => {
     pushStart();
   }
   function pushStart() {
-    send({ t: "start", seat: GUEST, mats: game.mats, images, match });
+    send({ t: "start", seat: GUEST, images, match });
     pushState();
   }
   const pushState = () => { if (Game.state()) send({ t: "state", s: Game.snapshot(GUEST) }); };
-  const rematch = () => game && startHosted(game.names, game.decks, game.mats, game.uids, game.extras);
+  const rematch = () => game && startHosted(game.names, game.decks, game.uids, game.extras);
 
   // ---------- guest ----------
   async function join(roomCode, hello, cb) {
@@ -142,7 +142,7 @@ const Net = (() => {
   function guestData(m) {
     if (!m || typeof m !== "object") return;
     if (m.t === "full") return on({ type: "error", msg: "That room already has two players." });
-    if (m.t === "start") { Object.assign(images, m.images || {}); match = m.match || null; return on({ type: "start", seat: m.seat, mats: m.mats }); }
+    if (m.t === "start") { Object.assign(images, m.images || {}); match = m.match || null; return on({ type: "start", seat: m.seat }); }
     if (m.t === "state") return Game.load(m.s);
     if (m.t === "res" && waiting.has(m.id)) { waiting.get(m.id)(m.r); waiting.delete(m.id); }
   }
