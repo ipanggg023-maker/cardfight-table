@@ -787,3 +787,20 @@ body.game { --violet: #b896ff; }
 .czoom .card.czcard { background-color: #13243d; }
 .czoom .czb.a { top: 10%; } .czoom .czb.b { bottom: 22%; }
 .czoom .czb.a, .czoom .czb.b { justify-content: center; }
+
+/* ---- v6 battle panel: drive / critical under ATTACK, the guard-total duel, sideways guardians, INTERCEPT tag ---- */
+.center .bsub { display: block; font: 600 .72rem var(--display); letter-spacing: .08em; color: var(--muted); }
+.center b.cu { display: inline-block; transition: transform .25s cubic-bezier(.2,.8,.2,1), opacity .25s; font-variant-numeric: tabular-nums; }
+.center b.cu.counting { color: var(--gold); }
+.center.duel b.cu { transform: scale(1.25); }
+.center.duel .lose { opacity: .45; transition: opacity .25s; }
+.gc .gcards .gw { position: relative; display: inline-block; }
+.gc .gcards .gw + .gw { margin-left: calc(var(--mh) * -0.03); }
+.gc .gcards .gw > .card.mini { transform: rotate(90deg); }
+.gc .gcards .card.mini + .card.mini { margin-left: 0; }
+.gc .itag { position: absolute; left: 50%; bottom: -4px; transform: translate(-50%, 100%); padding: 1px 6px; border-radius: 6px; background: #070d18e6;
+  border: 1px solid var(--cyan); color: var(--cyan); font: 700 .55rem var(--display); letter-spacing: .1em; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .center b.cu, .center.duel .lose { transition: none; } .center.duel b.cu { transform: none; } }
+.gc .gcards .gw > .card.mini { width: calc(var(--mh) * 0.16); height: calc(var(--mh) * 0.22); }
+.gc .gcards .gw + .gw { margin-left: calc(var(--mh) * -0.02); }
+.gc .itag { top: 50%; bottom: auto; transform: translate(-50%, -50%); z-index: 2; }

@@ -74,3 +74,23 @@ test("resolving marker", async () => {
   assert.equal(S.resolving.kind, "AUTO");
   assert.ok(S.resolving.n >= 1);
 });
+
+test("S.beat names the moment while it waits", async () => {
+  const { Game, S } = table();
+  const during = [];
+  Game.setPace((k) => { during.push(`${k}=${S.beat}`); return Promise.resolve(); });
+  await attackAndTake(Game);
+  assert.ok(during.includes("guardTotal=guardTotal"));
+  assert.equal(S.beat, null);
+});
+
+test("an interceptor is marked in the battle", async () => {
+  const { Game, TP, S } = table();
+  record(Game);
+  S.players[1].slots.fl = slot(unit(TP, "i", "Interceptor", 2));
+  const a = Game.attack("vc", false, "vc"); await settle(Game); await a;
+  const uid = S.players[1].slots.fl.card.uid;
+  const r = await Game.intercept("fl");
+  assert.equal(r.ok, true);
+  assert.deepEqual([...S.battle.intercepted], [uid]);
+});

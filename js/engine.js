@@ -19,7 +19,8 @@ const Game = (() => {
   // Optional pause for the screen (ui.js): drive / damage checks and battle results wait a moment so players can see them.
   // No pace = no waiting (headless tests, Node).
   let pace = null;
-  async function beat(kind) { if (!pace) return; onChange(); try { await pace(kind); } catch { /* never block the game */ } }
+  // S.beat = the moment showing right now (display only: the guest's screen gets it in the snapshot)
+  async function beat(kind) { if (!pace) return; S.beat = kind; onChange(); try { await pace(kind); } catch { /* never block the game */ } finally { S.beat = null; } }
 
   const OK = { ok: true };
   const err = (msg) => ({ ok: false, msg });
@@ -2183,6 +2184,7 @@ const Game = (() => {
     if (key === b.tgt) return err("The attacked unit can't intercept");
     if (restricted(di, key, "cantIntercept") || ruleOn(di, "cantIntercept")) return err("This unit can't intercept now");
     b.guards.push(s.card);
+    (b.intercepted = b.intercepted || []).push(s.card.uid); // display: "INTERCEPT" tag on the guardian circle
     const pm = d.marks[key];
     if (pm && pm.protectII) { b.shieldBonus += 10000 * pm.protectII; log(`Protect II: Shield +${(10000 * pm.protectII).toLocaleString()}`); }
     d.slots[key] = null;

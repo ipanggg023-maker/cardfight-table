@@ -631,6 +631,29 @@ const FX = (() => {
     reset() { prev = null; prevWhere = new Map(); lastN = 0; lastView = null; lastBattle = ""; pow = new Map(); if (layer) layer.innerHTML = ""; },
   };
 })();
+// numbers that count up to their new value (text only, a timer, no layout animation)
+const NUMS = {};
+function setNum(k, v) {
+  const el = document.querySelector(`b.cu[data-k="${k}"]`);
+  if (v === null) { delete NUMS[k]; return; }
+  const was = NUMS[k];
+  NUMS[k] = v;
+  if (!el) return;
+  if (was === undefined || was === v || FX_FAST()) { if (!el._cu) el.textContent = fmt(v); if (was !== v && el._cu) { clearInterval(el._cu); el._cu = 0; el.textContent = fmt(v); } return; }
+  countUp(el, was, v);
+}
+function countUp(el, from, to, ms = 350) {
+  if (el._cu) clearInterval(el._cu);
+  const t0 = Date.now();
+  el.classList.add("counting");
+  el.textContent = fmt(from);
+  el._cu = setInterval(() => {
+    const k = Math.min(1, (Date.now() - t0) / ms);
+    el.textContent = fmt(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
+    if (k >= 1) { clearInterval(el._cu); el._cu = 0; el.classList.remove("counting"); }
+  }, 30);
+}
+
 // ---------- check zoom: the drive / damage check card, large in the middle of both screens ----------
 // S.checking (engine): {pi, card, type, n, of, stage "shown" | "trigger", trig {type, power, crit, to}}. Checks are public, so both players see the same.
 const CZ_COLOR = { crit: "#f2b94b", draw: "#5fd0ff", front: "#ff8a5c", heal: "#6fd39a", stand: "#b896ff", over: "#ff5fa2" };
@@ -718,9 +741,12 @@ function render() {
   renderSide($("#me"), v, "me");
 
   renderRail(S);
-  let mid = S.battle ? `<small>ATTACK</small><b>${fmt(Game.attackPower())}</b>` : "";
-  const gsh = S.battle ? S.battle.guards.reduce((n, c) => n + (c.shield || 0), 0) : 0;
-  setHTML($("#def"), S.battle ? `<small>DEFENSE</small><b>${fmt(Game.defensePower())}</b>${gsh ? `<span class="gsh">🛡 +${fmt(gsh)} guard</span>` : ""}${S.battle.perfect ? `<span class="perfect">🛡 Can't be hit</span>` : ""}` : "");
+  // battle panel: ATTACK (booster included) with drive and critical · DEFENSE with the guard; numbers count up when they change
+  const B = S.battle, atkV = B ? Game.attackPower() : 0, defV = B ? Game.defensePower() : 0;
+  const drv = B && B.att === "vc" && S.players[S.active].slots.vc ? Game.driveOf(S.players[S.active].slots.vc.card) + (S.players[S.active].driveBonus || 0) : 0;
+  let mid = B ? `<small>ATTACK</small><b class="cu" data-k="atk"></b><span class="bsub">${drv ? `Drive ${drv} · ` : ""}★${Game.crit(S.active, B.att)}</span>` : "";
+  const gsh = B ? B.guards.reduce((n, c) => n + (c.shield || 0), 0) : 0;
+  setHTML($("#def"), B ? `<small>DEFENSE</small><b class="cu" data-k="def"></b>${gsh ? `<span class="gsh">🛡 +${fmt(gsh)} guard</span>` : ""}${B.perfect ? `<span class="perfect">🛡 Can't be hit</span>` : ""}` : "");
   // revealed cards (drive / damage checks): beside the table, as small pictures you can point at; inline only when there's no side room
   const rb = $("#revealBox");
   const side = window.innerWidth - (document.querySelector(".mat") ? document.querySelector(".mat").getBoundingClientRect().right : window.innerWidth) >= 150;
@@ -730,11 +756,20 @@ function render() {
   }
   if (S.reveal.length && !side) mid += `<span class="reveal">${S.reveal.map((r) => `<span class="rv ${r.card.trigger ? "rt" : ""}">${r.type}: ${esc(r.card.name)} ${r.card.trigger ? TRIG[r.card.trigger].icon : ""}</span>`).join("")}</span>`;
   setHTML($("#mid"), mid);
-  document.querySelector(".center").classList.toggle("fighting", !!S.battle);
+  setNum("atk", B ? atkV : null);
+  setNum("def", B ? defV : null);
+  const row = document.querySelector(".center");
+  row.classList.toggle("fighting", !!B);
+  // guard total: both numbers grow, the losing side dims (S.beat comes from the host, so the guest sees it too)
+  const duel = !!B && S.beat === "guardTotal";
+  row.classList.toggle("duel", duel);
+  const hits = !!B && !B.perfect && atkV >= defV;
+  $("#mid").classList.toggle("lose", duel && !hits);
+  $("#def").classList.toggle("lose", duel && hits);
   const guards = S.battle ? S.battle.guards : [];
   const shield = guards.reduce((n, c) => n + (c.shield || 0), 0);
   setHTML($("#gc"), guards.length
-    ? `<div class="gcards" title="+${fmt(shield)} shield">${guards.map((c) => cardHTML(c, {}, null, null, " mini")).join("")}</div>`
+    ? `<div class="gcards" title="+${fmt(shield)} shield">${guards.map((c) => `<div class="gw">${cardHTML(c, {}, null, null, " mini")}${(S.battle.intercepted || []).includes(c.uid) ? '<span class="itag">INTERCEPT</span>' : ""}</div>`).join("")}</div>`
     : `<span class="gl">GC</span>`);
 
   const mine = S.players[v];
