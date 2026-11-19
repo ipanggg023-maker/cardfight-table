@@ -183,3 +183,37 @@ test("fills the front row with the strongest", async () => {
   const front = ["fl", "fr"].map((k) => me.slots[k] && me.slots[k].card.name).sort();
   assert.deepEqual(front, ["P10", "P12"]);
 });
+
+// ---------- Task 3: easy level ----------
+test("easy doesn't guard at 2 damage", async () => {
+  const { Game, Bot } = botDefends(null, { dmg: 2, attPower: 23000, hand: (TP) => [mk(TP, "S1", 1, { shield: 10000 }), mk(TP, "S2", 1, { shield: 15000 })] });
+  await Game.attack("vc", false, "vc");
+  assert.equal(Bot.decide(Game.snapshot(1), 1, "easy")[0].fn, "confirmGuard");
+});
+
+test("easy never intercepts", async () => {
+  const { Game, Bot, S, TP } = botDefends(null, { dmg: 5, attPower: 23000, hand: (TP) => [mk(TP, "S1", 1, { shield: 10000 })] });
+  S.players[1].slots.fl = sl(mk(TP, "G2", 2, { shield: 5000 }));
+  await Game.attack("vc", false, "vc");
+  const fns = Bot.decide(Game.snapshot(1), 1, "easy").map((m) => m.fn);
+  assert.ok(!fns.includes("intercept"), fns.join(","));
+});
+
+test("easy random move", async () => {
+  const { Game, TextParse: TP, Bot } = load();
+  Game.newGame(["P0", "Bot"], [deck(TP, "standard", "A"), deck(TP, "standard", "B")], { first: 1 });
+  const S = Game.state(), me = S.players[1];
+  Object.assign(S, { phase: "main", active: 1, controller: 1, turn: 4, pending: null });
+  me.slots.vc = sl(mk(TP, "BotVC", 2, { power: 10000 }));
+  for (const k of ["fl", "fr", "bl", "bc", "br"]) me.slots[k] = null;
+  me.hand = [mk(TP, "P8", 1, { power: 8000 }), mk(TP, "P12", 2, { power: 12000 })];
+  const view = Game.snapshot(1);
+  const realRandom = Bot.random;
+  try {
+    Bot.random = () => 0.99; // no random move (25% chance not taken)
+    const own = JSON.stringify(Bot.decide(view, 1, "easy")[0]);
+    Bot.random = () => 0; // the 25% roll hits: a random legal move comes first
+    const rnd = JSON.stringify(Bot.decide(view, 1, "easy")[0]);
+    assert.notEqual(rnd, own);
+  } finally { Bot.random = realRandom; }
+});

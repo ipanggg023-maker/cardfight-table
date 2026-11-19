@@ -22,7 +22,16 @@ const Bot = (() => {
   const acts = { turn: -1, n: 0 }; // ACT uses this turn (a ready ability without a limit must not loop)
   let strideTried = -1; // one stride attempt per turn (a refused stride must not loop)
 
+  // easy level: 25% of decisions take a random move from the list instead of the best
   function decide(view, seat, level) {
+    const moves = decideBest(view, seat, level);
+    if (level === "easy" && moves.length > 1 && Bot.random() < 0.25) {
+      const i = 1 + Math.floor(Bot.random() * (moves.length - 1));
+      return [moves[i], ...moves.filter((_, j) => j !== i)];
+    }
+    return moves;
+  }
+  function decideBest(view, seat, level) {
     if (view.pending && view.pending.player === seat) return answerMoves(view, seat, level);
     switch (view.phase) {
       case "mulligan": return [{ fn: "mulligan", args: [mulliganPick(view, seat, level)] }];
