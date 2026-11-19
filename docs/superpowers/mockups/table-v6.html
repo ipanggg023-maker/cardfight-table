@@ -131,13 +131,13 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); f
 const CX = 1010; // the field centre; the opponent half turns around (CX, 450)
 const CIRCLES = [["fl", CX - 200, 580, "R"], ["vc", CX, 580, "V"], ["fr", CX + 200, 580, "R"], ["bl", CX - 200, 752, "R"], ["bc", CX, 752, "R"], ["br", CX + 200, 752, "R"]];
 const ZONES = [
-  ["order", "Order zone", CX - 445, 470, 130, 130],
-  ["damage", "Damage zone", CX - 445, 612, 130, 200],
+  ["order", "Order zone", CX - 445, 470, 130, 122],
+  ["damage", "Damage zone", CX - 445, 600, 130, 238],
   ["trig", "Trigger check zone", CX + 315, 470, 125, 150, "trig"],
   ["energy", "Energy generator", CX + 450, 470, 115, 60],
-  ["deck", "Deck", CX + 315, 630, 110, 150],
+  ["deck", "Deck", CX + 315, 628, 110, 118],
   ["ride", "Ride deck", CX + 450, 538, 115, 122],
-  ["drop", "Drop", CX + 315, 790, 110, 50],
+  ["drop", "Drop", CX + 315, 754, 110, 124],
   ["gzone", "G zone (Stride)", CX + 450, 668, 115, 172, "stride"],
 ];
 function card(cls = "", name = "", g = "", pw = "") {
@@ -157,13 +157,18 @@ function half(el, mine) {
   if (mine) put(C("fr"), card("", "Grade 2 unit", 2, "23000"), "left:29px;top:11px");
   else put(C("br"), card("rest", "Rested unit", 1, "7000"), "left:29px;top:11px");
   // zones
-  put(Z("order"), card("small", "Set order", 1), "left:30px;top:26px");
-  const dmg = Z("damage"), n = mine ? 2 : 1;
-  for (let i = 0; i < 6; i++) put(dmg, i < n ? `<div class="card side90 ${i === 0 ? "" : "back"}" style="--cw:44px;--ch:62px"></div>` : `<div style="width:62px;height:44px;border:1px dashed var(--line);border-radius:6px"></div>`, `left:${i % 2 ? 66 : 4}px;top:${30 + Math.floor(i / 2) * 56}px`);
+  put(Z("order"), card("small", "Set order", 1), "left:30px;top:20px;transform:scale(.95);transform-origin:top center");
+  const dmg = Z("damage");
+  const DMG = mine ? [["Damage 1", 1, false], ["Damage 2", 2, false], ["Counter-Blasted", 0, true], ["Damage 4", 3, false]] : [["Damage 1", 0, false], ["Damage 2", 2, false]];
+  for (let i = 0; i < 6; i++) put(dmg, `<div style="width:116px;height:64px;border:1px dashed rgba(41,68,106,.6);border-radius:6px"></div>`, `left:7px;top:${26 + i * 34}px`);
+  DMG.forEach(([nm, g, down], i) => put(dmg, `<div class="card side90 ${down ? "back" : ""}" style="--cw:64px;--ch:116px">${down ? "" : `<div class="gr" style="width:18px;height:18px;font-size:11px">${g}</div><div class="nm" style="top:5px;left:28px;font-size:10px">${nm}</div>`}</div>`, `left:7px;top:${26 + i * 34}px;z-index:${i + 1}`));
+  const n = DMG.length;
   Z("damage").insertAdjacentHTML("beforeend", `<span class="zn">${n}/6</span>`);
-  put(Z("deck"), card("back"), "left:9px;top:10px"); Z("deck").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:4px">${mine ? 35 : 36}</span>`);
+  put(Z("deck"), card("back small"), "left:20px;top:12px"); Z("deck").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:4px">${mine ? 35 : 36}</span>`);
   put(Z("ride"), card("back small", "", "", ""), "left:22px;top:22px;transform:scale(.9);transform-origin:top center"); Z("ride").insertAdjacentHTML("beforeend", `<span class="zn">1</span>`);
-  Z("drop").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:6px">3</span>`);
+  put(Z("drop"), card("small", "", ""), "left:24px;top:18px;transform:rotate(-6deg);filter:brightness(.6)"); put(Z("drop"), card("small", "", ""), "left:20px;top:18px;transform:rotate(4deg);filter:brightness(.75)");
+  put(Z("drop"), card("small", mine ? "Last card dropped" : "Retired unit", mine ? 1 : 2, ""), "left:20px;top:20px");
+  Z("drop").insertAdjacentHTML("beforeend", `<span class="zn">3</span>`);
   Z("energy").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:6px;left:10px;right:auto;color:var(--gold)">⚡ ${mine ? 5 : 3} / 10</span>`);
   const gz = Z("gzone");
   put(gz, card("back small g"), "left:22px;top:26px"); put(gz, card("small g", "Face-up G unit", 4), "left:30px;top:70px");
