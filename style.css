@@ -842,3 +842,7 @@ body.game { --violet: #b896ff; }
 .plate .thinking { font: 600 .7rem var(--display); color: var(--cyan); letter-spacing: .06em; animation: thinking 1s ease-in-out infinite; }
 @keyframes thinking { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .plate .thinking { animation: none; } }
+
+/* boss events: the boss line on the setup panel */
+.bossbox { border: 1px solid #e85d7466; border-radius: 10px; padding: 10px 14px; background: #e85d7412; text-align: left; }
+.bossbox p { margin: 0; line-height: 1.5; }

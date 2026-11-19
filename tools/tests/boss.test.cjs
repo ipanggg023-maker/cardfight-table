@@ -50,3 +50,21 @@ test("vanguard power only on the player's turn", () => {
   S.active = 1;
   assert.equal(Game.power(1, "vc"), printed);
 });
+
+// ---------- Task 3: the boss deck from its saved layout ----------
+test("bossDeckFromLayout reports missing cards", () => {
+  const fs = require("fs"), vm = require("vm"), path = require("path");
+  const ctx = { console }; vm.createContext(ctx);
+  for (const f of ["js/cards.js", "js/formats.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", f), "utf8"), ctx);
+  vm.runInContext("this.deckFromLayout = typeof deckFromLayout !== 'undefined' ? deckFromLayout : null;", ctx);
+  assert.equal(typeof ctx.deckFromLayout, "function", "deckFromLayout exists in formats.js");
+  const card = (id, grade) => ({ id, name: id, grade, type: "unit", power: 10000, shield: 5000 });
+  const byId = { a: card("a", 0), b: card("b", 1), c: card("c", 2), d: card("d", 3), m: card("m", 1) };
+  const layout = { name: "Boss", format: "standard", energy: true, ride: ["a", "b", "c", "d"], main: Array(50).fill("m"), g: [] };
+  const ok = ctx.deckFromLayout(layout, byId);
+  assert.deepEqual([...ok.missing], []);
+  assert.equal(ok.deck.main.length, 50);
+  const { c, ...noC } = byId;
+  const bad = ctx.deckFromLayout(layout, noC);
+  assert.deepEqual([...bad.missing], ["c"]);
+});

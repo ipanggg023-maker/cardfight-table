@@ -95,6 +95,7 @@ async function loadSetup() {
   const me = typeof Auth !== "undefined" && Auth.get();
   if (me) $("#n1").value = me.name;
   if (ONLINE && !ui.netReady) setupOnline();
+  if (BOSS) setupBoss();
   if (BOT) {
     $("#botBox").hidden = false;
     $("#d2").innerHTML = `<option value="same">Same as mine</option>` + opts;
@@ -182,6 +183,69 @@ async function startGame() {
   if (ONLINE === "join") return joinOnline();
   if (ONLINE === "host") return startHosted().catch((e) => toast(e.message));
   if (BOT) return startBot().catch((e) => toast(e.message));
+  if (BOSS) return startBoss().catch((e) => toast(e.message));
+}
+// ---------- boss events (supabase/008_bosses.sql): the bot with the boss's deck, level and advantages ----------
+const BOSS = new URLSearchParams(location.search).get("boss"); // a boss id, or "try" (the admin page's preview)
+async function loadBossDef() {
+  if (BOSS === "try") { try { return { ...JSON.parse(sessionStorage.getItem("vt-boss-try") || "null"), try: true }; } catch { return null; } }
+  const me = Auth.get();
+  if (!me || me.guest) return { guest: true };
+  const cl = await Cloud.client();
+  const { data, error } = await cl.from("bosses").select("*").eq("id", +BOSS).maybeSingle();
+  if (error || !data) return { closed: true };
+  const now = Date.now();
+  if (!data.active || now < Date.parse(data.starts_at) || now > Date.parse(data.ends_at)) return { closed: true, name: data.name };
+  return data;
+}
+async function setupBoss() {
+  $("#bossBox").hidden = false;
+  const btn = $("#startBtn"), say = (html) => ($("#bossText").innerHTML = html);
+  btn.disabled = true;
+  let def = null;
+  try { def = await loadBossDef(); } catch { def = { closed: true }; }
+  if (!def) return say("No boss to try: open it from the admin page.");
+  if (def.guest) return say(`Sign in to fight bosses. <a href="login.html">Sign in</a>`);
+  if (def.closed) return say(`${def.name ? esc(def.name) + ": t" : "T"}his event is closed.`);
+  ui.bossDef = def;
+  const adv = def.adv || {};
+  const perks = [adv.maxDamage > 6 ? `loses at ${adv.maxDamage} damage` : "", adv.extraDraw ? `+${adv.extraDraw} card at the start` : "", adv.vcPower ? `vanguard +${fmt(adv.vcPower)} on your turn` : ""].filter(Boolean).join(" · ");
+  $("#setup h1").textContent = def.try ? `Try: ${def.name}` : def.name;
+  say(`<b>${esc(def.blurb || "Boss event")}</b><br><span class="muted">${def.level === "easy" ? "Easy" : "Normal"} bot${perks ? " · " + esc(perks) : ""}${def.try ? " · preview, no reward" : ` · reward ${fmt(def.reward || 0)} coins, once`}</span>`);
+  $("#n1Label").textContent = "Your name";
+  btn.textContent = "Fight";
+  btn.disabled = false;
+}
+async function startBoss() {
+  const def = ui.bossDef;
+  if (!def) return;
+  const mine = await DB.loadDeck($("#d1").value);
+  const byId = Object.fromEntries((await DB.all("cards")).map((c) => [c.id, c]));
+  const r = deckFromLayout(def.deck || {}, byId);
+  if (r.missing.length) return toast(`The boss deck has ${r.missing.length} card(s) this device doesn't have yet. Open the editor once to sync cards, then try again.`);
+  const name = $("#n1").value.trim() || "Player";
+  Object.assign(ui, { bot: { seat: 1, level: def.level === "easy" ? "easy" : "normal" }, boss: { id: def.id, reward: def.reward || 0, try: !!def.try, game: ((ui.boss && ui.boss.game) || 0) + 1, claimed: 0 }, online: null, sel: null, mode: null, attacker: null, unitSel: null, mull: new Set(), pick: new Set() });
+  Game.newGame([name, def.name], [mine, r.deck], { first: null, extras: await DB.extras(), boss: { seat: 1, ...(def.adv || {}) } });
+  $("#setup").hidden = true;
+  $("#win").hidden = true;
+  const loading = loadingTable("The boss appears…");
+  render();
+  await loading;
+}
+// after a win against a boss: ask the database for the reward once per game
+async function claimBoss(S) {
+  const box = $("#winCoins"), B = ui.boss;
+  if (S.winner !== 0) { box.hidden = true; return; }
+  box.hidden = false;
+  if (B.try) { box.textContent = "Preview game: no reward."; return; }
+  if (B.claimed === B.game) return;
+  B.claimed = B.game;
+  box.textContent = "Claiming the reward…";
+  try {
+    const r = await Cloud.rpc("claim_boss_reward", { boss: +B.id, turns: S.turn });
+    box.textContent = r.status === "paid" ? `+${fmt(r.coins)} coins!` : r.status === "already" ? "Already claimed for this event." : r.status === "short" ? "The game was too short for the reward (3 turns)." : r.status === "guest" ? "Sign in to get the reward." : "This event is closed.";
+    if (r.status === "paid" && typeof Cloud.refresh === "function") Cloud.refresh().catch(() => {});
+  } catch (e) { box.textContent = "Couldn't claim the reward: " + e.message; B.claimed = 0; }
 }
 // ---------- vs the bot (js/bot.js): a local game, the bot plays seat 1 ----------
 const BOT = new URLSearchParams(location.search).get("bot"); // "easy" | "normal"
@@ -922,7 +986,7 @@ function render() {
   if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
-  if (S.winner !== null) reportMatch(S); else if (!$("#winCoins").hidden) $("#winCoins").hidden = true;
+  if (S.winner !== null) { if (ui.boss) claimBoss(S); else reportMatch(S); } else if (!$("#winCoins").hidden) $("#winCoins").hidden = true;
   if (ui.online) $("#winBtn").textContent = ONLINE === "host" ? "Rematch" : "Waiting for the host…";
   if (ui.bot) $("#winBtn").textContent = "Play again";
   FX.after(S);
@@ -1142,6 +1206,7 @@ function onAction(a, el) {
         loadingTable("Shuffling decks…");
         return render();
       }
+      if (ui.boss) { $("#win").hidden = true; return startBoss().catch((e) => toast(e.message)); }
       if (ui.bot) { $("#win").hidden = true; return startBot().catch((e) => toast(e.message)); }
       return Loader.go("lobby.html");
   }
@@ -1362,7 +1427,7 @@ $("#joinCode").addEventListener("input", (e) => (e.target.value = e.target.value
 Game.setOnChange(() => { scheduleRender(); if (ui.online && ONLINE === "host") Net.pushState(); });
 const TEST = new URLSearchParams(location.search).get("test"); // card id: open the test table for that card
 // every match is online (host / join); the only local table is the editor's test table
-if (!ONLINE && !TEST && !BOT) Loader.go("lobby.html");
+if (!ONLINE && !TEST && !BOT && !BOSS) Loader.go("lobby.html");
 else Loader.wait(TEST && !ONLINE ? startTest(TEST) : loadSetup());
 
 // ---------- test table (editor → 🧪 Test this card) ----------

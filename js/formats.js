@@ -233,3 +233,22 @@ function validateDeck(deck, byId) {
   }
   return errs;
 }
+
+// A playable deck from a saved layout {name, format, energy, ride[], main[], g[], starter} and the card library by id.
+// missing = card ids the library doesn't have (deleted cards, or cards this browser hasn't synced).
+function deckFromLayout(layout, byId) {
+  const get = (cid) => byId[cid];
+  const missing = [...new Set([...(layout.ride || []), ...(layout.main || []), ...(layout.g || []), layout.starter].filter((cid) => cid && !byId[cid]))];
+  const format = formatOf(layout);
+  const rideDeck = FORMATS[format].rideDeck;
+  const gAllowed = gDeckAllowed(layout);
+  const deck = {
+    name: layout.name, format,
+    g: gAllowed ? (layout.g || []).map(get).filter(Boolean) : [],
+    energy: rideDeck && !!layout.energy,
+    ride: rideDeck ? (layout.ride || []).map(get) : [],
+    starter: rideDeck ? null : get(layout.starter) || null,
+    main: (layout.main || []).map(get),
+  };
+  return { deck, missing };
+}

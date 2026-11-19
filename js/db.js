@@ -257,15 +257,12 @@ const DB = (() => {
   // Resolve a deck's card ids into full card objects for the engine
   async function loadDeck(id) {
     const deck = (await all("decks")).find((d) => d.id === id);
-    const byId = Object.fromEntries((await all("cards")).map((c) => [c.id, c]));
     if (!deck) throw new Error("Deck not found");
-    const get = (cid) => byId[cid];
-    const missing = [...(deck.ride || []), ...deck.main].filter((cid) => cid && !byId[cid]).length;
-    if (missing) throw new Error(`${missing} card(s) in this deck were deleted`);
-    const format = typeof formatOf === "function" ? formatOf(deck) : "standard";
-    const rideDeck = typeof FORMATS === "undefined" || FORMATS[format].rideDeck;
-    const gAllowed = typeof gDeckAllowed === "function" ? gDeckAllowed(deck) : false;
-    return { name: deck.name, format, g: gAllowed ? (deck.g || []).map(get).filter(Boolean) : [], energy: rideDeck && !!deck.energy, ride: rideDeck ? (deck.ride || []).map(get) : [], starter: rideDeck ? null : get(deck.starter) || null, main: deck.main.map(get) };
+    const byId = Object.fromEntries((await all("cards")).map((c) => [c.id, c]));
+    const r = deckFromLayout(deck, byId);
+    const lost = [...(deck.ride || []), ...deck.main].filter((cid) => cid && !byId[cid]).length;
+    if (lost) throw new Error(`${lost} card(s) in this deck were deleted`);
+    return r.deck;
   }
   // token / ticket / crest cards: effects create copies of them by name during a game
   async function extras() { return (await all("cards")).filter((c) => c.token || c.ticket || c.type === "crest"); }
