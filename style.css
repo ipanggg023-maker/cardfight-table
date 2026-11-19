@@ -846,3 +846,24 @@ body.game { --violet: #b896ff; }
 /* boss events: the boss line on the setup panel */
 .bossbox { border: 1px solid #e85d7466; border-radius: 10px; padding: 10px 14px; background: #e85d7412; text-align: left; }
 .bossbox p { margin: 0; line-height: 1.5; }
+
+/* ---- aura: a card with an ability you can use now; on-table choices (question bar, hand picks, card row) ---- */
+.slot.aura > .card, .hand .hc.aura > .card, .mz.order .card.aura, .mz.drop.aura, .soulb.aura {
+  box-shadow: 0 0 0 2px #ffe08a, 0 0 18px 4px #f2b94bcc; animation: aura 1.6s ease-in-out infinite; cursor: pointer; }
+@keyframes aura { 50% { box-shadow: 0 0 0 2px #ffe08a, 0 0 28px 8px #f2b94b99; } }
+@media (prefers-reduced-motion: reduce) { .slot.aura > .card, .hand .hc.aura > .card, .mz.order .card.aura, .mz.drop.aura, .soulb.aura { animation: none; } }
+.abmenu { z-index: 70; }
+.abmenu button { text-align: left; white-space: normal; line-height: 1.3; font-size: .82rem; }
+.hand .hc.can-choose > .card { box-shadow: 0 0 0 3px var(--cyan), 0 0 18px var(--cyan); cursor: pointer; }
+.hand .hc.chosen > .card { box-shadow: 0 0 0 3px var(--gold), 0 0 18px var(--gold); transform: translateY(-14%); }
+body.hand-pick .hand { transform: none; z-index: 30; }
+body.hand-pick .hand .hc:not(.can-choose):not(.chosen) > .card { opacity: .5; }
+.cardrow { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 45; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+  max-width: min(92vw, 1100px); padding: 6px; pointer-events: auto; }
+.cardrow[hidden] { display: none; }
+.cardrow .crc { padding: 0; border: 0; background: none; border-radius: 10px; cursor: pointer; transition: transform .15s; }
+.cardrow .crc:hover { transform: translateY(-6px); }
+.cardrow .crc .card { width: calc(var(--cw) * 1.25); height: calc(var(--ch) * 1.25); box-shadow: 0 0 0 2px var(--cyan), 0 10px 24px #000c; }
+.cardrow .crc.chosen .card { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
+.cardrow .crc > span { display: grid; place-items: center; min-width: 120px; min-height: 60px; padding: 8px; border-radius: 10px; background: var(--mat2); border: 1px solid var(--cyan); }
+.pickbar button { margin-left: 6px; }

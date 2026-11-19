@@ -740,6 +740,67 @@ const FX = (() => {
     reset() { prev = null; prevWhere = new Map(); lastN = 0; lastView = null; lastBattle = ""; pow = new Map(); if (layer) layer.innerHTML = ""; },
   };
 })();
+// ---------- aura: cards with an ability you can use now glow; click one to use it ----------
+function usableMap(S, v) {
+  const m = new Map();
+  if (!S || S.winner !== null || S.pending || S.busy || S.judge || !myMove() || S.phase === "mulligan") return m;
+  const add = (k, label, run) => { if (!m.has(k)) m.set(k, []); m.get(k).push({ label, run }); };
+  const short = (t) => String(t || "").replace(/^[^:]+\(\w+\):\s*/, "").slice(0, 90);
+  const p = S.players[v];
+  for (const k of ["vc", ...Game.rcOf(v)]) {
+    if (!p.slots[k] || p.slots[k].locked) continue;
+    for (const a of Game.actList(v, k) || []) if (a.ready) add(`slot:${k}`, a.text, () => act(Game.activate(k, a.i, a.src || 0)));
+  }
+  for (const a of Game.zoneActs(v) || []) if (a.ready) { add(`uid:${a.uid}`, short(a.text), () => act(Game.activateZone(a.uid, a.i))); if (a.zone !== "hand") add(`zone:${a.zone}`, a.text, () => act(Game.activateZone(a.uid, a.i))); }
+  for (const a of Game.orderZoneActs(v) || []) if (a.ready) add(`uid:${a.uid}`, a.text, () => act(Game.activateOrderZone(a.uid, a.i)));
+  if (S.active === v && S.phase === "main" && !S.battle) for (const c of p.hand) if (c.type === "order" && !c.protect) add(`uid:${c.uid}`, `Play ${c.name}`, () => act(Game.playOrder(c.uid)));
+  return m;
+}
+function renderAura(S, v, usable) {
+  ui.usable = usable;
+  const P = $("#me") && $("#me")._parts;
+  if (P) {
+    for (const [k, el] of Object.entries(P.slots)) el.classList.toggle("aura", usable.has(`slot:${k}`));
+    P.drop.classList.toggle("aura", usable.has("zone:drop"));
+    const sb = P.slots.vc && P.slots.vc.querySelector(".soulb"); if (sb) sb.classList.toggle("aura", usable.has("zone:soul"));
+    P.order.querySelectorAll("[data-uid]").forEach((el) => el.classList.toggle("aura", usable.has(`uid:${el.dataset.uid}`)));
+  }
+  if (!usable.size) closeAbMenu();
+}
+function closeAbMenu() { const m = $("#abmenu"); if (m) m.hidden = true; }
+// the small menu at a glowing card: its usable abilities, plus what a click would normally do
+function openAbMenu(anchor, entries) {
+  let m = $("#abmenu");
+  if (!m) { m = document.createElement("div"); m.id = "abmenu"; m.className = "domenu abmenu"; document.body.appendChild(m); }
+  m._entries = entries;
+  m.innerHTML = entries.map((e, i) => `<button class="${e.main ? "go" : ""}" data-ab="${i}">${esc(e.label)}</button>`).join("") + `<button class="ghost" data-ab="x">Cancel</button>`;
+  m.hidden = false;
+  const r = anchor.getBoundingClientRect(), w = Math.min(320, innerWidth - 16);
+  m.style.width = w + "px";
+  m.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+  const h = m.getBoundingClientRect().height;
+  m.style.top = (r.top - h - 8 > 8 ? r.top - h - 8 : Math.min(innerHeight - h - 8, r.bottom + 8)) + "px";
+}
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  const mb = t.closest && t.closest("#abmenu [data-ab]");
+  if (mb) { const m = $("#abmenu"), en = m._entries; closeAbMenu(); if (mb.dataset.ab !== "x") en[+mb.dataset.ab].run(); e.stopPropagation(); return; }
+  if (t.closest && !t.closest("#abmenu")) closeAbMenu();
+  const S = Game.state(), v = S && view();
+  if (!S || !ui.usable || !ui.usable.size || ui.attacker || ui.mode || choiceMode(S, v)) return;
+  // which glowing thing was clicked
+  const slot = t.closest("#me .slot.aura"), hand = t.closest("#hand [data-hand]"), oz = t.closest("#me .mz.order [data-uid].aura"), dropBox = t.closest("#me .mz.drop.aura"), soul = t.closest("#me .soulb.aura");
+  let key = null, anchor = null, normal = null;
+  if (slot) { key = `slot:${slot.dataset.key}`; anchor = slot; normal = S.phase === "battle" && Game.canAttack(slot.dataset.key) ? { label: "Attack with this unit", run: () => { ui.attacker = slot.dataset.key; ui.boost = true; render(); } } : S.phase === "main" && slot.dataset.key !== "vc" ? { label: "Move this unit", run: () => { ui.unitSel = slot.dataset.key; render(); } } : null; }
+  else if (hand && ui.usable.has(`uid:${hand.dataset.hand}`) && !ui.sel) { key = `uid:${hand.dataset.hand}`; anchor = hand; normal = { label: "Pick it (call / ride / guard)", run: () => { ui.sel = +hand.dataset.hand; render(); } }; }
+  else if (oz) { key = `uid:${oz.dataset.uid}`; anchor = oz; }
+  else if (dropBox) { key = "zone:drop"; anchor = dropBox; normal = { label: "Look at the drop", run: () => showZone(dropBox.dataset.zone) }; }
+  else if (soul) { key = "zone:soul"; anchor = soul; normal = { label: "Look at the soul", run: () => showZone(soul.dataset.zone) }; }
+  if (!key || !ui.usable.has(key)) return;
+  e.stopPropagation(); e.preventDefault();
+  openAbMenu(anchor, [...ui.usable.get(key).map((x) => ({ ...x, main: true })), ...(normal ? [normal] : [])]);
+}, true);
+
 // ---------- moments: the opponent's draw, key ride cut-in, SKILL strip ----------
 const MO = { oppHand: null, ride: "", resolveN: 0, logN: -1, beat: "", won: false };
 function renderMoments(S, v) {
@@ -980,7 +1041,9 @@ function render() {
     : `<span class="gl">GC</span>`);
 
   const mine = S.players[v];
-  const picked = (c) => (S.phase === "mulligan" ? ui.mull.has(c.uid) : ui.sel === c.uid) ? " picked" : "";
+  const handPick = choiceMode(S, v) === "hand" ? new Set(S.pending.options.map((o) => String(o.id))) : null;
+  const usable = usableMap(S, v);
+  const picked = (c) => (handPick && handPick.has(String(c.uid)) ? (ui.pick.has(String(c.uid)) ? " chosen" : " can-choose") : "") + ((S.phase === "mulligan" ? ui.mull.has(c.uid) : ui.sel === c.uid) ? " picked" : "") + (usable.has(`uid:${c.uid}`) ? " aura" : "");
   renderHand(mine.hand, picked);
   setHTML($("#actions"), actionsHTML(S, v));
   const hEl = $("#rail .ph-hint"), hTxt = ($("#actions .hint") || {}).textContent || "";
@@ -990,6 +1053,7 @@ function render() {
   renderDoing(S, v);
   renderCheckZoom(S, v);
   renderMoments(S, v);
+  renderAura(S, v, usable);
   if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;
@@ -1043,7 +1107,6 @@ function actionsHTML(S, v) {
   const selCard = ui.sel && S.players[v].hand.find((c) => c.uid === ui.sel);
   if (S.battle && !isActive) {
     let h = hint("Guard from hand · tap a front G2 to intercept");
-    if (selCard && selCard.type === "order") h += b("play", `Play ${esc(selCard.name)}`, "go");
     if (Game.canGGuard(v)) h += b("gguard", "G guard", "on");
     return h + b("confirm", "Done guarding ▶", "go");
   }
@@ -1061,13 +1124,10 @@ function actionsHTML(S, v) {
   }
   if (S.phase === "main") {
     h += hint(ui.sel ? "Tap a circle to call" : ui.unitSel ? "Use an ACT, or tap a circle to move" : "Select a card or unit");
-    if (selCard && selCard.type === "order") h += b("play", `Play ${esc(selCard.name)}`, "go");
     if (selCard && selCard.dress && Game.dressTargets(S.active, selCard).length) h += b("dress", ui.mode === "dress" ? "Tap a rear-guard to overDress" : `overDress ${esc(selCard.name)}`, ui.mode === "dress" ? "on" : "go");
     if (selCard && selCard.xoverDress) h += b("xdress", `XoverDress ${esc(selCard.name)}`, "go");
-    Game.zoneActs(S.active).forEach((a) => (h += b("zact", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-uid="${a.uid}" data-i="${a.i}" title="${esc(a.text)}"`)));
-    Game.orderZoneActs(S.active).forEach((a) => (h += b("ozact", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-uid="${a.uid}" data-i="${a.i}" title="${esc(a.text)}"`)));
     if (ui.unitSel) {
-      Game.actList(S.active, ui.unitSel).forEach((a) => (h += b("actv", "ACT: " + esc(a.text.slice(0, 70)), a.ready ? "on" : "off", `data-i="${a.i}" data-src="${a.src || 0}" title="${esc(a.text)}"`)));
+      // abilities: the unit glows and is used from its own menu (aura)
     }
     const me = S.players[S.active];
     if (me.useEnergy && me.energy >= 7 && me.egTurn !== S.turn) h += b("egdraw", "⚡ Energy-Blast 7: draw 1", "on");
@@ -1087,32 +1147,49 @@ function actionsHTML(S, v) {
 // a slim bar shows the question (and Confirm when several are picked). "Show list" opens the usual window.
 function fieldPickIds(S, v) {
   const p = S && S.pending;
-  if (!p || p.player !== v || S.judge || ui.listOpen) return null;
+  if (!p || p.player !== v || S.judge) return null;
   return p.options.length && p.options.every((o) => /^[01]:[a-z0-9]+$/.test(String(o.id))) ? new Set(p.options.map((o) => String(o.id))) : null;
 }
+// how a choice is made on the table: units (glowing circles), buttons (yes / no, "one of the following"),
+// hand (your hand cards glow), row (other cards laid across the middle of the table)
+function choiceMode(S, v) {
+  const p = S && S.pending;
+  if (!p || p.player !== v || S.judge) return null;
+  if (fieldPickIds(S, v)) return "units";
+  if (p.options.every((o) => !o.card)) return "buttons";
+  const hand = new Set(S.players[v].hand.map((c) => String(c.uid)));
+  if (p.options.every((o) => hand.has(String(o.id)))) return "hand";
+  return "row";
+}
 function renderPickBar(S, v) {
-  let bar = $("#pickbar");
-  const ids = fieldPickIds(S, v), p = S.pending;
-  document.body.classList.toggle("field-pick", !!ids);
-  if (!ids) { if (bar) bar.hidden = true; return false; }
+  let bar = $("#pickbar"), row = $("#cardrow");
+  const mode = choiceMode(S, v), p = S.pending;
+  document.body.classList.toggle("field-pick", mode === "units");
+  document.body.classList.toggle("hand-pick", mode === "hand");
+  if (!row) { row = document.createElement("div"); row.id = "cardrow"; row.className = "cardrow"; row.hidden = true; document.body.appendChild(row); }
+  if (!mode) { if (bar) bar.hidden = true; row.hidden = true; return false; }
   if (!bar) { bar = document.createElement("div"); bar.id = "pickbar"; bar.className = "pickbar"; document.body.appendChild(bar); }
   bar.hidden = false;
   const multi = !(p.min === 1 && p.max === 1);
-  setHTML(bar, `<span class="pb-q">${esc(p.prompt)}</span><small>Click a glowing circle${multi ? ` · ${ui.pick.size} picked (${p.min === p.max ? p.max : p.min + "–" + p.max})` : ""}</small>
-    ${multi ? `<button class="go" data-pickok ${ui.pick.size < p.min ? "disabled" : ""}>Confirm</button>` : ""}<button class="ghost" data-picklist>Show list</button>`);
+  const how = { units: "Click a glowing circle", hand: "Click glowing cards in your hand", row: "Click a card", buttons: "" }[mode];
+  const btns = mode === "buttons" ? p.options.map((o) => `<button class="${ui.pick.has(String(o.id)) ? "go" : "ghost"}" data-opt="${esc(o.id)}">${esc(o.label)}</button>`).join("") : "";
+  setHTML(bar, `<span class="pb-q">${esc(p.prompt)}</span>${how ? `<small>${how}${multi ? ` · ${ui.pick.size} picked (${p.min === p.max ? p.max : p.min + "–" + p.max})` : ""}</small>` : ""}
+    ${btns}${multi ? `<button class="go" data-pickok ${ui.pick.size < p.min ? "disabled" : ""}>Confirm${ui.pick.size ? " (" + ui.pick.size + ")" : ""}</button>` : ""}`);
+  row.hidden = mode !== "row";
+  if (mode === "row") setHTML(row, p.options.map((o) => `<button class="crc${ui.pick.has(String(o.id)) ? " chosen" : ""}" data-opt="${esc(o.id)}" title="${esc(o.label)}">${o.card ? cardHTML(o.card, {}, null, null, "") : `<span>${esc(o.label)}</span>`}</button>`).join(""));
   return true;
 }
 document.addEventListener("click", (e) => {
-  if (e.target.closest("[data-pickok]")) { $("#choiceOk").click(); return; }
-  if (e.target.closest("[data-picklist]")) { ui.listOpen = true; render(); }
+  if (e.target.closest("[data-pickok]")) { act(Promise.resolve(Game.answer([...ui.pick].map(parseId)))); ui.pick.clear(); }
 });
 function renderPending(S, v) {
   const p = S.pending;
-  if (!p || p.player !== v || S.judge) { $("#choice").hidden = true; ui.pick.clear(); ui.listOpen = false; renderPickBar(S, v); return; } // a manual effect is answered in the Judge panel
+  $("#choice").hidden = true; // every choice is made on the table (renderPickBar)
+  if (!p || p.player !== v || S.judge) { ui.pick.clear(); renderPickBar(S, v); return; } // a manual effect is answered on the table (task bar)
   // a new prompt starts with nothing picked (picks never carry over from an earlier prompt)
   const key = p.prompt + "|" + p.options.map((o) => o.id).join(",");
-  if (ui.pendingKey !== key) { ui.pendingKey = key; ui.pick.clear(); ui.listOpen = false; }
-  if (renderPickBar(S, v)) { $("#choice").hidden = true; return; }
+  if (ui.pendingKey !== key) { ui.pendingKey = key; ui.pick.clear(); }
+  if (renderPickBar(S, v)) return;
   $("#choice").hidden = false;
   $("#choicePrompt").textContent = p.prompt;
   setHTML($("#choiceOpts"), p.options.map((o) => `<button class="opt${ui.pick.has(String(o.id)) ? " picked" : ""}" data-opt="${esc(o.id)}">
@@ -1170,6 +1247,7 @@ function onSlot(side, key) {
 }
 function onHand(uid) {
   const S = Game.state(), v = view();
+  if (choiceMode(S, v) === "hand") return onOpt(String(uid));
   if (S.winner !== null || S.pending || !myMove()) return;
   if (S.phase === "mulligan") { ui.mull.has(uid) ? ui.mull.delete(uid) : ui.mull.add(uid); return render(); }
   const card = S.players[v].hand.find((c) => c.uid === uid);
