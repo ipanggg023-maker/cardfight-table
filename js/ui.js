@@ -636,12 +636,12 @@ const FX = (() => {
   };
 })();
 // ---------- moments: the opponent's draw, key ride cut-in, SKILL strip ----------
-const MO = { oppHand: null, ride: "", resolveN: 0, logN: -1 };
+const MO = { oppHand: null, ride: "", resolveN: 0, logN: -1, beat: "", won: false };
 function renderMoments(S, v) {
   // a new game: the log counter starts again (the guest's state is a new object after every snapshot, so identity can't tell)
   const fresh = (S.logN || 0) < MO.logN || MO.logN < 0;
   MO.logN = S.logN || 0;
-  if (fresh) { MO.oppHand = null; MO.ride = ""; MO.resolveN = (S.resolving && S.resolving.n) || 0; }
+  if (fresh) { MO.won = false; MO.beat = ""; MO.oppHand = null; MO.ride = ""; MO.resolveN = (S.resolving && S.resolving.n) || 0; }
   const reduced = FX_FAST();
   // the opponent drew: a card back flies from their deck to their plate (their cards stay hidden)
   const oh = S.players[1 - v].hand.length;
@@ -659,6 +659,14 @@ function renderMoments(S, v) {
       cutIn(vc.card, kind, pi === v);
     }
   }
+  // sounds for the moments (S.beat comes from the host, so both screens hear the same)
+  const bk = S.beat ? `${S.beat}:${S.logN}:${S.checking ? S.checking.card.uid : ""}` : "";
+  if (bk && bk !== MO.beat) {
+    const snd = { call: "call", attack: "attack", keyRide: "keyRide", checkTrigger: "trigger" }[S.beat] || (S.beat === "result" ? (S.lastHit && S.lastHit.hit ? "hit" : "guard") : "");
+    if (snd) Sound.play(snd, { trig: S.checking && S.checking.trig && S.checking.trig.type });
+  }
+  MO.beat = bk;
+  if (S.winner !== null && !MO.won) { MO.won = true; if (S.winner === v) Sound.play("win"); }
   // an ability resolves: a short SKILL strip with the card's picture from its owner's corner
   const R = S.resolving;
   if (R && R.n !== MO.resolveN) {
@@ -1290,6 +1298,8 @@ document.addEventListener("click", (e) => {
   if (zb) { e.stopPropagation(); e.preventDefault(); return showZone(zb.dataset.zone); }
 }, true);
 
+$("#soundBtn").textContent = Sound.muted() ? "🔇" : "🔊";
+$("#soundBtn").addEventListener("click", () => { $("#soundBtn").textContent = Sound.toggle() ? "🔊" : "🔇"; });
 $("#logBtn").addEventListener("click", () => { $("#logDrawer").hidden = !$("#logDrawer").hidden; render(); });
 $("#logClose").addEventListener("click", () => ($("#logDrawer").hidden = true));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#logDrawer").hidden = true; if (infoPinned) unpinInfo(); else if (!document.body.classList.contains("info-dock")) $("#info").hidden = true; } });
