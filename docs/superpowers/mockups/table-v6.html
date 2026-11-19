@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Table v6 mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Mockup only: the game table drawn without playmat pictures, laid out from the user's sketch. Stage 1600 x 900, scaled to fit. */
+:root {
+  --bg: #070d18; --bg2: #0c1729; --panel: #101e34; --line: #29446a; --line2: #3b5f8f; --fg: #e8eef8; --muted: #8ea4c3;
+  --gold: #f2b94b; --cyan: #5fd0ff; --red: #e85d74; --green: #6fd39a; --violet: #b896ff;
+  --display: "Chakra Petch", system-ui, sans-serif; --body: "IBM Plex Sans Thai", Tahoma, sans-serif;
+  --cw: 92px; --ch: 128px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--body); overflow: hidden; }
+#wrap { position: fixed; inset: 0; }
+#stage { width: 1600px; height: 900px; position: absolute; left: 50%; top: 50%; transform-origin: center;
+  background:
+    radial-gradient(ellipse 55% 40% at 50% 50%, rgba(95,208,255,.07), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, var(--bg2), var(--bg) 75%); }
+/* the seam between the two players */
+#stage::before { content: ""; position: absolute; left: 420px; right: 0; top: 450px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line2) 20%, var(--line2) 80%, transparent); }
+.side { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; pointer-events: none; }
+.side.opp { transform: rotate(180deg); transform-origin: 1010px 450px; }
+.side > * { pointer-events: auto; }
+/* the field: one framed area with six circles (sketch: the big rectangle) */
+.field { position: absolute; left: 700px; top: 470px; width: 620px; height: 365px; border: 1px solid var(--line);
+  border-radius: 18px; background: linear-gradient(180deg, rgba(19,36,61,.55), rgba(12,23,41,.35)); }
+.circle { position: absolute; width: 136px; height: 136px; margin: -68px 0 0 -68px; border-radius: 50%;
+  border: 2px solid var(--line2); display: grid; place-items: center; }
+.circle::after { content: attr(data-l); position: absolute; top: 50%; left: -14px; transform: translateY(-50%);
+  font: 700 13px var(--display); color: var(--muted); background: var(--bg2); padding: 0 6px; border-radius: 6px; }
+.circle.vc { border-color: var(--gold); box-shadow: 0 0 0 6px rgba(242,185,75,.08) inset; }
+.circle.vc::after { color: var(--gold); }
+/* zones: boxes with a label and a count */
+.zone { position: absolute; border: 1px solid var(--line); border-radius: 12px; background: rgba(16,30,52,.6); }
+.zone .zl { position: absolute; top: 6px; left: 10px; font: 600 12px var(--display); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+.zone .zn { position: absolute; top: 4px; right: 10px; font: 700 15px var(--display); color: var(--fg); }
+.zone.stride { border-color: rgba(184,150,255,.55); }
+.zone.stride .zl { color: var(--violet); }
+.zone.trig { border-color: rgba(242,185,75,.5); }
+.zone.trig .zl { color: var(--gold); }
+/* cards (placeholders: the real game shows the card pictures) */
+.card { width: var(--cw); height: var(--ch); border-radius: 8px; position: relative; overflow: hidden;
+  background: linear-gradient(160deg, #24426d, #142844 60%, #0e1d33); border: 1px solid #4a6fa3; box-shadow: 0 6px 14px rgba(0,0,0,.45); }
+.card .nm { position: absolute; left: 6px; right: 6px; top: 26px; font: 600 11px var(--body); color: #cfe0f7; line-height: 1.25; }
+.card .gr { position: absolute; top: 5px; left: 5px; width: 20px; height: 20px; border-radius: 50%; background: #0b1424; border: 1px solid var(--line2);
+  display: grid; place-items: center; font: 700 12px var(--display); }
+.card .pw { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); padding: 1px 8px; border-radius: 10px; background: rgba(5,10,20,.85);
+  font: 700 13px var(--display); white-space: nowrap; }
+.card .pw.up { color: var(--gold); }
+.card.back { background: repeating-linear-gradient(45deg, #1b2f4f 0 8px, #172a47 8px 16px); border-color: #3b5f8f; }
+.card.back::after { content: "VT"; position: absolute; inset: 0; display: grid; place-items: center; font: 700 22px var(--display); color: rgba(232,238,248,.35); }
+.card.side90 { width: var(--ch); height: var(--cw); }
+.card.rest { transform: rotate(90deg); }
+.card.small { --cw: 70px; --ch: 98px; }
+.card.g { background: linear-gradient(160deg, #4a3a7a, #2a2150 60%, #1b1638); border-color: #8f78d8; }
+.soul { position: absolute; top: -8px; right: -8px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; background: #2a1f4f; border: 1px solid var(--violet);
+  font: 700 13px var(--display); display: grid; place-items: center; }
+/* the middle: guardian circle with attack / defense */
+#gc { position: absolute; left: 1010px; top: 450px; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+  border: 2px solid var(--cyan); box-shadow: 0 0 24px rgba(95,208,255,.25), 0 0 0 8px rgba(95,208,255,.06) inset; display: grid; place-items: center; background: rgba(7,13,24,.7); }
+#gc::after { content: "G"; position: absolute; top: 6px; font: 700 14px var(--display); color: var(--cyan); }
+.readout { position: absolute; top: 450px; transform: translateY(-50%); text-align: center; font-family: var(--display); }
+.readout b { display: block; font-size: 30px; line-height: 1; }
+.readout span { font-size: 12px; letter-spacing: .12em; color: var(--muted); }
+#atk { left: 800px; } #atk b { color: var(--red); }
+#def { left: 1110px; } #def b { color: var(--cyan); }
+/* frame: phases top-left, plates in the corners, detail panel, hand, action dock */
+#rail { position: absolute; left: 22px; top: 18px; font-family: var(--display); }
+#rail .t { font-size: 15px; color: var(--cyan); letter-spacing: .1em; }
+#rail .t b { font-size: 24px; color: var(--fg); }
+#rail li { list-style: none; font-size: 15px; color: var(--muted); letter-spacing: .08em; line-height: 1.55; }
+#rail li.on { font-size: 26px; color: var(--fg); font-weight: 700; }
+#rail li.on small { display: block; font: 400 12px var(--body); color: var(--muted); letter-spacing: 0; }
+#rail ul { margin: 6px 0 0; padding: 0; }
+.plate { position: absolute; display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 14px;
+  background: linear-gradient(90deg, rgba(16,30,52,.95), rgba(16,30,52,.7)); border: 1px solid var(--line); font-family: var(--display); }
+.plate .av { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 20px; color: #071019; }
+.plate .who { font-size: 16px; font-weight: 700; }
+.plate .st { font-size: 13px; color: var(--muted); display: flex; gap: 12px; }
+.plate .st b { color: var(--fg); }
+.plate .st .dmg b { color: var(--red); }
+#pMe { left: 18px; bottom: 16px; }
+#pOpp { right: 18px; top: 16px; }
+#detail { position: absolute; left: 18px; top: 255px; width: 250px; height: 520px; border: 1px solid var(--line); border-radius: 14px; background: rgba(12,23,41,.85); padding: 14px; }
+#detail .ph { height: 250px; border-radius: 10px; background: linear-gradient(160deg, #24426d, #0e1d33); border: 1px solid #4a6fa3; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+#detail h3 { margin: 12px 0 4px; font: 700 16px var(--display); }
+#detail p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+#hand { position: absolute; left: 1010px; bottom: -70px; transform: translateX(-50%); display: flex; gap: -10px; }
+#hand .card { margin: 0 -10px; transform: rotate(var(--r)) translateY(var(--y)); transform-origin: 50% 120%; }
+#dock { position: absolute; right: 16px; top: 450px; transform: translateY(-50%); display: flex; gap: 10px; align-items: center; font-family: var(--display); }
+#dock .hint { font-size: 12px; color: var(--muted); max-width: 120px; text-align: right; }
+#dock button { font: 700 15px var(--display); padding: 11px 20px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+#dock button.go { background: var(--gold); color: #1d1404; border-color: var(--gold); }
+.note { position: absolute; font: 600 11px var(--display); color: #071019; background: var(--gold); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+#legend { position: fixed; left: 10px; bottom: 70px; z-index: 5; font: 12px var(--body); color: var(--muted); background: rgba(7,13,24,.85); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; max-width: 280px; }
+#legend label { display: block; margin-top: 4px; color: var(--fg); cursor: pointer; }
+.hideNotes .note { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage">
+  <div class="side opp" id="sOpp"></div>
+  <div class="side me" id="sMe"></div>
+
+  <div id="gc"></div>
+  <div class="readout" id="atk"><span>ATTACK</span><b>23000</b></div>
+  <div class="readout" id="def"><span>DEFENSE</span><b>13000</b></div>
+
+  <div id="rail">
+    <div class="t">YOUR TURN <b>3</b></div>
+    <ul><li>STAND</li><li>DRAW</li><li>RIDE</li><li class="on">MAIN<small>Call units or use abilities</small></li><li>BATTLE</li><li>END</li></ul>
+  </div>
+  <div class="plate" id="pMe"><div class="av" style="background:var(--cyan)">Y</div><div><div class="who">You</div><div class="st"><span class="dmg">Damage <b>2/6</b></span><span>Deck <b>35</b></span><span>Hand <b>5</b></span></div></div></div>
+  <div class="plate" id="pOpp"><div><div class="who" style="text-align:right">Opponent</div><div class="st"><span class="dmg">Damage <b>1/6</b></span><span>Deck <b>36</b></span><span>Hand <b>6</b></span></div></div><div class="av" style="background:var(--red)">O</div></div>
+  <div id="detail"><div class="ph">card picture</div><h3>Card name</h3><p>Normal Unit · Grade 3 · Power 13000<br>Point at any card to read it here.</p></div>
+  <div id="hand"></div>
+  <div id="dock"><button>Abilities</button><button class="go">To Battle</button></div>
+</div></div>
+
+<div id="legend"><b style="color:var(--fg)">Table v6 mockup</b><br>No playmat picture. Layout from your sketch; opponent is the same layout turned around.
+  <label><input type="checkbox" id="notes" checked> Show zone notes</label></div>
+
+<script>
+// One player's half in stage coordinates (the opponent's half is the same, rotated 180° around the stage centre).
+const CX = 1010; // the field centre; the opponent half turns around (CX, 450)
+const CIRCLES = [["fl", CX - 200, 580, "R"], ["vc", CX, 580, "V"], ["fr", CX + 200, 580, "R"], ["bl", CX - 200, 752, "R"], ["bc", CX, 752, "R"], ["br", CX + 200, 752, "R"]];
+const ZONES = [
+  ["order", "Order zone", CX - 445, 470, 130, 130],
+  ["damage", "Damage zone", CX - 445, 612, 130, 200],
+  ["trig", "Trigger check zone", CX + 315, 470, 125, 150, "trig"],
+  ["energy", "Energy generator", CX + 450, 470, 115, 60],
+  ["deck", "Deck", CX + 315, 630, 110, 150],
+  ["ride", "Ride deck", CX + 450, 538, 115, 122],
+  ["drop", "Drop", CX + 315, 790, 110, 50],
+  ["gzone", "G zone (Stride)", CX + 450, 668, 115, 172, "stride"],
+];
+function card(cls = "", name = "", g = "", pw = "") {
+  return `<div class="card ${cls}">${g !== "" ? `<div class="gr">${g}</div>` : ""}${name ? `<div class="nm">${name}</div>` : ""}${pw ? `<div class="pw${/\+|23000/.test(pw) ? " up" : ""}">${pw}</div>` : ""}</div>`;
+}
+function half(el, mine) {
+  let h = `<div class="field"></div>`;
+  for (const [k, x, y, l] of CIRCLES) h += `<div class="circle ${k === "vc" ? "vc" : ""}" data-k="${k}" data-l="${l}" style="left:${x}px;top:${y}px"></div>`;
+  for (const [k, l, x, y, w, hh, cls] of ZONES) h += `<div class="zone ${cls || ""}" data-z="${k}" style="left:${x}px;top:${y}px;width:${w}px;height:${hh}px"><span class="zl">${l}</span></div>`;
+  el.innerHTML = h;
+  const C = (k) => el.querySelector(`[data-k="${k}"]`), Z = (k) => el.querySelector(`[data-z="${k}"]`);
+  const put = (box, html, css = "") => { const d = document.createElement("div"); d.style.cssText = "position:absolute;" + css; d.innerHTML = html; box.appendChild(d); return d; };
+  // units
+  put(C("vc"), card("", mine ? "Grade 3 vanguard" : "Opponent vanguard", 3, mine ? "13000" : "13000") + `<div class="soul">4</div>`, "left:29px;top:11px");
+  put(C("fl"), card("", "Grade 2 unit", 2, "10000"), "left:29px;top:11px");
+  put(C("bl"), card("", "Grade 1 booster", 1, "8000"), "left:29px;top:11px");
+  if (mine) put(C("fr"), card("", "Grade 2 unit", 2, "23000"), "left:29px;top:11px");
+  else put(C("br"), card("rest", "Rested unit", 1, "7000"), "left:29px;top:11px");
+  // zones
+  put(Z("order"), card("small", "Set order", 1), "left:30px;top:26px");
+  const dmg = Z("damage"), n = mine ? 2 : 1;
+  for (let i = 0; i < 6; i++) put(dmg, i < n ? `<div class="card side90 ${i === 0 ? "" : "back"}" style="--cw:44px;--ch:62px"></div>` : `<div style="width:62px;height:44px;border:1px dashed var(--line);border-radius:6px"></div>`, `left:${i % 2 ? 66 : 4}px;top:${30 + Math.floor(i / 2) * 56}px`);
+  Z("damage").insertAdjacentHTML("beforeend", `<span class="zn">${n}/6</span>`);
+  put(Z("deck"), card("back"), "left:9px;top:10px"); Z("deck").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:4px">${mine ? 35 : 36}</span>`);
+  put(Z("ride"), card("back small", "", "", ""), "left:22px;top:22px;transform:scale(.9);transform-origin:top center"); Z("ride").insertAdjacentHTML("beforeend", `<span class="zn">1</span>`);
+  Z("drop").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:6px">3</span>`);
+  Z("energy").insertAdjacentHTML("beforeend", `<span class="zn" style="top:auto;bottom:6px;left:10px;right:auto;color:var(--gold)">⚡ ${mine ? 5 : 3} / 10</span>`);
+  const gz = Z("gzone");
+  put(gz, card("back small g"), "left:22px;top:26px"); put(gz, card("small g", "Face-up G unit", 4), "left:30px;top:70px");
+  gz.insertAdjacentHTML("beforeend", `<span class="zn" style="color:var(--violet)">8 · 1</span>`);
+  if (mine) put(Z("trig"), card("small", "Drive check card", 0, "+10000"), "left:27px;top:34px");
+  // notes (what changed vs. today)
+  if (mine) {
+    put(el, `<div class="note">G zone (Stride): G deck face down + face-up G units</div>`, "left:1250px;top:846px");
+    put(el, `<div class="note">Check card lands here, then zooms to the middle</div>`, "left:1250px;top:626px;transform:translateX(-100%)");
+  }
+}
+half(document.getElementById("sMe"), true);
+half(document.getElementById("sOpp"), false);
+// the opponent's notes would be upside down; none are drawn there
+const hand = document.getElementById("hand");
+const hs = [-12, -6, 0, 6, 12];
+hand.innerHTML = hs.map((r, i) => `<div style="--r:${r}deg;--y:${Math.abs(r) * 1.2}px" class="card">${["<div class='gr'>2</div><div class='nm'>Hand card</div>", "<div class='gr'>1</div><div class='nm'>Hand card</div>", "<div class='gr'>3</div><div class='nm'>Hand card</div>", "<div class='gr'>0</div><div class='nm'>Trigger</div>", "<div class='gr'>1</div><div class='nm'>Sentinel</div>"][i]}</div>`).join("");
+document.querySelectorAll("#hand .card").forEach((c) => { c.style.margin = "0 -8px"; });
+// fit the stage to the window
+function fit() { const s = Math.min(innerWidth / 1600, innerHeight / 900); document.getElementById("stage").style.transform = `translate(-50%,-50%) scale(${s})`; }
+addEventListener("resize", fit); fit();
+document.getElementById("notes").addEventListener("change", (e) => document.body.classList.toggle("hideNotes", !e.target.checked));
+</script>
+</body>
+</html>
