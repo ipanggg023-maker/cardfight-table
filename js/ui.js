@@ -603,15 +603,6 @@ const FX = (() => {
           else if (/Persona Ride!/.test(line)) { burst("PERSONA RIDE", slotEl(ai, "vc"), "#f2b94b", true); ring(slotEl(ai, "vc"), "#f2b94b"); }
           else if (/ rides /.test(line)) ring(slotEl(ai, "vc"), "#5fd0ff");
           else if (/ strides /i.test(line)) { burst("STRIDE", slotEl(ai, "vc"), "#b896ff", true); ring(slotEl(ai, "vc"), "#b896ff"); }
-          else {
-            const m = line.match(/^(\S+) (Critical|Draw|Front|Heal|Stand|Over) trigger!/);
-            if (m) {
-              const t = Object.keys(TRIG_COLOR).find((k) => TRIG[k] && TRIG[k].name === m[2]) || m[2].toLowerCase();
-              const who = S.checking ? S.checking.pi : ai;
-              const root = who === v ? $("#me") : $("#opp");
-              burst(`${m[1]} ${m[2].toUpperCase()}!`, root && root._parts ? root._parts.trig : null, TRIG_COLOR[t] || "#f2b94b", true);
-            }
-          }
         }
       }
       // the attacker lunges toward its target once per attack
@@ -640,6 +631,76 @@ const FX = (() => {
     reset() { prev = null; prevWhere = new Map(); lastN = 0; lastView = null; lastBattle = ""; pow = new Map(); if (layer) layer.innerHTML = ""; },
   };
 })();
+// ---------- check zoom: the drive / damage check card, large in the middle of both screens ----------
+// S.checking (engine): {pi, card, type, n, of, stage "shown" | "trigger", trig {type, power, crit, to}}. Checks are public, so both players see the same.
+const CZ_COLOR = { crit: "#f2b94b", draw: "#5fd0ff", front: "#ff8a5c", heal: "#6fd39a", stand: "#b896ff", over: "#ff5fa2" };
+const CZ = { key: "", uid: null, last: null };
+function renderCheckZoom(S, v) {
+  const box = $("#checkZoom");
+  if (!box) return;
+  const chk = S.checking;
+  if (!chk) {
+    if (CZ.uid !== null) checkZoomOut(box, v);
+    return;
+  }
+  const key = `${chk.card.uid}:${chk.stage}`;
+  if (key === CZ.key) return;
+  const fresh = CZ.uid !== chk.card.uid;
+  CZ.key = key; CZ.uid = chk.card.uid; CZ.last = { pi: chk.pi, type: chk.type, trigger: chk.card.trigger };
+  const label = chk.type === "Drive" ? `DRIVE CHECK${chk.of > 1 ? ` ${chk.n}/${chk.of}` : ""}` : `DAMAGE CHECK${chk.of > 1 ? ` ${chk.n}/${chk.of}` : ""}`;
+  const t = chk.stage === "trigger" && chk.trig ? chk.trig : null;
+  const tname = t && TRIG[t.type] ? TRIG[t.type].name : "";
+  if (fresh) {
+    seen.set(chk.card.uid, chk.card);
+    box.className = `czoom ${chk.type === "Drive" ? "drive" : "damage"}${chk.pi === v ? " mine" : " theirs"}`;
+    box.innerHTML = `<div class="czb a">${esc(label)}</div>
+      <div class="czc">${cardHTML(chk.card, {}, null, null, " czcard")}<div class="czt" hidden></div></div>`;
+    box.hidden = false;
+    void box.offsetWidth; // start the zoom-in transition from the small state
+    box.classList.add("in");
+  }
+  const tag = box.querySelector(".czt");
+  if (t && tag) {
+    tag.style.setProperty("--c", CZ_COLOR[t.type] || "#f2b94b");
+    tag.innerHTML = `<small>GET TRIGGER</small><b>${esc(TRIG[t.type] ? TRIG[t.type].icon : "")} ${esc(tname)}</b>`;
+    tag.hidden = false;
+    box.classList.add("trig");
+    // the units that got the trigger's power show it for a moment
+    const root = chk.pi === v ? $("#me") : $("#opp");
+    for (const k of t.to || []) {
+      const el = root && root._parts && root._parts.slots[k];
+      if (!el) continue;
+      const pill = document.createElement("span");
+      pill.className = "tpill";
+      pill.style.setProperty("--c", CZ_COLOR[t.type] || "#f2b94b");
+      pill.textContent = `+${fmt(t.power)}${t.crit ? " ★+1" : ""}`;
+      el.appendChild(pill);
+      setTimeout(() => pill.remove(), 1600);
+    }
+  }
+}
+// the check card leaves: it shrinks toward where it went (hand, damage zone or the plate for an over trigger)
+function checkZoomOut(box, v) {
+  const last = CZ.last;
+  CZ.key = ""; CZ.uid = null; CZ.last = null;
+  const card = box.querySelector(".czc");
+  let dest = null;
+  if (last) {
+    const root = last.pi === v ? $("#me") : $("#opp"), P = root && root._parts;
+    if (last.trigger === "over") dest = P && P.plate;
+    else if (last.type === "Drive") dest = last.pi === v ? $("#hand") : P && P.plate;
+    else dest = P && P.damage[0] && P.damage[0].parentElement;
+  }
+  const reduced = FX_FAST();
+  if (card && dest && !reduced) {
+    const a = card.getBoundingClientRect(), b = dest.getBoundingClientRect();
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+    try { card.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${dx}px,${dy}px) scale(.18)`, opacity: .2 }], { duration: 380, easing: "cubic-bezier(.4,0,.6,1)", fill: "forwards" }); } catch { /* old browser */ }
+  }
+  box.classList.remove("in", "trig");
+  setTimeout(() => { if (CZ.uid === null) { box.hidden = true; box.innerHTML = ""; } }, reduced ? 0 : 400);
+}
+
 // Every battle moment waits on screen (js/pace.js) so both players can follow it; the test table and hidden tabs barely wait
 Game.setPace((kind) => new Promise((ok) => setTimeout(ok, Pace.ms(kind, { reduced: FX_FAST(), hidden: document.hidden, test: !!ui.test }))));
 function FX_FAST() { return !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches); }
@@ -685,6 +746,7 @@ function render() {
   if (!$("#logDrawer").hidden) setHTML($("#log"), S.log.map((l) => `<li>${esc(l)}</li>`).join(""));
   renderPending(S, v);
   renderDoing(S, v);
+  renderCheckZoom(S, v);
   if (ui.test) renderTest(S);
   $("#win").hidden = S.winner === null;
   if (S.winner !== null) $("#winText").textContent = S.winner < 0 ? "Draw game!" : `${S.players[S.winner].name} wins!`;

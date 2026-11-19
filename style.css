@@ -747,3 +747,43 @@ body.game { --violet: #b896ff; }
 .mat.v6.me .dmgc { align-items: flex-start; padding-top: 3px; }
 .mat.v6.me .dmgc::after { background: linear-gradient(180deg, #000c, #0000 55%); }
 .mat.v6.opp .dmgc::after { background: linear-gradient(0deg, #000c, #0000 55%); }
+
+/* ---- v6 check zoom: the drive / damage check card large in the middle, a diagonal banner, the trigger result ---- */
+.czoom { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: grid; place-items: center; }
+.czoom[hidden] { display: none; }
+.czoom .czb { position: absolute; left: -5%; right: -5%; height: 64px; display: flex; align-items: center; padding: 0 9%;
+  font: 700 clamp(1.4rem, 4.2vh, 2.4rem) var(--display); letter-spacing: .06em; color: #fff; transform: rotate(-8deg) translateX(-110%); opacity: 0;
+  transition: transform .32s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+.czoom .czb.a { top: 14%; justify-content: flex-start; }
+.czoom .czb.b { bottom: 14%; justify-content: flex-end; transform: rotate(-8deg) translateX(110%); }
+.czoom.drive .czb { background: linear-gradient(90deg, #0000, #1d6b3fe6 15%, #1d6b3fe6 85%, #0000); }
+.czoom.damage .czb { background: linear-gradient(90deg, #0000, #1d3f7ae6 15%, #1d3f7ae6 85%, #0000); }
+.czoom.in .czb { transform: rotate(-8deg) translateX(0); opacity: 1; }
+.czoom .czc { position: relative; display: grid; justify-items: center; gap: 10px; transform: scale(.35); opacity: 0;
+  transition: transform .34s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+.czoom.in .czc { transform: scale(1); opacity: 1; }
+.czoom .card.czcard { width: calc(46vh * .73); height: 46vh; font-size: 1rem; box-shadow: 0 18px 48px #000c, 0 0 0 2px #ffffff22; }
+.czoom.trig .card.czcard { box-shadow: 0 18px 48px #000c, 0 0 0 3px var(--gold), 0 0 34px #f2b94b88; }
+.czoom .czt { display: grid; justify-items: center; padding: 8px 18px; border-radius: 12px; background: #070d18e6; border: 1px solid var(--c);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--c) 45%, transparent); transform: scale(.6); opacity: 0; animation: czt .28s cubic-bezier(.2,.8,.2,1) forwards; }
+.czoom .czt small { font: 600 .72rem var(--display); letter-spacing: .2em; color: var(--muted); }
+.czoom .czt b { font: 700 1.6rem var(--display); color: var(--c); }
+@keyframes czt { to { transform: scale(1); opacity: 1; } }
+.slot .tpill { position: absolute; left: 50%; top: -6px; z-index: 6; transform: translate(-50%, -100%); padding: 2px 9px; border-radius: 10px;
+  background: #070d18f0; border: 1px solid var(--c); color: var(--c); font: 700 .8rem var(--display); white-space: nowrap; pointer-events: none;
+  animation: tpill 1.6s ease-out forwards; }
+.mat.opp .slot .tpill { top: auto; bottom: -6px; transform: translate(-50%, 100%); }
+@keyframes tpill { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .czoom .czb, .czoom .czc { transition: none; }
+  .czoom .czc { transform: scale(.7); }
+  .czoom.in .czc { transform: scale(.7); }
+  .czoom .czt, .slot .tpill { animation: none; opacity: 1; transform: none; }
+  .mat.opp .slot .tpill, .slot .tpill { transform: translate(-50%, -100%); }
+}
+.czoom .czb { left: 3%; right: 3%; padding: 0 6%; transform: rotate(-6deg) translateX(-120%); }
+.czoom .czb.b { transform: rotate(-6deg) translateX(120%); }
+.czoom.in .czb, .czoom.in .czb.b { transform: rotate(-6deg) translateX(0); }
+.czoom .card.czcard { background-color: #13243d; }
+.czoom .czb.a { top: 10%; } .czoom .czb.b { bottom: 22%; }
+.czoom .czb.a, .czoom .czb.b { justify-content: center; }
