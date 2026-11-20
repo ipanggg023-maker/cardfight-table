@@ -1117,7 +1117,7 @@ function actionsHTML(S, v) {
   }
   if (S.phase === "ride") {
     const next = Game.nextRide(S.active);
-    if (ui.mode === "rideDiscard") return hint(`Discard 1 card to ride ${esc(next.name)}`) + b("cancel", "Cancel");
+    if (ui.mode === "rideDiscard") return hint(`Discard 1 card to ride ${esc(next.name)}`) + (Game.rideAlt(S.active) ? b("rideAlt", `Soul-Blast ${Game.rideAlt(S.active)} instead`, "go") : "") + b("cancel", "Cancel");
     h += hint("Ride from the ride deck, or pick a hand card and tap VC");
     if (next) h += b("ride", `Ride ${esc(next.name)}`, "go");
     return h + b("skipRide", "Skip ride", "ghost");
@@ -1265,7 +1265,8 @@ function onHand(uid) {
 function onAction(a, el) {
   switch (a) {
     case "mull": { const ids = [...ui.mull]; ui.mull = new Set(); return act(Game.mulligan(ids)); }
-    case "ride": ui.mode = "rideDiscard"; ui.sel = null; return render();
+    case "rideAlt": ui.mode = null; return act(Game.rideFromDeck(null)); // pay Soul-Blast instead of discarding (your vanguard allows it)
+    case "ride": if (Game.rideFree(Game.state().active)) return act(Game.rideFromDeck(null)); ui.mode = "rideDiscard"; ui.sel = null; return render(); // no discard this turn (an effect said so)
     case "skipRide": return act(Game.skipRide());
     case "cancel": ui.mode = null; ui.attacker = null; return render();
     case "play": { const id = ui.sel; ui.sel = null; return act(Game.playOrder(id)); }

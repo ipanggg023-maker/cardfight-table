@@ -87,6 +87,7 @@ function cardStatLine(c) {
     if (dr === 2) sk.push("Twin Drive!!"); else if (dr === 3) sk.push("Triple Drive!!!");
     if (c.persona) sk.push("Persona Ride");
     if (c.kai) sk.push("Kai");
+    if (c.aichi) sk.push("Aichi");
     if (c.gift) sk.push("Imaginary Gift: " + c.gift[0].toUpperCase() + c.gift.slice(1));
     if (sk.length) parts.push(sk.join(", "));
     if (c.trigger) {

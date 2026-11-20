@@ -187,6 +187,8 @@ function renderCard() {
       <label class="chk"><input type="checkbox" data-path="persona" ${c.persona ? "checked" : ""}> Persona Ride</label>
       <label class="chk" title="The Kai icon printed on the card"><input type="checkbox" data-path="kai" ${c.kai ? "checked" : ""}> Kai icon</label>
       <label class="chk" title="“The normal ride of this card from a grade 3 card with a Kai icon and a different card name also becomes a persona ride”"><input type="checkbox" data-path="personaFromKai" ${c.personaFromKai ? "checked" : ""}> Persona Ride from a Kai grade 3</label>
+      <label class="chk" title="The Aichi icon printed on the card"><input type="checkbox" data-path="aichi" ${c.aichi ? "checked" : ""}> Aichi icon</label>
+      <label class="chk" title="“The normal ride of this card from a grade 3 card with an Aichi icon and a different card name also becomes a persona ride”"><input type="checkbox" data-path="personaFromAichi" ${c.personaFromAichi ? "checked" : ""}> Persona Ride from an Aichi grade 3</label>
       <label class="chk"><input type="checkbox" data-path="regalis" ${c.regalis ? "checked" : ""}> Regalis Piece (max 1 per deck)</label>
       <label class="chk" title="Your opponent's effects can't choose this unit"><input type="checkbox" data-path="resist" ${c.resist ? "checked" : ""}> Resist</label>
       <label class="chk" title="“This card is from all clans and nations”"><input type="checkbox" data-path="allClans" ${c.allClans ? "checked" : ""}> All clans</label>
@@ -340,7 +342,7 @@ function rowHTML(path, row, lib, contOnly) {
 // path helpers
 // Card filter form (Ability Language v2): grade, name, type + more (clan/nation, trigger, exact name, vs your vanguard, other than this card)
 function filterHTML(p, f, title) {
-  const more = f.kai || f.clan || f.trig || f.nameExact || f.sentinel || f.sameNameVC || f.gradeVC || f.other || f.state || f.restState;
+  const more = f.kai || f.aichi || f.clan || f.trig || f.nameExact || f.sentinel || f.sameNameVC || f.gradeVC || f.other || f.state || f.restState;
   return `<div class="flt">${title ? `<span class="ftitle">${esc(title)}:</span>` : ""}<label>min grade ${num(p + ".gmin", f.gmin)}</label><label>max grade ${num(p + ".gmax", f.gmax)}</label>
     <label>name has ${txt(p + ".name", f.name)}</label><label>type ${sel(p + ".ctype", SCHEMA.paramOptions.ctype, f.ctype || "any")}</label>
     <details class="fmore" ${more ? "open" : ""}><summary>more</summary>
@@ -352,6 +354,7 @@ function filterHTML(p, f, title) {
       <label class="chk"><input type="checkbox" data-path="${p}.sameNameVC" ${f.sameNameVC ? "checked" : ""}> same name as your vanguard</label>
       <label class="chk"><input type="checkbox" data-path="${p}.other" ${f.other ? "checked" : ""}> other than this card</label>
       <label class="chk"><input type="checkbox" data-path="${p}.kai" ${f.kai ? "checked" : ""}> with a Kai icon</label>
+      <label class="chk"><input type="checkbox" data-path="${p}.aichi" ${f.aichi ? "checked" : ""}> with an Aichi icon</label>
       <label>in state (units) ${txt(p + ".state", f.state, "e.g. harmony")}</label>
       <label>rested? (units) ${sel(p + ".restState", { "": "any", rest: "rested", stand: "standing" }, f.restState || "")}</label>
     </details></div>`;
@@ -439,7 +442,8 @@ $("#cardForm").addEventListener("click", async (e) => {
       // the official stat line ("Normal Unit | Dragon Empire | … | Grade 3 | Power 13000 | …") is read into fields, not kept as text
       const abText = TextParse.splitStats(t).rest;
       if (abText && cur.abilities.length && !window.confirm("Replace the current abilities with the ones read from the text?")) return;
-      const r = TextParse.parse(t, { type: cur.type });
+      // a blitz order is only known from its saved abilities (the text alone reads as a normal order)
+      const r = TextParse.parse(t, { type: (cur.abilities || []).some((a) => a.kind === "BLITZ") ? "blitz order" : cur.type });
       const { abilities, ...statsFound } = r;
       abilities.forEach((a) => delete a.unread);
       // re-reading text of an imported card keeps its printed stats; only flags and abilities are taken

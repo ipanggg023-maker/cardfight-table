@@ -112,7 +112,7 @@ const TextParse = (() => {
     const tail = m[6]
       .replace(/((?:Critical|Front|Draw|Heal|Over|Stand)(?: Trigger)?)\s*(\+\s*[\d,]+)/g, (x, t, p) => `|${/trigger/i.test(t) ? t : t + " Trigger"}|${p}|`)
       .replace(/((?:Critical|Front|Draw|Heal|Over|Stand) Trigger)(?!\|)/g, "|$1|")
-      .replace(/(Twin Drive!*|Triple Drive!*|Persona Ride|Imaginary Gift\s*[:\-]?\s*(?:Force|Accel|Protect)|Regalis Piece|Boost|Intercept|Force|Accel|Protect|Kai|Sentinel)/g, "|$1|");
+      .replace(/(Twin Drive!*|Triple Drive!*|Persona Ride|Imaginary Gift\s*[:\-]?\s*(?:Force|Accel|Protect)|Regalis Piece|Boost|Intercept|Force|Accel|Protect|Kai|Aichi|Sentinel)/g, "|$1|");
     return [type, mid, m[2], m[3], m[4], m[5], tail].join("|")
       .replace(/\|\s*[,、]\s*/g, "|").replace(/(^|\|)\s*-\s*(?=\||$)/g, "$1").replace(/\|\s*\|/g, "|").replace(/\|{2,}/g, "|");
   }
@@ -160,7 +160,7 @@ const TextParse = (() => {
     let statText = lines[statAt];
     while (body.length && isPiped(body[0]) && !/\[(auto|act|cont)\]/i.test(body[0])) statText += "|" + body.shift();
     // fields
-    const tokens = statText.split("|").flatMap((t) => (/drive|persona|boost|intercept|gift|force|accel|protect|kai/i.test(t) ? t.split(/[,、]/) : [t])).map((t) => t.trim().replace(/^-+(?=[A-Z])|(?<=[a-z!])-+$/g, "")).filter((t) => t && t !== "-" && t !== "無"); // "-" / "無" = none
+    const tokens = statText.split("|").flatMap((t) => (/drive|persona|boost|intercept|gift|force|accel|protect|kai|aichi/i.test(t) ? t.split(/[,、]/) : [t])).map((t) => t.trim().replace(/^-+(?=[A-Z])|(?<=[a-z!])-+$/g, "")).filter((t) => t && t !== "-" && t !== "無"); // "-" / "無" = none
     const gAt = tokens.findIndex((t) => /^grade\b/i.test(t));
     const mids = [];
     for (const [i, t] of tokens.entries()) {
@@ -182,6 +182,7 @@ const TextParse = (() => {
       else if (low === "intercept") out.intercept = true;
       else if (low === "persona ride") out.persona = true;
       else if (low === "kai" || low === "kai icon") out.kai = true;
+      else if (low === "aichi" || low === "aichi icon") out.aichi = true;
       else if (low === "sentinel") out.sentinel = true;
       else if (low === "regalis piece") out.regalis = true;
       else if ((m = low.match(/^(?:imaginary gift\s*[:\-]?\s*)?(force|accel|protect)$/))) out.gift = m[1];
@@ -312,6 +313,8 @@ const TextParse = (() => {
     if (upToN) out.deckMax = toNum(upToN[1]);
     // "[CONT]:The normal ride of this card from a grade 3 card with a Kai icon and a different card name from this card also becomes a persona ride."
     if (/normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride/i.test(text)) out.personaFromKai = true;
+    if (/this card'?s \[auto\] ability can be resolved even if you have resolved a regalis piece ability this fight/i.test(text)) out.regalisAgain = true;
+    if (/normal ride of this card from a grade 3 card with an aichi icon and a different card name[^.]*also becomes a persona ride/i.test(text)) out.personaFromAichi = true;
     // "[CONT](Hand):When this card would be discarded, it may be discarded as a grade 4 or 3…" (counts for the stride cost)
     const da = text.match(/may be discarded as a grade ((?:\d+(?:\s*or\s*)?)+)/i);
     if (da) out.discardAs = Math.max(...da[1].match(/\d+/g).map(Number));
@@ -328,7 +331,7 @@ const TextParse = (() => {
   }
 
   // ---------- normalising ----------
-  const norm = (s) => decode(String(s || "")).replace(/\r/g, "").replace(/until the end of/gi, "until end of").replace(/［/g, "[").replace(/］/g, "]").replace(/（/g, "(").replace(/）/g, ")")
+  const norm = (s) => decode(String(s || "")).replace(/\r/g, "").replace(/\b(if|when) you hand\b/gi, "$1 your hand").replace(/until the end of/gi, "until end of").replace(/［/g, "[").replace(/］/g, "]").replace(/（/g, "(").replace(/）/g, ")")
     .replace(/\[COST\]\s*\[([^\]]*)\]\s*&\s*((?:[^\[\]]|\[[^\]]*\])*)\]/gi, "[COST][$1 & $2]")
     .replace(/&\s*Rest\]\s*this (unit|card)\]/gi, "& [Rest] this $1]")
     .replace(/\[COST\]\s*\[([^\[\]]*)\]\s*&\s*\[([^\[\]]*)\]/gi, "[COST][$1 & $2]")
@@ -349,16 +352,21 @@ const TextParse = (() => {
   function filt(t) {
     const f = {};
     let m;
+    // "up to one card with "X" in its card name or up to one grade 2 or less card": either kind
+    const either = String(t || "").match(/^(.+?) or up to (?:one|1) (.+)$/i);
+    if (either && ((either[1].match(/"/g) || []).length % 2 === 0)) { const a = filt(either[1]), b = filt(either[2]); if (a && b && Object.keys(a).length && Object.keys(b).length) return { anyOf: [a, b] }; }
     if ((m = t.match(/grade (\d) or (less|lower)/i))) f.gmax = +m[1];
     else if ((m = t.match(/grade (\d) or (greater|higher|more)/i))) f.gmin = +m[1];
     else if ((m = t.match(/\bgrade (\d)\b/i))) { f.gmin = +m[1]; f.gmax = +m[1]; }
     const anyNames = t.match(/with ((?:"[^"]+"(?:,? (?:or|and\/or) )?){2,}) in (its|their) (different |original )?card names?/i);
     if (anyNames) f.nameAny = [...anyNames[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]); // "with "A" or "B" in its card name"
     else if ((m = t.match(/with "([^"]+)" in (its|their) (different |original )?card names?/i))) f.name = m[1];
-    else if ((m = t.match(/(?:card|unit)s? named "([^"]+)"/i)) || (m = t.match(/^"([^"]+)"$/))) f.nameExact = m[1];
+    else if ((m = t.match(/(?:card|unit)s? named "([^"]+)"/i)) || (m = t.match(/^"([^"]+)"$/)) || (!/" (?:or|and) "/.test(t) && (m = t.match(/^"((?:[^"]|"[^"]*")+)"$/)))) f.nameExact = m[1];
+    else if ((m = t.match(/^(?:an? |one )?"([^"]+)"(?= with | from |$)/i))) f.nameExact = m[1]; // "a "Barcgal" with an Aichi icon"
     if ((m = t.match(/<+([^>]+)>+/))) f.clan = m[1].trim();
     if (/same card name as (your|the) vanguard/i.test(t)) f.sameNameVC = true;
     if (/with an? kai icon/i.test(t)) f.kai = true;
+    if (/with an? aichi icon/i.test(t)) f.aichi = true;
     if (/\bother\b/i.test(t) && !/other than/i.test(t)) f.other = true;
     if (/normal units?/i.test(t)) f.ctype = "unit";
     else if (/trigger units?/i.test(t)) f.ctype = "trigger";
@@ -434,7 +442,7 @@ const TextParse = (() => {
     [/when your other (rear-guard|unit) in the same column as this unit is placed/i, "allyPlacedRC", null, { column: true }],
     [/when (?:this unit|it) (?:is )?(?:\[stand\]|stands|becomes \[stand\]) (?:by|due to) the (?:ability|effect) of your vanguard(?: with ((?:"[^"]+"(?:,? or )?)+) in its card name)?|when this unit is \[stand\] by your vanguard'?s (?:ability|effect)/i, "stood", null, { byVC: 1 }],
     [/when (?:this unit|it) (?:is )?(?:\[stand\]|stands) by the (?:ability|effect) of your ((?:grade \d or (?:greater|less) )?(?:card|unit)s?(?: with (?:"[^"]+"(?:,? or )?)+ in (?:its|their) card names?)?)/i, "stood", null, { byCard: 1 }],
-    [/when your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name)?) (?:\[stand\]|stands) by your card'?s (?:ability|effect)/i, "allyStood", null, { subjectText: 1, conds: [{ type: "byMe" }] }],
+    [/when your ((?:grade \d or (?:greater|less) )?vanguard(?: with (?:"[^"]+"(?:,? or )?)+ in its card name| with an? (?:kai|aichi) icon)?) (?:\[stand\]|stands) by your card'?s (?:ability|effect)/i, "allyStood", null, { subjectText: 1, byAny: 1, conds: [{ type: "byMe" }] }],
     [/when the unit armed with this card is attacked/i, "attacked", "VC"],
     [/when (this unit|it) (?:\[stand\]|stands) (?:by|due to) (?:an? |the )?(?:effect|ability) (?:from|of) (?:one of )?your (?:other )?cards?(?:'s)?(?: (?:ability|effect))?/i, "stood", null, { conds: [{ type: "byMe" }] }],
     [/when (?:this unit|it) (?:\[stand\]|stands) by your card'?s (?:effect|ability)/i, "stood", null, { conds: [{ type: "byMe" }], byAny: 1 }],
@@ -452,6 +460,10 @@ const TextParse = (() => {
     [/when your ((?:other )?(?:grade \d or (?:greater|less) |grade \d )?)(?:set )?orders? (?:card )?is put into (?:your |the )?order zone/i, "cardToOrderZone", null, { subject: 1 }],
     [/when the set order you played(?: from (?:your )?hand)? is put into (?:your |the )?order zone/i, "cardToOrderZone", null],
     [/when (?:this card|this order) is put into (?:the |your )?drop(?: zone)? from (?:the |your )?order zone/i, "ozToDrop", null],
+    [/when your plant gauge is put during your main phase/i, "plantGauged", null, { conds: [{ type: "mainPhase" }] }],
+    [/when your plant gauge is put/i, "plantGauged", null],
+    [/when this card is a plant gauge and is discarded during your turn/i, "plantDiscarded", null, { conds: [{ type: "myTurn" }] }],
+    [/when this card is a plant gauge and is discarded/i, "plantDiscarded", null],
     [/when (?:a|an|your) ((?:grade \d or (?:greater|less) |grade \d )?)(?:card|unit) is put into your soul by (?:a|your|your card'?s|one of your cards'?) (?:card'?s? )?(?:abilit(?:y|ies)|effects?)/i, "cardToSoul", null, { subject: 1 }],
     [/when your other rear-guard is put into your soul/i, "cardToSoul", null, { subjectOther: true, whenFrom: "RC" }],
     [/when (?:a|your) card is put into your soul(?! by)/i, "cardToSoul", null],
@@ -469,11 +481,14 @@ const TextParse = (() => {
     [/when this unit is returned (?:to (?:your )?hand from \(rc\)|from \(rc\) to (?:your )?hand)/i, "returnedHand", "RC"],
     [/when your opponent'?s (.*?)rear-guards? (?:is|are) (?:put into the drop(?: zone)?|retired) (?:due to|by) (?:an effect (?:from|of) |the abilit(?:y|ies) of )?(?:one of )?your (?:other )?cards?(?:'s)?(?: abilit(?:y|ies)| effects?)?/i, "oppRetired", null, { subject: 1, conds: [{ type: "byMe" }] }],
     // the vanguard / field
-    [/when your ((?:(?!rear-guard|opponent)[^,])*?) is placed on \(vc\)|when your ((?:(?!rear-guard|opponent)[^,])*?vanguard(?: with "[^"]*" in its card name)?) is placed\b/i, "allyPlacedVC", null, { subjectPlacedVC: true }],
+    [/when your ((?:(?!rear-guard|opponent)[^,])*?) is placed on \(vc\)|when your ((?:(?!rear-guard|opponent)[^,])*?vanguard(?: with "[^"]*" in its card name| with an? (?:kai|aichi) icon)?) is placed\b/i, "allyPlacedVC", null, { subjectPlacedVC: true }],
     [/when your ((?:g unit|vanguard|unit)(?: with "[^"]*" in its (?:original )?card name)?|"[^"]+") (?:\[stride\]s?|strides)/i, "allyPlacedVC", null, { subjectPlacedVC: true, whenFrom: "G" }],
     [/when (?:an|your) opponent'?s (.*?)rear-guards? (?:is|are) put into the drop(?: zone)?(?! from)/i, "oppRetired", null, { subject: 1 }],
     [/when your (?:vanguard|unit) (?:\[legion\]|legions)|when this unit (?:\[legion\]|legions)/i, "legion", "VC"],
     [/when this unit becomes in harmony|when this unit is put in harmony/i, "harmonized", "RC"],
+    [/when this hollowed unit is retired(?: from \(rc\))?/i, "retired", "RC", { conds: [{ type: "wasHollowed" }] }],
+    [/when this unit becomes hollowed other than during (?:the |your )?battle phase/i, "hollowed", "RC", { conds: [{ type: "battlePhase", not: true }] }],
+    [/when this unit becomes hollowed/i, "hollowed", "RC"],
     [/when this card becomes an originaldress/i, "originalDress", "RC"],
     [/when (?:this unit|it) (?:\[stand\]|stands|becomes \[stand\])(?=\s*,)/i, "stood", null],
     [/when (?:a|your) card is put into your damage zone/i, "toDamage", null],
@@ -489,7 +504,7 @@ const TextParse = (() => {
     [/when (this unit|this card) is put on \(gc\)/i, "placedGC", "GC"],
     [/when (this card|this unit) is put into (your )?soul/i, "toSoul", "soul"],
     [/when this unit intercepts/i, "intercepts", "RC"],
-    [/when your (.*?)(vanguard|unit|rear-guard)(?: with "[^"]*" in its card name)? is attacked/i, "allyAttacked", null, { subjectAtt: true }],
+    [/when your (.*?)(vanguard|unit|rear-guard)(?: with "[^"]*" in its card name| with an? (?:kai|aichi) icon)? is attacked/i, "allyAttacked", null, { subjectAtt: true }],
     [/at the beginning of (the|your) end phase/i, "endTurn", null],
     [/when this card is put into (the |your )?order zone/i, "toOrderZone", "OZ"],
     [/when this unit'?s drive check reveals (an? )?(.*?)(card|unit)?\s*,/i, "driveReveal", "VC", { subject: 2, subjectNoun: 3 }],
@@ -503,9 +518,11 @@ const TextParse = (() => {
     [/when your g unit (?:\[stride\]|strides?)|when your vanguard \[stride\]s?|when this unit \[stride\]s?/i, "onStride", "VC"],
     [/when an attack hits a vanguard during the battle (that|this) unit (attacked|boosted)/i, "attackHit", null, { conds: [{ type: "targetVC" }] }],
     [/when (the attack of )?(a|your) (.*?)(unit|vanguard|rear-guard) (that this unit boosted )?hits/i, "attackHit", null],
+    [/when (this unit is|this card is) placed on \(vc\) or \(rc\)/i, "placed", null], // VC or RC
     [/when (this unit is|this card is) placed on \(vc\) from (your )?ride deck/i, "placedVC", "VC", { whenFrom: "rideDeck" }],
+    [/when this unit is placed by riding from ("[^"]+"|an? [^,]+?)(?=,|$)/i, "placedVC", "VC", { rodeFromGroup: 1 }], // "When this unit is placed by riding from "X""
     [/when (this unit is|this card is) placed on \(vc\)|when this unit is (ridden|rode)\b(?! upon)|when placed on \(vc\)/i, "placedVC", "VC"],
-    [/when (this unit is |)(?:rode|ridden) upon by (an? )?(.+?)(?=,)/i, "riddenUpon", "VC", { subject: 3 }],
+    [/when (this unit is |)(?:rode|ridden) upon by (an? )?("(?:[^"]|"[^"]*")+?"|.+?)(?=,)/i, "riddenUpon", "VC", { subject: 3 }], // a quoted name may hold a comma or "quotes"
     [/when (this unit is |)rode upon|when (this unit is |)ridden upon|when your (.+?) rides this unit|when (?:another|an?) (.+?) rides this unit/i, "riddenUpon", "VC"],
     [/when (this unit is |this card is |)placed on \(rc\) from (your )?hand|when placed (on \(rc\) )?from (your )?hand/i, "placedRC", "RC", { whenFrom: "hand" }],
     [/when (this unit is |this card is |)placed on \(rc\) other than from (your )?hand/i, "placedRC", "RC", { whenFrom: "notHand" }],
@@ -584,6 +601,7 @@ const TextParse = (() => {
       if (extra.byVCText) { const vf = filt(m[extra.byVCText].replace(/vanguard/i, "")) || {}; ab.whenByVC = Object.keys(vf).length ? vf : true; }
       if (extra.byCard && m[extra.byCard]) ab.whenByCard = filt(m[extra.byCard]) || {};
       if (extra.byAny) ab.whenByCard = {}; // "[Stand] by a card's ability": not the stand phase
+      if (extra.rodeFromGroup && m[extra.rodeFromGroup]) ab.conds.push({ type: "rodeFrom", filter: filt(m[extra.rodeFromGroup].replace(/^an? /i, "")) || {} });
       if (extra.subjectOther) ab.whenFilter = { ...(ab.whenFilter || {}), other: true };
       if (extra.subjectText && m[extra.subjectText]) { const wf = filt(m[extra.subjectText]); if (wf && Object.keys(wf).length) ab.whenFilter = { ...(ab.whenFilter || {}), ...wf }; }
       if (extra.subjectPlacedVC) {
@@ -623,6 +641,16 @@ const TextParse = (() => {
     const out = [];
     let m, read = 0;
     const add = (c, len) => { out.push(c); read += len || 1; };
+    // "if A, or B": either one
+    const orParts = t.split(/,\s*or\s+(?=(?:if |you |your |this |it |there ))/i);
+    if (orParts.length > 1) {
+      const rs = orParts.map((x, i) => condsIn(i === 0 || /^if /i.test(x) ? x : "if " + x));
+      if (rs.every((r) => r.conds.length)) return { conds: [{ type: "any", of: rs.map((r) => (r.conds.length === 1 ? r.conds[0] : { type: "all", of: r.conds })) }], read: rs.reduce((s, r) => s + r.read, 0) };
+    }
+    if ((m = t.match(rx(`if you have ${N} or more plant gauges`)))) add({ type: "count", what: "myPlantGauge", op: "ge", n: toNum(m[1]) });
+    if ((m = t.match(rx(`if your vanguard attacked ${N} or more times this turn`)))) add({ type: "count", what: "myVCAttacks", op: "ge", n: toNum(m[1]) });
+    if (/if you did not persona ride this turn|you did not persona ride this turn/i.test(t)) add({ type: "persona", not: true });
+    if (/all of your rear-guards have different card names from this card|(?:you )?do not have (?:another|a) rear-guard with the same card name as this (?:card|unit)/i.test(t)) add({ type: "count", what: "myRC", op: "eq", n: 0, filter: { sameNameSelf: true, other: true } });
     if (/during your turn/i.test(t) && !/opponent/i.test(t.match(/during your[^,]*turn/i)[0])) add({ type: "myTurn" });
     if (/during your opponent'?s turn/i.test(t)) add({ type: "oppTurn" });
     if ((m = t.match(/limit-?break (\d)/i))) add({ type: "limitBreak", n: +m[1] });
@@ -690,9 +718,11 @@ const TextParse = (() => {
       add({ type: "count", what: "myOrderZone", op: "ge", n: /^an?$/i.test(m[1]) ? 1 : toNum(m[2] || m[1]), filter: { clan: m[m.length - 1].replace(/s$/, "") } });
     for (const [z, what] of COUNT_ZONES) {
       if ((m = t.match(rx(`if ${z} has ${N} or (more|less|fewer) (.*?)(cards?|units?)\\b`))) || (m = t.match(rx(`if the number of (.*?)cards? in ${z} is ${N} or (more|less|fewer)`)))) {
-        const nIdx = m[0].startsWith("if the number") ? m.length - 2 : z.includes("(") ? 3 : 2;
+        const nIdx = m[0].startsWith("if the number") ? m.length - 2 : z.includes("(") ? 2 : 1;
         const filterText = m[0].startsWith("if the number") ? m[1] : m[m.length - 2];
-        add({ type: "count", what, op: CMP(m[0]), n: toNum(m[nIdx]), filter: filt(filterText || "") });
+        const cf = filt(filterText || "") || {};
+        if (/^\s*with the same card name as this (card|unit)/i.test(t.slice(m.index + m[0].length))) cf.sameNameSelf = true; // "… one or less cards with the same card name as this card"
+        add({ type: "count", what, op: CMP(m[0]), n: toNum(m[nIdx]), filter: Object.keys(cf).length ? cf : filt(filterText || "") });
         break;
       }
     }
@@ -702,8 +732,9 @@ const TextParse = (() => {
     if ((m = t.match(/if you have an? (?:card|unit) named "([^"]+)" in your (soul|drop|hand|damage zone)/i)))
       add({ type: "count", what: { soul: "mySoul", drop: "myDrop", hand: "myHand", "damage zone": "myDamage" }[m[2].toLowerCase()], op: "ge", n: 1, filter: { nameExact: m[1] } });
     else if ((m = t.match(/if you have an? (?:card|unit) named "([^"]+)"/i))) add({ type: "count", what: "myUnits", op: "ge", n: 1, filter: { nameExact: m[1] } });
-    if (!out.some((c) => c.type === "vcName" || c.type === "unit") && (m = t.match(/if you have an? (.*?)(vanguard|rear-guard|unit)\b(?! in your)/i)) && !/named/i.test(m[1]))
-      add(/vanguard/i.test(m[2]) ? { type: "unit", who: "vc", filter: filt(m[1]) } : { type: "count", what: /rear-guard/i.test(m[2]) ? "myRC" : "myUnits", op: "ge", n: 1, filter: filt(m[1]) });
+    if (!out.some((c) => c.type === "vcName" || c.type === "unit") && (m = t.match(/if you have an? (.*?)(vanguard|rear-guard|unit)\b(?! in your)((?: with an? (?:kai|aichi) icon)?)/i)) && !/named/i.test(m[1]))
+      add(/vanguard/i.test(m[2]) ? { type: "unit", who: "vc", filter: filt(m[1] + m[3]) } : { type: "count", what: /rear-guard/i.test(m[2]) ? "myRC" : "myUnits", op: "ge", n: 1, filter: filt(m[1] + m[3]) });
+    if ((m = t.match(/if this unit was placed from (?:your )?(hand|deck|drop|soul|ride deck)/i))) add({ type: "eventFrom", from: { "ride deck": "rideDeck" }[m[1].toLowerCase()] || m[1].toLowerCase() });
     if ((m = t.match(/if your (damage zone|soul|drop( zone)?|hand|order zone|bind zone) has no (face up |face down )?(.*?)cards?/i))) {
       const z = m[1].toLowerCase();
       add({ type: "count", what: z === "damage zone" ? (m[3] && /up/i.test(m[3]) ? "myDamageUp" : m[3] ? "myDamageDown" : "myDamage") : { soul: "mySoul", drop: "myDrop", "drop zone": "myDrop", hand: "myHand", "order zone": "myOrderZone", "bind zone": "myBind" }[z], op: "eq", n: 0, filter: filt(m[4] || "") });
@@ -731,7 +762,15 @@ const TextParse = (() => {
       add({ type: "count", what: /damage/i.test(m[3]) ? (m[1] && /up/i.test(m[1]) ? "myDamageUp" : m[1] ? "myDamageDown" : "myDamage") : zoneKey(m[3]), op: "eq", n: 0, filter: filt(m[2] || "") });
     if ((m = t.match(/if you have a heart card (?:with "([^"]+)" in its card name|named "([^"]+)"|(.*?))(?:,|$)/i))) add({ type: "heart", filter: m[1] ? { name: m[1] } : m[2] ? { nameExact: m[2] } : filt(m[3] || "") || {} });
     if (/persona rode/i.test(t)) add({ type: "persona" });
-    if (/played an? (.*?)order this turn/i.test(t)) add({ type: "playedOrder" });
+    if ((m = t.match(/played an? (.*?)order this turn/i))) add({ type: "playedOrder", ...(m[1].trim() && !/^(normal|set|blitz) $/i.test(m[1]) ? { filter: { clan: m[1].trim() } } : {}) }); // "an Ultimate Skill order"
+    if (/if this unit was placed on \(VC\)/i.test(t)) add({ type: "onVC" });
+    if ((m = t.match(rx(`if you have ${N} or more(?=,|$)`)))) add({ type: "count", what: "myRC", op: "ge", n: toNum(m[1]) }); // "If you have three or more rear-guards, …, if you have four or more, …"
+    if ((m = t.match(/if it was (?:rode|ridden) upon by (?:an? )?(.+?)(?=,|$)/i))) add({ type: "eventSubject", filter: filt(m[1]) || {} }); // "If it was rode upon by a grade 3 or greater card with "X""
+    if (/(?:if )?you did not \[?counter-charge\]? this turn/i.test(t)) add({ type: "ccThisTurn", not: true });
+    if ((m = t.match(/if this unit was placed by (?:the |an? )?abilit(?:y|ies) of (.+?)(?=,|$)/i))) add({ type: "placedBy", filter: filt(m[1]) || {} });
+    if (/^if you (?:revealed|called|discarded|retired|drew|bound) an? card$/i.test(t.trim())) add({ type: "lastDid" }); // as one half of "if A, or B"
+    if ((m = t.match(/if your (.*?)cards? (was|were) put into (?:your |the )?order zone this turn/i))) add({ type: "ozPutThisTurn", ...(m[1].trim() ? { filter: { clan: m[1].trim() } } : {}) });
+    if (/your card was not put in(?:to)? your order zone by a card'?s ability this turn/i.test(t)) add({ type: "ozPutThisTurn", byAbility: true, not: true });
     if (!out.some((c) => c.type === "vcName") && (m = t.match(/your vanguard is .*?with "([^"]+)" in its card name/i))) add({ type: "vcName", text: m[1] });
     if (/if you went second/i.test(t)) add({ type: "wentSecond" });
     if (/if you went first/i.test(t)) add({ type: "wentFirst" });
@@ -740,7 +779,7 @@ const TextParse = (() => {
     if ((m = t.match(/if it is the (second|third|fourth|fifth|\d+)(st|nd|rd|th)? battle of (that|the) turn( or (more|later))?/i)))
       add({ type: "count", what: "battleNo", op: m[4] ? "ge" : "eq", n: { second: 2, third: 3, fourth: 4, fifth: 5 }[m[1].toLowerCase()] || +m[1] });
     if ((m = t.match(/if you are in "([^"]+)"/i))) add({ type: "world", text: m[1] });
-    if ((m = t.match(/if this unit is in the \[([^\]]+)\] state|if this unit is (engorged|successful|in harmony)/i))) add({ type: "unit", who: "self", filter: { state: (m[1] || m[2]).replace(/^in /, "") } });
+    if ((m = t.match(/if this unit is in the \[([^\]]+)\] state|if this unit is (engorged|successful|in harmony|hollowed)/i))) add({ type: "unit", who: "self", filter: { state: (m[1] || m[2]).replace(/^in /, "") } });
     if ((m = t.match(/if (this unit'?s|your vanguard'?s) \[power\] is (\d+) or (greater|more)/i))) add({ type: "power", who: /vanguard/i.test(m[1]) ? "vc" : "self", op: "ge", n: +m[2] });
     if (/if you have (another unit|a unit) in the same column/i.test(t)) add({ type: "count", what: "myColumn", op: "ge", n: 1 });
     if (/if this unit is in the front row/i.test(t)) add({ type: "selfFront" });
@@ -882,6 +921,9 @@ const TextParse = (() => {
       else if ((m = p.match(/^put an? "([^"]+)" from your \(RC\) into (?:your )?soul$/i))) out.push({ type: "move", from: "myRC", to: "soul", n: 1, filter: { nameExact: m[1] } });
       else if ((m = p.match(rx(`^lock (${N}|an?|one of your) (?:of your )?(.*?)rear-guards?$`)))) { const k = p.match(/^lock (\w+)/i)[1]; out.push({ type: "lockRC", n: /^(an?|one)$/i.test(k) ? 1 : toNum(k), filter: filt(m[m.length - 1] || "") || {} }); }
       else if (/^reveal this card$/i.test(p)) out.push({ type: "reveal", from: "self", n: 1 });
+      else if ((m = p.match(rx(`^discard the top ${N} cards? of (?:the|your) deck$`)))) out.push({ type: "move", from: "deckTop", n: toNum(m[1]), to: "drop" }); // "[COST][discard the top three cards of the deck]"
+      else if ((m = p.match(rx(`^discard ${N} plant gauges?$`)))) out.push({ type: "discardPlant", n: toNum(m[1]) }); // Plant gauge (Estacion)
+      else if ((m = p.match(rx(`^put ${N} or more,? up to ${N} other rear-guards face up as this unit'?s plant gauges?$`)))) out.push({ type: "rcToPlant", n: toNum(m[1]), min: toNum(m[1]), max: toNum(m[2]) });
       else if ((m = p.match(/^reveal (?:an?|one) (.+?) from (?:your )?hand$/i))) out.push({ type: "move", from: "hand", to: "hand", n: 1, reveal: true, filter: filt(m[1]) || {} });
       else if ((m = p.match(rx(`^put (${N}|an?) (.+?) from (?:your )?(hand|soul|drop)(?: zone)? into (?:your )?(drop|soul)$`)))) { const k = p.match(/^put (\w+)/i)[1]; out.push({ type: "move", from: m[m.length - 2].toLowerCase(), to: m[m.length - 1].toLowerCase(), n: /^an?$/i.test(k) ? 1 : toNum(k), filter: filt(m[m.length - 3].replace(/^cards?\s*/i, "")) || {} }); }
       else if (/^put this (?:\[stand\] )?(?:card|unit) into (?:your )?soul$/i.test(p)) out.push({ type: "selfToSoul" });
@@ -950,12 +992,14 @@ const TextParse = (() => {
   // ---------- effects: one clause at a time ----------
   // ctx.last = the target of the previous "choose …" clause (for "and it/they get …")
   function effectOf(c, ctx) {
-    const t = c.trim().replace(/^(and|then|also)\s+/i, "").replace(/^you may\s+/i, "").replace(/^you (?=draw |\[?soul-charge|\[?counter-charge|\[?energy-charge)/i, "").replace(/[.!]$/, "");
+    const t = c.trim().replace(/^(and|then|also)\s+/i, "").replace(/^you may\s+/i, "").replace(/^you (?=draw |call |\[?soul-charge|\[?counter-charge|\[?energy-charge)/i, "").replace(/[.!]$/, "");
     if (!t) return [];
     let m;
     const dur = /until end of/i.test(t) ? durOf(t) : ctx.dur || durOf(t);
     const per = (() => {
       if (/for each (?:unit|card|rear-guard)s? (?:\[[^\]]+\]|[a-z]+ed|put into [a-z ]+?|called|retired|bound) by this effect/i.test(t)) return { per: "lastCount" };
+      const pg = t.match(rx(`for every ${N} (?:plant )?gauges? (?:that )?(?:this unit|you) (?:has|have)`));
+      if (pg) return { per: "myPlantGauge", perDiv: toNum(pg[1]) }; // "+5000 for every three gauges that this unit have"
       const pm = t.match(/for each (.*?)(card|unit)s? in (your (?:opponent'?s )?(soul|drop|hand|damage zone|bind zone|g zone|order zone))|for each of your (.*?)(rear-guards|units)/i);
       if (!pm) return {};
       if (pm[6]) return { per: /units/i.test(pm[6]) ? "myUnits" : "myRC", perFilter: filt(pm[5] || "") };
@@ -966,17 +1010,28 @@ const TextParse = (() => {
     // "it / they / that unit": the first time it means the choice itself, after that the units already chosen
     const useLast = () => { if (ctx.lastUsed) return { target: "thatUnit" }; ctx.lastUsed = true; return { ...ctx.last }; };
     const it = (fallback = { target: "self" }) => (/\b(it|they|them|that unit|those units)\b/i.test(t) && ctx.last ? useLast() : fallback);
-    const who = () => (/^(this unit|this card)\b/i.test(t) ? { target: "self" } : /^(it|they|that unit|those units|these units|those|the chosen units?|that card)\b/i.test(t) && ctx.last ? useLast() : targetOf(t));
+    const who = () => (/^(this unit|this card)\b/i.test(t) ? { target: "self" } : /^(it|they|that unit|those units|these units|those|the chosen units?|that card)\b/i.test(t) && ctx.last ? useLast()
+      : /^that unit\b/i.test(t) ? { target: "eventUnit" } : targetOf(t)); // nothing chosen before: the unit the timing is about ("when your vanguard is attacked, … that unit gets")
     // choose … (sets the target for "and it/they …")
+    // "choose a grade 3 card with an Aichi icon from your ride deck, and you may reveal it": the reveal is the step ("If you revealed a card, …")
+    if ((m = t.match(/^choose (?:an?|one) (.+?) from your ride deck$/i)) && !/,/.test(t)) { ctx.pendingReveal = { from: "rideDeck", filter: filt(m[1]) || {} }; return []; } // (from hand the next step is usually a discard)
+    if (/^reveal it$/i.test(t) && ctx.pendingReveal) { const pr = ctx.pendingReveal; ctx.pendingReveal = null; return [{ type: "revealPick", from: pr.from, filter: pr.filter, upTo: /you may/i.test(c) }]; }
+    // "your vanguard and this unit get [Power]+5000"
+    if ((m = t.match(/^your vanguard and this unit (get .+)$/i))) { const one = effectOf("this unit " + m[1].replace(/^get /i, "gets "), ctx) || []; return [...one.map((x) => ({ ...x, target: "vc" })), ...one]; }
     if ((m = t.match(rx(`^choose (up to )?${N} of (your|your opponent'?s) .*?(rear-guards?|units?|vanguards?)`))) && !/,/.test(t)) { ctx.last = targetOf(t); ctx.lastUsed = false; return []; }
     if (/^choose (one of )?your vanguards?$/i.test(t)) { ctx.last = { target: "vc" }; return []; }
+    // "choose a column, [Stand] all of your rear-guards in that column, and they get …"
+    if ((m = t.match(/^choose (a|one|two) columns?$/i))) { ctx.last = { target: "thatUnit" }; ctx.lastUsed = true; return [{ type: "chooseColumn", n: /two/i.test(m[1]) ? 2 : 1 }]; }
+    if (/^\[stand\] all of your rear-guards in (?:that|those|the chosen) columns?$/i.test(t)) return [{ type: "stand", target: "thatUnit" }];
     if ((m = t.match(/^choose (?:an?|one|up to one) (?:of your )?opponent'?s (.*?)rear-guards?$/i))) { ctx.last = { target: "chooseOppRC", n: 1, ...(/up to/i.test(t) ? { upTo: true } : {}), filter: filt(m[1]) || {} }; ctx.lastUsed = false; return []; }
     if ((m = t.match(/^choose (?:a|one|up to one) rear-guards? in your opponent'?s front row$/i))) { ctx.last = { target: "chooseOppFrontRC", n: 1 }; ctx.lastUsed = false; return []; }
     // "that (placed) unit and this unit get [Power] +5000": the unit the timing is about, and this unit
     if ((m = t.match(/^(that (?:placed |called )?unit|it) and this unit (get .+)$/i)) && !ctx.bothDone) {
       ctx.bothDone = true;
       const a = effectOf("this unit " + m[2].replace(/^get /i, "gets "), ctx) || [];
-      const b = (effectOf("this unit " + m[2].replace(/^get /i, "gets "), ctx) || []).map((x) => ({ ...x, target: ctx.last ? "thatUnit" : "eventUnit" }));
+      // after "choose one of your units …, and that unit and this unit get": the first one makes the choice
+      const who = ctx.last && !ctx.lastUsed ? useLast() : { target: ctx.last ? "thatUnit" : "eventUnit" };
+      const b = (effectOf("this unit " + m[2].replace(/^get /i, "gets "), ctx) || []).map((x) => ({ ...x, ...who }));
       ctx.bothDone = false;
       if (a.length) return [...b, ...a];
     }
@@ -1097,13 +1152,14 @@ const TextParse = (() => {
       const what = countPhrase(m[5]);
       if (what) { ctx.last = { target: /units/i.test(m[4]) ? "chooseMy" : "chooseMyRC", n: 99, ...(m[1] ? { upTo: true } : {}), nCount: what, filter: { ...(filt(m[3] || "") || {}), ...(m[2] ? { other: true } : {}) } }; ctx.lastUsed = false; return []; }
     }
+    if (ctx.search && /^call (?:each of )?them to \(rc\) in the same column$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: "RCpairCol", n: s2.n, upTo: true, filter: s2.filter }]; } // "search … for up to two cards, call each of them to (RC) in the same column"
     if (ctx.search && /^call (it|them) to (?:a |an open )?(?:back row )?\(rc\) in the same column as this unit$/i.test(t)) { const s2 = ctx.search; ctx.search = null; return [{ type: "move", from: s2.from || "deck", to: /back row/i.test(t) ? "RCcolBack" : "RCcol", n: s2.n, upTo: true, filter: s2.filter }]; }
     if (ctx.pick && /^call (it|them) to (?:a |an open )?(?:back row )?\(rc\) in the same column as this unit$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: /back row/i.test(t) ? "RCcolBack" : "RCcol", n: P.n, upTo: P.upTo, filter: P.filter }]; }
     if (ctx.look && /^call (it|them) to (?:a |an open )?(?:back row )?\(rc\) in the same column as this unit$/i.test(t)) { const L = ctx.look; const e = { type: "move", from: "deckTop", look: L.n, ...(L.count ? { lookCount: L.count } : {}), n: L.pick || 1, upTo: L.upTo !== false, to: /back row/i.test(t) ? "RCcolBack" : "RCcol", filter: L.filter, rest: "shuffle" }; ctx.lookMove = e; return [e]; }
     if ((m = t.match(/^you (?:are in )?"([^"]+)"$/i))) return [{ type: "setWorld", text: m[1], dur: ctx.dur || "turn" }]; // "until end of turn, you "Final Rush""
     if ((m = t.match(/^you get an? "(.+)" crest$/i))) return [{ type: "crest", name: m[1] }];
     if (/^(?:this unit )?cannot \[stand\] during (?:the|your) stand phase$/i.test(t)) return [{ type: "restrict", what: "cantStand", ...(ctx.dur ? { dur: ctx.dur } : {}), target: "self" }];
-    if ((m = t.match(/^(this unit|it|that unit|that called unit|those units|they) cannot (?:be moved|move) to (?:other|another) \(RC\)(?: until end of (?:turn|that battle))?$/i)))
+    if ((m = t.match(/^(this unit|it|that unit|that called unit|those units|they) cannot (?:be moved|move) to (?:other|another) (?:\(RC\)|circles?)(?: until end of (?:turn|that battle))?$/i)))
       return [{ type: "restrict", what: "cantMove", dur: /battle/i.test(t) ? "battle" : "turn", ...(/^this unit/i.test(m[1]) ? { target: "self" } : /called/i.test(m[1]) ? { target: "thatUnit" } : it({ target: "self" })) }];
     // "All of your (grade 2 or greater / back row) rear-guards get "Boost" (until end of turn)"
     if ((m = t.match(/^all of your (grade \d(?: or (?:greater|less))? )?(?:back row )?rear-guards get "(boost|intercept)"(?: until end of turn)?$/i)))
@@ -1281,7 +1337,7 @@ const TextParse = (() => {
     if (ctx.pick && /^put (it|them) into (your )?drop$/i.test(t)) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "drop", n: P.n, upTo: P.upTo, filter: P.filter }]; }
     if ((m = t.match(rx(`^discard ${N} (.*?)cards? from your hand`)))) return [{ type: "move", from: "hand", to: "drop", n: toNum(m[1]), filter: filt(m[2]) }];
     if (/^bind (it|them)$/i.test(t) && ctx.pick) { const P = ctx.pick; ctx.pick = null; return [{ type: "move", from: P.from, to: "bind", n: P.n, upTo: P.upTo, filter: P.filter }]; }
-    if ((m = t.match(/^call this card to (a |an |your )?(back row |front row )?(open )?\(rc\)/i))) return [{ type: "move", from: "self", to: "RC" }];
+    if ((m = t.match(/^call this card to (a |an |your )?(back row |front row )?(open )?\(rc\)( as \[rest\])?/i))) return [{ type: "move", from: "self", to: "RC", ...(m[4] ? { asRest: true } : {}) }];
     if ((m = t.match(rx(`^your opponent chooses (up to )?${N} (.*?)cards? from (his or her|their) (hand|drop|soul|damage zone)$`)))) { ctx.pick = { from: "opp" + m[5][0].toUpperCase() + m[5].slice(1).replace(" zone", ""), n: toNum(m[2]), upTo: !!m[1], filter: filt(m[3]), chooser: "opp" }; return []; }
     if ((m = t.match(rx(`^your opponent chooses (up to )?${N} of (his or her|their) (.*?)rear-guards?$`)))) { ctx.pick = { from: "oppRC", n: toNum(m[2]), upTo: !!m[1], filter: filt(m[4]), chooser: "opp" }; return []; }
     if (ctx.pick && ctx.pick.chooser === "opp" && /^(discards?|retires?|puts?|binds?) (it|them)( into (his or her|their) (soul|drop|hand))?/i.test(t)) {
@@ -1300,10 +1356,27 @@ const TextParse = (() => {
     if (/cannot be hit/i.test(t)) return [{ type: "cantBeHit" }];
     if ((m = t.match(/^your opponent cannot call (.*?)(?:cards?|units?) (from (his or her |their )?hand )?to \(gc\)/i))) return [{ type: "playerRule", who: "opp", what: "cantGuard", dur, filter: filt(m[1]) }];
     if (/^your opponent cannot intercept/i.test(t)) return [{ type: "playerRule", who: "opp", what: "cantIntercept", dur }];
+    if (/^(?:your opponent )?cannot play blitz orders$/i.test(t)) return [{ type: "playerRule", who: "opp", what: "cantBlitz", dur }]; // "…, your opponent cannot intercept, and cannot play blitz orders"
+    // "choose one of your vanguard's [AUTO] abilities, and reduce its next [Counter-Blast] cost you pay by ①"
+    if ((m = t.match(/^reduce its next \[counter-blast\] cost you pay by ([①②③]|\d)/i)) && (ctx.vcAbility || (ctx.last && ctx.last.target === "vc"))) return [{ type: "cbDiscount", n: { "①": 1, "②": 2, "③": 3 }[m[1]] || +m[1] || 1, forCard: "vc" }];
+    if (/^choose one of your vanguard'?s \[auto\] abil(?:ity|ities|ties)$/i.test(t)) { ctx.vcAbility = true; return []; }
+    // "during the ride phase of your next turn, when you would ride from ride deck, you can ride without discarding a card from hand"
+    if ((m = t.match(/^you can ride with "?\[soul-blast (\d+)\]"? instead of "?choose a card from hand,? and discard it"?$/i))) return [{ type: "rideAltSB", n: +m[1] }]; // [CONT](VC)
+    if (/^you also perform drive checks for the battles your rear-guards attack$/i.test(t)) return [{ type: "rgDrive" }];
+    if (/^double the \[power\] and \[critical\] of all of your front row units/i.test(t)) return [{ type: "double", target: "allFront" }];
+    if (/^this unit cannot be boosted$/i.test(t)) return [{ type: "restrict", what: "cantBeBoosted", target: "self", dur }];
+    if (/^(?:you may )?call that retired card to \(RC\)$/i.test(t)) return [{ type: "move", from: "drop", eventCard: true, to: "RC", n: 1, upTo: /may/i.test(c) }];
+    if (/^you can ride without discarding a card from hand$/i.test(t) && ctx.nextRidePhase) return [{ type: "freeRide" }];
+    if (/^during the ride phase of your next turn$|^when you would ride from (?:your )?ride deck$/i.test(t)) { ctx.nextRidePhase = true; return []; }
     if ((m = t.match(/(this unit|it|they) cannot (attack|boost|intercept|be attacked|stand)/i))) return [{ type: "restrict", what: { attack: "cantAttack", boost: "cantBoost", intercept: "cantIntercept", "be attacked": "cantBeAttacked", stand: "cantStand" }[m[2].toLowerCase()], dur, ...(/this unit/i.test(m[1]) ? { target: "self" } : it()) }];
     if (/gets? \[resist\]/i.test(t)) return [{ type: "restrict", what: "resist", dur, ...it({ target: "self" }) }];
     // tokens / tickets / states / ride / misc
     if ((m = t.match(rx(`^call (up to )?${N} "?([^"]+?)"? tokens? to (an open |your )?\\(rc\\)`)))) return [{ type: "token", name: m[3].trim(), n: toNum(m[2]), where: m[4] && /open/i.test(m[4]) ? "empty" : "any" }];
+    if ((m = t.match(rx(`^call (up to )?${N} "?([^"]+?)"? tokens? to (?:a |your )?back row center \\(rc\\)`)))) return [{ type: "token", name: m[3].trim(), n: toNum(m[2]), where: "bc" }];
+    // "This unit cannot be affected by your opponent's cards": can't be chosen or retired by them (the closest the engine has)
+    if (/^this unit cannot be affected by your opponent'?s cards?$/i.test(t)) return [{ type: "restrict", what: "resist", target: "self" }, { type: "restrict", what: "cantBeRetired", target: "self" }];
+    // Plant gauge (Estacion): an order puts itself under your Blast token
+    if (/^put this card face up as your blast token'?s plant gauge$/i.test(t)) return [{ type: "plantGauge", from: "self" }];
     if ((m = t.match(rx(`^put (an?|${N}) "?([^"]+?)"? tokens? (?:in|into) (?:your )?order zone$`)))) return [{ type: "token", name: m[m.length - 1].trim(), n: /^an?$/i.test(m[1]) ? 1 : toNum(m[1]), where: "orderZone" }];
     if ((m = t.match(/^put an? "?([^"]+?)"? ticket into (your )?hand/i))) return [{ type: "ticket", name: m[1].trim(), n: 1, who: "me" }];
     if ((m = t.match(/(?:it|they|this unit) becomes? (?:in )?(?:the )?\[([^\]]+)\] state/i))) return [{ type: "setState", name: m[1], dur, ...it({ target: "self" }) }];
@@ -1314,11 +1387,27 @@ const TextParse = (() => {
   }
 
   // split an ability body into clauses: ", and", ", then", ". ", "," but not inside quotes or brackets
+  // the clauses in front of an option / tier list: "if …" before the first sentence end are the ability's conditions (read elsewhere); after it they belong to the steps
+  function keepLaterIfs(cl) {
+    let stop = false;
+    return cl.filter((c) => { if (c === "§") { if (stop) return true; stop = true; return false; } return stop || !/^(if|during)\b/i.test(c); });
+  }
   function clauses(s) {
     const out = [];
     let depth = 0, q = false, cur = "";
     for (let i = 0; i < s.length; i++) {
       const ch = s[i];
+      // a quoted ability ("…gets "[AUTO](RC):… with "X" in its card name, …" until end of turn") may hold quotes of its own:
+      // it ends at the quote that is followed by "until", "and", a full stop, a comma or the end
+      if (ch === '"' && !q && s[i + 1] === "[" && /^\[(AUTO|ACT|CONT)\]/i.test(s.slice(i + 1, i + 7))) {
+        let inner = 0, end = -1;
+        for (let j = i + 1; j < s.length; j++) {
+          if (s[j] !== '"') continue;
+          if (inner % 2 === 0 && /^\s*(?:until\b|and\b|,|\.|$)/i.test(s.slice(j + 1))) { end = j; break; }
+          inner++;
+        }
+        if (end > 0) { cur += s.slice(i, end + 1); i = end; continue; }
+      }
       if (ch === '"') q = !q;
       if (!q && (ch === "[" || ch === "(")) depth++;
       if (!q && (ch === "]" || ch === ")")) depth = Math.max(0, depth - 1);
@@ -1327,7 +1416,13 @@ const TextParse = (() => {
       cur += ch;
     }
     out.push(cur);
-    return out.map((x) => x.trim()).filter(Boolean);
+    // "if A, or B": the "or" part belongs to the condition before it
+    const merged = [];
+    for (const x of out.map((y) => y.trim()).filter(Boolean)) {
+      if (/^or (you|your|if|this|there|it)\b/i.test(x) && merged.length && /^(and )?if\b/i.test(merged[merged.length - 1])) merged[merged.length - 1] += ", " + x;
+      else merged.push(x);
+    }
+    return merged;
   }
 
   // ---------- one ability ----------
@@ -1336,6 +1431,24 @@ const TextParse = (() => {
     if (/^\s*\[Stride\]\s*[-‐－]\s*Stride Step\s*[-‐－]/i.test(norm(raw))) return { kind: "CONT", zone: "G", once: "", conds: [], costs: [], effects: [], keyword: "Stride", strideRule: true };
     // orders: "Play this with [COST][Counter-Blast 1]!" is the cost of playing the order
     let playCosts = [];
+    // "If you have a Blast token, when a Plant token would be placed on (RC) by this effect, put it face up as your Blast token's plant gauge instead."
+    // "If you rode this unit from hand, this cost is lost. / reduce this [Soul-Blast] cost by ①." in front of the timing
+    let costIf = null;
+    raw = String(raw).replace(/if you rode this unit from hand, (this cost is lost|reduce this \[(soul-blast|counter-blast|energy-blast)\] cost by ([①②③]|\d+))\.\s*/i, (x, what, kind, k) => {
+      costIf = { cond: { type: "rodeFromHand" }, ...(/lost/i.test(what) ? { lose: true } : { reduce: { type: { "soul-blast": "SB", "counter-blast": "CB", "energy-blast": "EB" }[kind.toLowerCase()], n: { "①": 1, "②": 2, "③": 3 }[k] || +k || 1 } }) };
+      return "";
+    });
+    // "You cannot bind cards with the same card name as this card from drop until end of turn." = a once-a-turn limit per name
+    let nameTurn = false;
+    raw = String(raw).replace(/\s*you cannot (?:bind|use|call) cards with the same card name as this card from (?:your )?drop until end of turn\.?/i, () => { nameTurn = true; return ""; });
+    // a looked-at card goes to (RC) or hand by what it is: the step reads as "… put it into hand" + toIf
+    let toIf = null, restDOB = false;
+    raw = String(raw)
+      .replace(/choose and reveal (up to one .+? from among them), call it to \(RC\) if it is a unit card, and put it into hand if it is a normal order/i, (x, what) => { toIf = { filter: { ctype: "anyunit" }, to: "RC" }; return `choose ${what}, reveal it and put it into hand`; })
+      .replace(/reveal it, put it into hand if it is a card with "([^"]+)" in its card name, and call it to \(RC\) if it is not/i, (x, nm) => { toIf = { filter: { nameNot: nm }, to: "RC" }; return "reveal it and put it into hand"; })
+      .replace(/\s*you may discard all of the remaining cards\. if you did not discard them, put them on the bottom of the deck in any order\.?/i, () => { restDOB = true; return ""; });
+    let plantInstead = false;
+    raw = String(raw).replace(/if you have an? blast token, when an? plant token would be placed on \(RC\) by this effect, put it face up as your blast token'?s plant gauge instead\.\s*/i, () => { plantInstead = true; return ""; });
     const text = norm(raw).replace(/play this with \[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*!\s*/i, (m0, inner) => { const r = costsIn(inner); if (r.costs.length && !r.unread.length) { playCosts = r.costs; return ""; } return m0; });
     const head = text.match(/^\[(AUTO|ACT|CONT)\]\s*(?:\(([^)]*)\)|\[(soul|hand|drop|drop zone|damage zone|bind zone|g zone)\]|([A-Za-z ]+zone)(?=:))?/i);
     const kind = head ? head[1].toUpperCase() : kindHint || "AUTO";
@@ -1397,7 +1510,13 @@ const TextParse = (() => {
     }
     rest = rest.replace(/you may pay the cost\.? if you do,?/i, "").replace(/^play this with\s*/i, "").trim();
     // new style cost: [COST][…]
-    m = rest.match(/\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?/i);
+    // a [COST] inside a bullet belongs to that option; one inside a quoted given ability belongs to that ability
+    const masked = rest.replace(/"\[(?:AUTO|ACT|CONT)\](?:[^"]|"[^"]*")+?"(?=\s*(?:until\b|and\b|,|\.|$))/gi, (x) => " ".repeat(x.length));
+    m = masked.split("・")[0].match(/\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?/i);
+    if (m) { const at = m.index; m = rest.slice(at).match(/^\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?/i); if (m) m.index = at; }
+    // "…, and at the end of that battle, [COST][…], and draw a card": the cost is paid then, not when the ability starts
+    if (m && /at the end of (?:that|this|the) (?:battle|turn)\s*,?\s*$/i.test(rest.slice(0, m.index))) m = null;
+    if (m && /[.!]\s*if you (?:revealed|called|discarded|drew|retired) an? card, or [^.]*$/i.test(rest.slice(0, m.index))) m = null;
     let condText = "";
     if (m) {
       condText = rest.slice(0, m.index);
@@ -1408,11 +1527,22 @@ const TextParse = (() => {
       const r2 = alt ? costsIn(alt[1]) : null;
       if (alt && r.costs.length && r2.costs.length && !r.unread.length && !r2.unread.length) { ab.costs.push({ type: "oneOf", options: [r.costs, r2.costs] }); rest = rest.slice(alt[0].length); }
       else { ab.costs.push(...r.costs); unread.push(...r.unread.map((u) => "cost: " + u)); }
+      // "[COST][Soul-Blast 2] cards with "X" in their card names]" / "[COST][Soul-Blast 1] "X" & reveal …]": the blast only takes those cards (the text's own bracket closes later)
+      const blast = [...ab.costs].reverse().find((c) => c.type === "CB" || c.type === "SB");
+      const tail = blast && (rest.match(/^\s*[-‐–]?\s*(?:cards?|units?) with "([^"]+)" in (?:its|their) card names?\s*\]\s*,?/i) || rest.match(/^\s*"([^"]+)"\s*(?:&\s*([^\]]+))?\]\s*,?/) || rest.match(/^\s*()&\s*([^\]]+)\]\s*,?/));
+      if (tail) {
+        if (tail[1]) blast.filter = { name: tail[1] };
+        if (tail[2]) { const r3 = costsIn(tail[2]); ab.costs.push(...r3.costs); unread.push(...r3.unread.map((u) => "cost: " + u)); }
+        rest = rest.slice(tail[0].length);
+      }
     }
     // conditions: only the "if …," clauses that come before the first effect apply to the whole ability
     const cl = clauses(rest.replace(/^\s*[,!.]\s*/, "").replace(/^play this with\s*[,!]?\s*/i, ""));
     const effectClauses = [];
-    const isCond = (c) => /^(if|during|when|play this (only )?if)\b/i.test(c) && !/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched)\b|^if not\b/i.test(c);
+    const isCond0 = (c) => /^(if|during|when|play this (only )?if)\b/i.test(c) && !/^if you (do(?! not)|did(?! not [^,]* this turn)|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched)\b|^if not\b/i.test(c); // "if you did not persona ride / [Counter-Charge] this turn" is a condition
+    // "…, and all of your rear-guards have different card names from this card, …": a statement after "and" that reads as a condition
+    const stateCond = (c) => !/\b(gets?|draw|call|put|retire|choose|look|search|bind|discard|\[stand\]|\[rest\]|reveal)\b/i.test(c.replace(/\b(was|were) (not )?put\b/gi, "")) && /^(all of your|you (do|did) not|you have|you played|you persona rode|your card|your (opponent'?s )?(vanguard|soul|drop|hand|damage))/i.test(c) && condsIn("if " + c).conds.length > 0;
+    const isCond = (c) => isCond0(c) || stateCond(c.replace(/^and\s+/i, ""));
     // text before a [COST] that already does something ("this unit gets +2000, and if …, [COST][…], …"):
     // those effects don't depend on the cost, so they become a separate ability with the same timing
     const preCl = clauses(condText).filter((c) => c !== "§");
@@ -1460,14 +1590,15 @@ const TextParse = (() => {
       const before = optParts[0].replace(/,?\s*(?:and\s+)?perform all of the following(?: according to[^.]*)?\.?\s*$/i, "").replace(/,?\s*the following effects are active according to[^.]*\.?\s*$/i, "");
       // "If your order zone only has World cards, the following effects are active …": an "if" in front of the list is the ability's condition
       for (const c of clauses(before)) if (/^if\b/i.test(c)) { const r = condsIn(c); for (const x of r.conds) if (!ab.conds.some((y) => JSON.stringify(y) === JSON.stringify(x))) ab.conds.push(x); }
-      effectClauses.splice(0, effectClauses.length, ...clauses(before).filter((c) => c !== "§" && !/^(if|during)\b/i.test(c)));
+      effectClauses.splice(0, effectClauses.length, ...keepLaterIfs(clauses(before)));
     }
     if (optParts.length > 1 && /(choose|perform|activate) (one|two|three|\d|up to \w+|any number) of the (following|effects below)/i.test(optParts[0])) {
       const n = toNum((optParts[0].match(/(one|two|three|\d)\s+of the/i) || [])[1] || 1);
       ab.effects.push({ type: "chooseOpts", n });
       optClauses = optParts.slice(1).map((p, i) => ({ letter: "ABCDEF"[i], cl: clauses(p) }));
-      const before = optParts[0].replace(/,?\s*(choose|perform|activate) (one|two|three|\d|up to \w+|any number) of the (following|effects below)[^,]*\.?$/i, "");
-      effectClauses.splice(0, effectClauses.length, ...clauses(before).filter((c) => c !== "§" && !/^(if|during)\b/i.test(c)));
+      // the phrase may be followed by another sentence ("…, and perform one of the following. If your vanguard is grade 3 or greater, …")
+      const before = optParts[0].replace(/,?\s*(?:and\s+)?(choose|perform|activate) (one|two|three|\d|up to \w+|any number) of the (following|effects below)[^,.]*(\.\s*|$)/i, (x, a, b, c, end) => (end && end.trim() ? ". " : ""));
+      effectClauses.splice(0, effectClauses.length, ...keepLaterIfs(clauses(before)));
     }
     // effects
     const ctx = { unconditional: kind === "CONT" && !ab.conds.length };
@@ -1484,7 +1615,7 @@ const TextParse = (() => {
       const rvl = t.match(/^if (?:the revealed card|the card revealed(?: by this effect)?|that card|it) is (not )?(?:an? )?(.+?)$/i) || t.match(/^if (?:it|that card) (isn'?t)\s*(?:an? )?(.+?)$/i);
       if (rvl && filt(rvl[2]) && Object.keys(filt(rvl[2])).length) { onlyIf = rvl[1] ? "noMatch" : "match"; onlyFilter = filt(rvl[2]); continue; }
       // "…, and if your opponent's vanguard is grade 3 or greater, …": a condition for the following steps
-      if (/^if\b/i.test(t) && !/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched|rode|imprisoned|healed)\b/i.test(t)) {
+      if (/^if\b/i.test(t) && !/^if you (do|did(?! not [^,]* this turn)|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched|rode|imprisoned|healed)\b/i.test(t)) {
         const r = condsIn(t);
         if (r.conds.length === 1) { ifCond = r.conds[0]; continue; }
       }
@@ -1494,16 +1625,24 @@ const TextParse = (() => {
       const wasM = t.match(/^if an? (.+?) was (?:discarded|retired|revealed|bound|put into [a-z ]+|\[soul-charge\]d?|soul-charged|called)(?: (?:by|with) this effect)?$/i);
       if (wasM && filt(wasM[1]) && Object.keys(filt(wasM[1])).length) { onlyIf = "match"; onlyFilter = filt(wasM[1]); continue; }
       if (/^if you \[stand\] (?:this unit|it)$/i.test(t)) { onlyIf = "did"; continue; }
+      // "If you revealed a card, or you have a vanguard with …, …": either the step before did something, or the condition holds
+      if (/^if you \w+ an? card, or /i.test(t)) { const r = condsIn(t); if (r.conds.length === 1 && r.conds[0].type === "any") { ifCond = r.conds[0]; continue; } }
+      // "…, if your opponent's vanguard is grade 3 or greater, and you did not persona ride this turn, …": both
+      if (ifCond && /^and\s/i.test(c) && stateCond(t.replace(/^and\s+/i, ""))) { ifCond = { type: "all", of: [ifCond, ...condsIn("if " + t.replace(/^and\s+/i, "")).conds] }; continue; }
       const iff = t.match(/^if you (do|did|put|called|retired|drew|revealed|discarded|bound|stood|chose|paid|searched|rode|imprisoned|healed)( not)?\b[^,]*?(?=,|$)/i);
       if (iff && /^if you (do|did)( not)?$/i.test(iff[0])) { onlyIf = iff[2] ? "didNot" : "did"; t = t.slice(iff[0].length).replace(/^,?\s*/, ""); if (!t) continue; }
       else if (iff) { onlyIf = iff[2] ? "didNot" : "did"; t = t.slice(iff[0].length).replace(/^,?\s*/, ""); if (!t) continue; }
       // a quoted ability given to units: "… gets "[AUTO](RC):…" until end of turn"
-      const q = t.match(/gets? "(\[(AUTO|ACT|CONT)\][^"]+)"/i);
+      const q = t.match(/gets? "(\[(AUTO|ACT|CONT)\](?:[^"]|"[^"]*")+?)"(?=\s*(?:until\b|and\b|,|\.|$))/i); // inner "names" allowed
       if (q) {
         const g = ability(q[1], undefined, extraAbs);
         g.granted = true;
         extraAbs.push(g);
-        ab.effects.push({ type: "grant", ability: -extraAbs.length, dur: durOf(t), ...(/this unit/i.test(t) ? { target: "self" } : ctx.last || { target: "self" }) });
+        // "…, call it to (RC), and it gets "[ACT]…"": "it" is the called unit
+        const prevE = ab.effects[ab.effects.length - 1];
+        const calledIt = !ctx.last && /^(?:and )?it gets/i.test(t) && prevE && ((prevE.type === "move" && prevE.to === "RC") || prevE.type === "token");
+        const outside = t.replace(q[0], ""); // "this unit" inside the given ability's own text doesn't count
+        ab.effects.push({ type: "grant", ability: -extraAbs.length, dur: durOf(t), ...(/this unit/i.test(outside) ? { target: "self" } : calledIt ? { target: "thatUnit" } : ctx.last || { target: "self" }) });
         const powerToo = t.replace(q[0], "");
         const more = /\[(Power|Critical)\]/i.test(powerToo) ? effectOf(powerToo, ctx) : [];
         if (more) ab.effects.push(...more);
@@ -1527,6 +1666,10 @@ const TextParse = (() => {
       const pcm = t.match(/^\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?\s*(?:and\s+)?([\s\S]*)$/i);
       if (pcm) {
         const r = costsIn(pcm[1]);
+        // "[COST][Counter-Blast 1] or [Energy-Blast 3], …": either one
+        const orM = pcm[2].match(/^or \[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?\s*(?:and\s+)?([\s\S]*)$/i);
+        const r2 = orM ? costsIn(orM[1]) : null;
+        if (orM && r.costs.length && r2.costs.length && !r2.unread.length) { r.costs = [{ type: "oneOf", options: [r.costs, r2.costs] }]; pcm[2] = orM[2]; }
         if (r.costs.length && !r.unread.length) {
           const step = { type: "payCost", costs: r.costs };
           if (ifCond) step.ifCond = ifCond;
@@ -1539,6 +1682,22 @@ const TextParse = (() => {
           if (/^(until end of (turn|that battle|the battle|your opponent'?s (?:next )?turn|your next turn))$/i.test(t)) { ctx.dur = durOf(t); continue; }
         }
       }
+      // "If you persona rode this turn, choose two instead of one": the earlier choice picks more
+      const inst2 = t.match(/^choose (two|three) instead of one$/i);
+      const prevPick = inst2 && [...ab.effects].reverse().find((e) => e.type === "chooseColumn");
+      if (prevPick) { prevPick.more = { n: toNum(inst2[1]), ...(ifCond ? { cond: ifCond } : {}) }; continue; }
+      // "If you have six or more plant gauges, look at the top five cards instead of three cards": the look before sees more (checked when it happens)
+      const lookInst = t.match(rx(`^look at the top ${N} cards instead of ${N} cards?$`)) || t.match(rx(`^look at (all) of (?:the|your) deck instead of (?:the top )?${N} cards?$`));
+      const prevLook = lookInst && [...ab.effects].reverse().find((e) => e.look);
+      if (prevLook) { prevLook.lookMore = { ...(/^all$/i.test(lookInst[1]) ? { all: true } : { n: toNum(lookInst[1]) }), ...(ifCond ? { cond: ifCond } : {}) }; continue; }
+      if (/^when you would look at the deck by this ability$/i.test(t)) continue; // the "instead" step that follows says what changes
+      // "If your vanguard is grade 2 or greater, …, when you would call, you may call it as [Stand] instead of [Rest]": the rested call before may stand
+      if (/^when you would call$/i.test(t)) continue;
+      // "search your deck for up to two cards …, call each of them to (RC) in the same column": both into one column
+      const pairMove = /^call (?:each of )?them to \(RC\) in the same column$/i.test(t) && [...ab.effects].reverse().find((e) => e.type === "move");
+      if (pairMove) { pairMove.to = "RCpairCol"; continue; }
+      const restCall = /^(?:you may )?call it as \[stand\] instead of \[rest\]$/i.test(t) && [...ab.effects].reverse().find((e) => e.asRest);
+      if (restCall) { restCall.standIf = ifCond || { type: "myTurn" }; continue; }
       const es0 = effectOf(t, ctx);
       if (es0 === null && /\b(is|are|has|have)\b/i.test(t) && !/\b(gets?|draw|call|put|retire|choose|look|search)\b/i.test(t)) {
         const r2 = condsIn("if " + t);
@@ -1553,12 +1712,28 @@ const TextParse = (() => {
       const octx = {};
       let oCond = null; // "・If it is your main phase, draw a card": a condition inside one option
       for (const c of o.cl) {
-        if (c === "§") { oCond = null; continue; }
+        if (c === "§") { oCond = null; octx.onlyIf = null; continue; }
         const cc = c.replace(/^(and then|and|then)\s+/i, "");
-        if (/^if\b/i.test(cc) && !/^if you (do|did)\b/i.test(cc)) { const r = condsIn(cc); if (r.conds.length === 1) { oCond = r.conds[0]; continue; } }
+        if (/^if\b/i.test(cc) && !/^if you (do(?! not have)|did)\b/i.test(cc) && !/^if you (called|revealed|drew|retired|discarded|bound) an? card$/i.test(cc)) { const r = condsIn(cc); if (r.conds.length === 1) { oCond = r.conds[0]; continue; } }
+        // "・…, you may call this card to (RC). If you called a card, …": the rest of the option needs that step done
+        if (/^if you (do|did|called|revealed|drew|retired|discarded|bound) (an? card|it)?$/i.test(cc.trim()) || /^if you (do|did)$/i.test(cc.trim())) { octx.onlyIf = "did"; continue; }
+        if (/^if you did not$/i.test(cc.trim())) { octx.onlyIf = "didNot"; continue; }
+        // "・[COST][Soul-Blast 1], and call this card to (RC)": choosing this option pays its cost
+        const opc = cc.match(/^\[COST\]\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]\s*,?\s*(?:and\s+)?([\s\S]*)$/i);
+        if (opc) {
+          const r = costsIn(opc[1]);
+          if (r.costs.length && !r.unread.length) {
+            ab.effects.push({ type: "payCost", costs: r.costs, must: true, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) });
+            if (!opc[2].trim()) continue;
+            const es2 = effectOf(opc[2].trim(), octx);
+            if (es2 === null) ab.effects.push({ type: "manual", text: opc[2].trim(), opt: o.letter, onlyIf: "did" });
+            else es2.forEach((e) => ab.effects.push({ ...e, opt: o.letter, onlyIf: "did", ...(oCond ? { ifCond: oCond } : {}) }));
+            continue;
+          }
+        }
         const es = effectOf(c, octx);
         if (es === null) ab.effects.push({ type: "manual", text: c, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) });
-        else es.forEach((e) => ab.effects.push({ ...e, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}) }));
+        else es.forEach((e) => ab.effects.push({ ...e, opt: o.letter, ...(oCond ? { ifCond: oCond } : {}), ...(octx.onlyIf ? { onlyIf: octx.onlyIf } : {}) }));
       }
     }
     for (const tr of tiers) {
@@ -1580,7 +1755,7 @@ const TextParse = (() => {
     if (kind === "CONT") {
       ab.effects = ab.effects.map((e) => (e.type === "power" || e.type === "crit") ? (({ dur, ...x }) => x)(e) : e);
     }
-    ab.effects = ab.effects.filter((e) => !(e.type === "manual" && !String(e.text || "").replace(/[s,.!、]/g, ""))); // nothing left to do by hand
+    ab.effects = ab.effects.filter((e) => !(e.type === "manual" && !String(e.text || "").replace(/[\s,.!、・]/g, ""))); // nothing left to do by hand
     // merge consecutive manual steps into one
     const merged = [];
     for (const e of ab.effects) {
@@ -1599,6 +1774,12 @@ const TextParse = (() => {
       ab.effects = [{ type: "manual", text: "Timing not read, do it at the right moment: " + text.replace(/^\[[^\]]*\]\s*(\([^)]*\))?:?/, "").slice(0, 300) }];
     } else if (unread.length) ab.effects.unshift({ type: "manual", text: "Also pay: " + unread.map((u) => u.replace(/^cost: /, "")).join(" & ") });
     if (unread.length) ab.unread = unread;
+    if (plantInstead) ab.effects.forEach((e) => { if (e.type === "token") e.toPlant = true; });
+    if (costIf) ab.costIf = costIf;
+    const lookStep = [...ab.effects].reverse().find((e) => e.type === "move" && e.look);
+    if (lookStep && toIf) lookStep.toIf = toIf;
+    if (lookStep && restDOB) lookStep.rest = "dropOrBottom";
+    if (nameTurn && !ab.once) ab.once = "nameTurn";
     return ab;
   }
 
@@ -1617,6 +1798,8 @@ const TextParse = (() => {
   const KEYWORD_LINE = /^(\(.*\)|sentinel\b.*|forerunner\b.*|lord\b.*|\[?resist\]?.*|harmony\b.*|boost|intercept|twin drive!*|triple drive!*|persona ride.*|imaginary gift.*|regalis piece.*|ace unit.*|\[?(x)?overdress\]?.*|\[stride\].*|\[g guardian\].*|\[ultimate stride\].*|-$|.*\(this card is a ticket card.*\))$/i;
   function abilities(text, isOrder) {
     text = norm(text);
+    // the Energy Generator crest: the game runs it in Standard (energy charge, up to ten, the energy blast draw)
+    if (/put this card into the crest zone/i.test(text) && /up to ten energy/i.test(text)) return [];
     const lines = [], labelOf = new Map();
     for (const raw of text.split("\n")) {
       let l = raw.trim();
@@ -1654,6 +1837,12 @@ const TextParse = (() => {
       if (/^[A-Z][A-Za-z!'‐-]{2,20}( \d+)?\s*$/.test(body)) continue;
       // Revelation-(VC/RC) (G era), from the cards' own reminder text: "When this unit is placed on the specified circle, look at the top card of your deck,
       // and you may put that card into your soul. If you do, [Rest] one of your rear-guards"
+      // Hollow: "When placed on (RC), you may have it become hollowed. If you do, retire it at the end of turn"
+      if (/^hollow\s*(\(|$)/i.test(body)) {
+        out.push({ kind: "AUTO", zone: "RC", when: "placedRC", once: "", conds: [], costs: [], keyword: "Hollow",
+          effects: [{ type: "hollow" }, { type: "retire", target: "self", onlyIf: "did", later: "turn" }] });
+        continue;
+      }
       const rv = body.match(/^revelation\s*[-–－]\s*\((VC\/RC|VC|RC)\)/i);
       if (rv) {
         const z = rv[1].toUpperCase();
@@ -1665,12 +1854,22 @@ const TextParse = (() => {
       // cards from your drop to the deck, search for the named mate and Legion (CR 6.4); the mate's name is the Seek Mate text
       const lg = body.match(/^\[legion (\d+)\]\s*"([^"]+)"\s*$/i);
       if (lg) { out.push({ kind: "ACT", zone: "VC", once: "", conds: [{ type: "oppVcGrade", n: 3 }], costs: [{ type: "dropToTop", n: 4 }], effects: [{ type: "seekMate", text: lg[2] }], legionPower: +lg[1] }); continue; }
-      if (/^the normal ride of this card from a grade 3 card with a kai icon and a different card name[^.]*also becomes a persona ride\.?$/i.test(body)) continue; // card field personaFromKai
+      if (/^this card'?s \[auto\] ability can be resolved even if you have resolved a regalis piece ability this fight\.?$/i.test(body)) continue; // card field regalisAgain
+      if (/^the normal ride of this card from a grade 3 card with an? (?:kai|aichi) icon and a different card name[^.]*also becomes a persona ride\.?$/i.test(body)) continue; // card field personaFromKai
       // deck-building rules and card fields, not abilities: "You may only have one … in a deck", "You may have up to ten energy",
       // "This card cannot be ridden", "This card can only be ridden from a grade 3 with "X" in its card name"
       if (/^you may (only )?have (up to )?[^.]*\b(in (a|your) deck|energy)\.?$/i.test(body)) continue;
       if (/^this card (cannot be ridden|can only be ridden from [^.]*)\.?$/i.test(body)) continue;
       if (/^(hand:\s*)?while (you are )?paying the cost (for|of) \[?stride\]?,? this card gets grade \+\d\.?$/i.test(body)) continue; // card field strideGrade // Legion mate name (the Seek Mate ability carries it) // a keyword label only (Engorge, Blaze, Success 20000…): its effect is in other lines
+      // "[CONT](RC):This unit cannot be moved to other circles, and if you have a vanguard with "X", it gets all of the following. ・[CONT]… ・[ACT]…":
+      // each bullet is its own ability with that condition
+      const allF = l.match(/^(\[CONT\][^:]*:)\s*(.*?),?\s*(?:and )?(if [^・]+?),\s*it gets all of the following\.?\s*・\s*([\s\S]+)$/i);
+      if (allF) {
+        if (allF[2].trim()) out.push(ability(allF[1] + allF[2].trim() + ".", undefined, extraAbs));
+        const cc = condsIn(allF[3]).conds;
+        for (const b of allF[4].split(/\s*・\s*/).filter(Boolean)) { const ba = ability(b, undefined, extraAbs); ba.conds = [...cc, ...(ba.conds || [])]; out.push(ba); if (ba.siblings) { out.push(...ba.siblings); delete ba.siblings; } }
+        continue;
+      }
       const a = ability(l, undefined, extraAbs);
       if (labelOf.has(l)) a.keyword = labelOf.get(l); // "Magia", "Operate", "Powerful"…
       out.push(a);
