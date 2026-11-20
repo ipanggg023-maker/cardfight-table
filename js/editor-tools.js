@@ -389,11 +389,14 @@ function rereadPlan(cards) {
     try { r = TextParse.parse(c.text, { type: (c.abilities || []).some((a) => a.kind === "BLITZ") ? "blitz order" : c.type }); } catch { continue; }
     const abilities = (r.abilities || []).map((a) => { const x = { ...a }; delete x.unread; return x; });
     const before = manual(c.abilities), after = manual(abilities);
-    if (after > before || canon(abilities) === canon(c.abilities || [])) continue;
-    // icon / card-rule flags the reader found and the card doesn't have yet
+    if (after > before) continue;
+    // icon / card-rule fields the reader found and the card doesn't have yet (a card can change for these alone)
     const flags = {};
-    for (const k of ["kai", "aichi", "personaFromKai", "personaFromAichi"]) if (r[k] && !c[k]) flags[k] = true;
-    out.push({ card: c, next: { ...c, ...flags, abilities }, fewer: before - after });
+    for (const k of ["kai", "aichi", "personaFromKai", "personaFromAichi", "regalisAgain", "bindLocked"]) if (r[k] && !c[k]) flags[k] = true;
+    if (r.alsoClan && canon(r.alsoClan) !== canon(c.alsoClan || null)) flags.alsoClan = r.alsoClan;
+    const same = canon(abilities) === canon(c.abilities || []);
+    if (same && !Object.keys(flags).length) continue;
+    out.push({ card: c, next: { ...c, ...flags, abilities: same ? c.abilities : abilities }, fewer: before - after });
   }
   return out;
 }
