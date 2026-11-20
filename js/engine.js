@@ -205,7 +205,7 @@ const Game = (() => {
     if (f.nameExact && !names.includes(String(f.nameExact).toLowerCase())) return false;
     if (Array.isArray(f.names) && f.names.length && !f.names.some((n) => names.includes(String(n).toLowerCase()))) return false; // one of these exact names
     if (Array.isArray(f.nameAny) && f.nameAny.length && !f.nameAny.some((n) => names.some((x) => x.includes(String(n).toLowerCase())))) return false; // "A" or "B" in its name
-    if (f.clan && !c.allClans) { const w = String(f.clan).toLowerCase(); if (![c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(w))) return false; }
+    if (f.clan && !c.allClans) { const w = String(f.clan).toLowerCase(); if (![c.nation, c.clan, c.race, ...(c.alsoClan || [])].some((x) => x && String(x).toLowerCase().includes(w))) return false; }
     if (f.trig && f.trig !== "") {
       if (f.trig === "none" ? !!c.trigger : f.trig === "any" ? !c.trigger : c.trigger !== f.trig) return false;
     }
@@ -213,6 +213,7 @@ const Game = (() => {
     if (f.aichi && !c.aichi) return false; // "with an Aichi icon"
     if (f.notName && names.includes(String(f.notName).toLowerCase())) return false; // "other than "X""
     if (f.clanNot && [c.nation, c.clan, c.race].some((x) => x && String(x).toLowerCase().includes(String(f.clanNot).toLowerCase()))) return false; // not a <World>…
+    if (f.notOzSouled && env.pi !== undefined) { const L = P(env.pi).ozSouled; if (L && L.turn === S.turn && L.names.includes(c.name)) return false; } // "with a different card name from cards put into soul from the order zone this turn"
     if (f.nameNot && names.some((x) => x.includes(String(f.nameNot).toLowerCase()))) return false; // "without "X" in its card name"
     if (f.wasRideDeck && !c.wasRideDeck) return false;
     if (f.driveMin && driveOf(c) < +f.driveMin) return false; // "has "Triple Drive"" / "Twin Drive"
@@ -516,6 +517,7 @@ const Game = (() => {
       case "dressed": return !!(ctx.key && p.slots[ctx.key] && p.slots[ctx.key].under && p.slots[ctx.key].under.length); // in overDress state
       case "world": { const names = String(c.text || "").toLowerCase().split("|").map((x) => x.trim()); if (names.includes(worldOf(pi).toLowerCase())) return true; return names.includes((p.world || "").toLowerCase()) || names.some((n) => p.states && p.states[n] === S.turn); } // "Dark Night|Abyssal Dark Night"
       case "onVC": return ctx.key === "vc";
+      case "vcPlacedByKw": { const vs = p.slots.vc; return vs.rodeTurn === S.turn && String(vs.placedKw || "").toLowerCase().includes(String(c.kw || "").toLowerCase()); } // "if your vanguard was placed by the <DrægDress> ability this turn"
       case "wasHollowed": return !!(ctx.card && ctx.card.wasHollowed);
       case "ccThisTurn": return p.ccTurn === S.turn; // "if you [Counter-Charge]d this turn" (with not: "you did not")
       case "eventSubject": return !!ctx.subject && match(ctx.subject, c.filter, { pi, ctx }); // "If it was rode upon by a grade 3 … with "X""
@@ -622,7 +624,7 @@ const Game = (() => {
       case "rcToPlant": return blastKeys(pi).length > 0 && rcOf(pi).filter((k) => p.slots[k] && k !== ctx.key && !p.slots[k].locked).length >= (+c.min || n || 1);
       case "payGauge": { const own = ctx.key && p.slots[ctx.key] && p.slots[ctx.key].gauge ? p.slots[ctx.key].gauge.length : 0; return own >= n || unitsOf(pi).reduce((t, k) => t + ((p.slots[k] && p.slots[k].gauge) || []).length, 0) >= n; }
       case "discard": return p.hand.filter((x) => match(x, c.filter, { pi, ctx })).length >= n;
-      case "move": return moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : n);
+      case "move": { const need = c.to === "removed" && p.removeDisc && p.removeDisc.turn === S.turn ? Math.max(0, n - p.removeDisc.n) : n; return need === 0 || moveCandidates(pi, c, ctx).length >= (c.from === "self" ? 1 : need); }
       case "gFaceUp": return (p.gDeck || []).filter((x) => match(x, c.filter, { pi, ctx })).length >= n; // turn face-down G zone cards face up
       case "restSelf": return selfThere(pi, ctx) && !P(pi).slots[ctx.key].rest;
       case "retireSelf": case "selfToSoul": return selfThere(pi, ctx) && ctx.key !== "vc";
@@ -742,7 +744,8 @@ const Game = (() => {
         picked.forEach((x) => { p.drop.splice(p.drop.indexOf(x), 1); p.deck.push(x); });
         break;
       }
-      case "move": { const r = await moveCards(pi, { ...c, upTo: false }, ctx); if (r && r.cards && r.cards.length) { ctx.revealed = r.cards; ctx.paid = [...(ctx.paid || []), ...r.cards]; } break; }
+      case "move": { if (c.to === "removed" && p.removeDisc && p.removeDisc.turn === S.turn) { const left = Math.max(0, (+c.n || 1) - p.removeDisc.n); log(`${p.name} removes ${p.removeDisc.n} card(s) less for this cost`); p.removeDisc = null; if (!left) break; c = { ...c, n: left }; } // "reduce the next number of cards you remove for the cost … by one"
+        const r = await moveCards(pi, { ...c, upTo: false }, ctx); if (r && r.cards && r.cards.length) { ctx.revealed = r.cards; ctx.paid = [...(ctx.paid || []), ...r.cards]; } break; }
       case "gFaceUp": {
         const picked = await chooseCards(pi, `Turn ${n} face-down card(s) in your G zone face up`, p.gDeck.filter((x) => match(x, c.filter, { pi, ctx })), n, n);
         picked.forEach((x) => { p.gDeck.splice(p.gDeck.indexOf(x), 1); p.gUp.push(x); });
@@ -776,6 +779,7 @@ const Game = (() => {
     if (ab.once === "turn" && S.used.has(usedKey(card, i))) return false;
     if (ab.once === "nameTurn" && S.used.has(`${pi}:name:${card.name}:${i}`)) return false; // "may only be used by a card with the same name once a turn"
     if (ab.once === "game" && S.usedGame.has(gameKey(pi, card, i))) return false;
+    if ((ab.effects || []).length && ab.effects.every((e) => e.type === "manual") && !(ab.costs || []).length) return false; // nothing the game can do
     if (!(ab.conds || []).every((c) => condOK(pi, c, ctx))) return false;
     // Seek Mate needs a vanguard that has never been in legion (CR 14.11)
     if ((ab.effects || []).some((e) => e.type === "seekMate")) {
@@ -800,7 +804,7 @@ const Game = (() => {
     try {
       for (const c of costsOf(pi, ab, ctx)) await pay(pi, c, ctx);
       const prevCause = S.cause;
-      S.cause = { pi, card }; // "placed by the ability of X"
+      S.cause = { pi, card, ab }; // "placed by the ability of X" / "by the <DrægDress> ability"
       try { await runEffects(pi, ab.effects || [], { ...ctx, card }); } finally { S.cause = prevCause; }
     } finally { depth--; }
     await settle();
@@ -835,6 +839,7 @@ const Game = (() => {
     if (ab.whenMin && !((+extra.n || 0) >= +ab.whenMin)) return false;
     // "by the ability of your grade 3 or greater card with "X" in its card name"
     if (ab.whenByCard && !(extra.byPi === pi && extra.byCard && match(extra.byCard, ab.whenByCard, { pi }))) return false;
+    if (ab.whenRideCost && !extra.rideCost) return false; // "discarded from hand while riding from the ride deck"
     if (ab.whenFrom) {
       const from = extra.from || "";
       if (ab.whenFrom === "notHand" ? from === "hand" : from !== ab.whenFrom) return false;
@@ -927,8 +932,9 @@ const Game = (() => {
     }
     collect(pi, key, "placedRC", { from, subject: card, ...(S.cause ? { byCard: S.cause.card, byPi: S.cause.pi } : {}) });
     collect(pi, key, "placed", { from, subject: card }); // "when placed" (VC or RC)
-    for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key, from, subject: card });
-    collectZones(pi, "allyPlacedRC", { placedKey: key, from, subject: card });
+    const byC = S.cause ? { byCard: S.cause.card, byPi: S.cause.pi } : {};
+    for (const k of unitsOf(pi)) if (k !== key && p.slots[k]) collect(pi, k, "allyPlacedRC", { placedKey: key, from, subject: card, ...byC });
+    collectZones(pi, "allyPlacedRC", { placedKey: key, from, subject: card, ...byC });
     collectAll(1 - pi, "oppPlacedRC", { from, subject: card });
     if (opts.beat) await beat(opts.beat); // the screen shows the call before the unit's abilities resolve
     await settle();
@@ -984,7 +990,7 @@ const Game = (() => {
     return false;
   }
   // a card goes from the hand to the drop by a cost or an effect (discarding)
-  function discarded(pi, card) { collect(pi, null, "discarded", { card, zone: "hand", subject: card }); collectAll(pi, "allyDiscarded", { subject: card }); }
+  function discarded(pi, card, extra = {}) { collect(pi, null, "discarded", { card, zone: "hand", subject: card, ...extra }); collectAll(pi, "allyDiscarded", { subject: card, ...extra }); }
   // any card put into a player's soul ("when a card is put into your soul"); from = "RC" when a rear-guard went there
   function soulEvent(pi, card, from = "") {
     if (from === "RC") (S.rcSoulTurn = S.rcSoulTurn && S.rcSoulTurn.turn === S.turn ? S.rcSoulTurn : { turn: S.turn, n: [0, 0] }).n[pi]++; // "if two or more of your cards were put from (RC) into your soul this turn"
@@ -1007,14 +1013,17 @@ const Game = (() => {
     for (const e of effs) {
       if (over()) break;
       if (e.type === "chooseOpts") {
-        // an option whose own cost can't be paid can't be chosen
+        if (e.onlyIf === "did" && !(last && last.count > 0)) { opts = new Set(); continue; } // "If you revealed a card, perform one of the following"
+        // an option whose own cost can't be paid can't be chosen; one that moves "the revealed card" needs it to match
+        const lastCards = (last && last.cards) || [];
         const letters = [...new Set(effs.filter((x) => x.opt).map((x) => x.opt))].sort()
-          .filter((L) => !effs.some((x) => x.opt === L && x.type === "payCost" && !(x.costs || []).every((c) => canPay(pi, c, ctx))));
+          .filter((L) => !effs.some((x) => x.opt === L && x.type === "payCost" && !(x.costs || []).every((c) => canPay(pi, c, ctx))))
+          .filter((L) => !effs.some((x) => x.opt === L && x.type === "move" && x.fromLast && !lastCards.some((c) => match(c, x.filter, { pi, ctx }))));
         if (!letters.length) { opts = new Set(); last = { count: 0, cards: [] }; continue; }
         const opt = letters.map((L) => ({ id: L, label: `${L}: ${effs.filter((x) => x.opt === L).map((x) => SCHEMA.effects[x.type] ? SCHEMA.effects[x.type].text(x) : x.type).join(", then ")}` }));
         const k = Math.max(1, +e.n || 1);
         opts = new Set(await choose(pi, `Choose ${k} of the following`, opt, Math.min(k, opt.length), Math.min(k, opt.length)));
-        last = { count: opts.size, cards: [] };
+        if (!e.keepLast) last = { count: opts.size, cards: [] }; // keepLast: the options act on the card the step before handled
         continue;
       }
       if (e.opt && !(opts && opts.has(e.opt))) continue;
@@ -1053,6 +1062,11 @@ const Game = (() => {
   const FIELD_FROM = { myRC: "rc", myUnits: "units", myFrontRC: "front", myBackRC: "back", oppRC: "rc", oppUnits: "units", oppFrontRC: "front", myColumnRC: "column" };
   const sideOf = (pi, from) => (String(from).startsWith("opp") ? 1 - pi : pi);
   function moveCandidates(pi, e, ctx) {
+    const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
+    if (/bind/i.test(String(e.from || ""))) return moveCandidatesRaw(pi, e, ctx).filter((c) => !(c.bindLocked && q.bind.includes(c)));
+    return moveCandidatesRaw(pi, e, ctx);
+  }
+  function moveCandidatesRaw(pi, e, ctx) {
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     if (e.from === "self") return ctx.card ? [ctx.card] : [];
     if (e.fromPaid) { const z = q[ZONE_OF[e.from] || e.from] || []; return ((ctx.paid) || []).filter((c) => z.includes(c) && match(c, e.filter, env)); }
@@ -1125,7 +1139,7 @@ const Game = (() => {
     myRC: "rear-guards", myUnits: "units", myFrontRC: "front row rear-guards", myBackRC: "back row rear-guards", self: "this card" };
   let colKey = null; // the circle of the card whose ability moves cards ("in the same column as this unit")
   async function moveCards(pi, e, ctx) {
-    colKey = ctx && ctx.key ? ctx.key : null;
+    colKey = e.colOfEvent && ctx && ctx.placedKey ? ctx.placedKey : ctx && ctx.key ? ctx.key : null; // colOfEvent: "in the same column as that unit" (the placed unit)
     const side = sideOf(pi, e.from), q = P(side), env = { pi, ctx };
     const chooser = e.chooser === "opp" ? 1 - pi : pi;
     const n = Math.max(1, +e.n || 1);
@@ -1186,6 +1200,7 @@ const Game = (() => {
       else await putCard(side, c, to, pi, fromName);
       if (to === "RC" && e.asRest && !(e.standIf && condOK(pi, e.standIf, ctx))) for (const k of rcOf(side)) if (P(side).slots[k] && P(side).slots[k].card.uid === c.uid) P(side).slots[k].rest = true; // "call it as [Rest]"
       if (e.to === "soul") collect(side, null, "toSoul", { card: c, zone: "soul", subject: c });
+      if (e.to === "soul" && fromName.replace(/s/g, "") === "orderzone") { const qq = P(side); if (!qq.ozSouled || qq.ozSouled.turn !== S.turn) qq.ozSouled = { turn: S.turn, names: [] }; qq.ozSouled.names.push(c.name); }
       if (e.to === "drop" && fromName.replace(/s/g, "") === "orderzone") collect(side, null, "ozToDrop", { card: c, zone: "drop", subject: c }); // "when this card is put into your drop from the Order Zone"
       const fromRC = e.from === "self" ? !!(ctx.key && ctx.key !== "vc" && rcOf(side).includes(ctx.key)) : /^(my|opp)?(front|back)?RC$/i.test(String(e.from || ""));
       if (fromRC && e.to === "soul") collect(side, null, "rcToSoul", { card: c, zone: "RC", subject: c });
@@ -1306,6 +1321,17 @@ const Game = (() => {
         if (!card || !(await putPlant(pi, card))) return { count: 0, cards: [] };
         return { count: 1, cards: [card] };
       }
+      case "shuffleDeck": shuffle(p.deck); log(`${p.name} shuffles the deck`); return { count: 1 };
+      case "revealLook": { // "Look at the top five cards of your deck, choose up to one card from among them, and reveal it" (it stays in the deck)
+        const top = p.deck.slice(-Math.max(1, +e.look || 1));
+        const cand = top.filter((c) => match(c, e.filter, { pi, ctx }));
+        const got = cand.length ? await chooseCards(pi, `Top ${top.length} cards: reveal up to one`, cand, 0, 1) : [];
+        if (got.length) log(`${p.name} reveals ${got.map((c) => c.name).join(", ")}`);
+        return { count: got.length, cards: got };
+      }
+      case "nullifyCrit": p.nullifyCrit = { until: S.turn + 1 }; log(`${p.name} will nullify one effect of the opponent's next drive check Critical trigger`); return { count: 1 };
+      case "nullifyGive": p.nullifyGive = { filter: e.filter || {} }; return { count: 1 };
+      case "removeDiscount": p.removeDisc = { turn: S.turn, n: +e.n || 1 }; log(`${p.name}'s next remove cost this turn is one card less`); return { count: 1 };
       case "double": { // "Double the [Power] and [Critical] of all of your front row units until end of turn"
         const us = await pickUnits(pi, e, ctx);
         for (const u of us) { const sl = P(u.pi).slots[u.key]; if (!sl) continue; const pw = power(u.pi, u.key), cr = crit(u.pi, u.key); sl.pow += pw; sl.crit += cr; log(`${sl.card.name}: [Power] and [Critical] doubled`); }
@@ -1634,9 +1660,16 @@ const Game = (() => {
     const shown = S.checking && S.checking.card === c ? (S.checking.trig = { type: t, power: amt, crit: 0, to: [] }) : { to: [] }; // what the screen shows for this trigger
     if (t === "front") { unitsAt(pi, frontOf(pi)).forEach((u) => { p.slots[u.key].pow += amt; shown.to.push(u.key); }); return; }
     if (t === "over") draw(pi, 1);
-    const [pu] = await chooseUnits(pi, `${TRIG[t].name} trigger: power +${amt.toLocaleString()} to which unit?`, mine, 1);
+    // "Until end of your opponent's next turn, when your opponent's drive check would next reveal a <Critical>, choose one of those trigger effects, and nullify it"
+    let skip = null;
+    if (t === "crit" && check === "drive" && o.nullifyCrit && o.nullifyCrit.until >= S.turn) {
+      const [w] = await choose(1 - pi, `${c.name}: nullify which effect of this Critical trigger?`, [{ id: "power", label: `Its [Power] +${amt.toLocaleString()}` }, { id: "crit", label: "Its [Critical] +1" }], 1, 1);
+      skip = w || "crit"; o.nullifyCrit = null; o.nullified = { type: skip, amount: amt, turn: S.turn };
+      log(`${o.name} nullifies the ${skip === "power" ? "[Power]" : "[Critical]"} of ${c.name}`);
+    }
+    const [pu] = skip === "power" ? [] : await chooseUnits(pi, `${TRIG[t].name} trigger: power +${amt.toLocaleString()} to which unit?`, mine, 1);
     if (pu) { p.slots[pu.key].pow += amt; shown.to.push(pu.key); }
-    if (t === "crit") {
+    if (t === "crit" && skip !== "crit") {
       const [cu] = await chooseUnits(pi, "Critical trigger: critical +1 to which unit?", mine, 1);
       if (cu) { p.slots[cu.key].crit += 1; shown.crit = 1; if (!shown.to.includes(cu.key)) shown.to.push(cu.key); }
     }
@@ -1662,6 +1695,11 @@ const Game = (() => {
   async function startTurn() {
     const pi = S.active, p = P(pi);
     p.vcGradeAtStart = p.slots.vc.card.grade;
+    if (p.nullifyGive && p.nullified && p.nullified.turn === S.turn - 1 && p.slots.vc && +p.slots.vc.card.grade >= 3 && match(p.slots.vc.card, p.nullifyGive.filter, { pi })) {
+      const vs = p.slots.vc; if (p.nullified.type === "power") vs.pow += p.nullified.amount; else vs.crit += 1;
+      log(`${vs.card.name} gets the nullified ${p.nullified.type === "power" ? "[Power]" : "[Critical]"} this turn`);
+    }
+    if (p.nullifyGive && (!p.nullified || p.nullified.turn < S.turn - 1)) p.nullifyGive = null;
     (p.orderZone || []).forEach((c) => (c.rest = false));
     for (const k of unitsOf(pi)) { const sl = p.slots[k]; if (sl && !restricted(pi, k, "cantStand")) { const was = sl.rest; sl.rest = false; if (was) collect(pi, k, "stood"); } }
     S.used = new Set();
@@ -1821,7 +1859,8 @@ const Game = (() => {
     if (vs.arms && vs.arms.length && card.name !== old.name) { p.drop.push(...vs.arms); vs.arms = []; } // arms follow only a same-name ride (CR 17.7)
     p.soul.push(old);
     p.slots.vc.card = card;
-    vs.rodeFrom = old; vs.rodeTurn = S.turn; // "if this unit was placed by riding from "X" this turn"
+    vs.rodeFrom = old; vs.rodeTurn = S.turn;
+    vs.placedKw = opts.effect && S.cause && S.cause.ab && S.cause.ab.keyword ? String(S.cause.ab.keyword) : ""; // "placed on (VC) by the <DrægDress> ability" // "if this unit was placed by riding from "X" this turn"
     if (!opts.effect) S.rode = true;
     if (opts.effect) vs.rest = opts.stand ? false : vs.rest; // "ride it as [Stand]"
     log(`${p.name} rides ${card.name} (G${card.grade})${opts.effect ? " by an effect" : ""}`);
@@ -1872,7 +1911,7 @@ const Game = (() => {
     if (hi < 0 && !free) return err("Choose a card in hand to discard");
     const ok = rideAllowed(pi, next);
     if (ok !== true) return err(ok);
-    if (!free) p.drop.push(p.hand.splice(hi, 1)[0]); else log(`${p.name} rides from the ride deck without discarding`);
+    if (!free) { const dc = p.hand.splice(hi, 1)[0]; p.drop.push(dc); discarded(pi, dc, { rideCost: true }); } else log(`${p.name} rides from the ride deck without discarding`);
     p.ride.splice(p.ride.indexOf(next), 1);
     next.wasRideDeck = true;
     await doRide(pi, next, false);
@@ -2140,14 +2179,11 @@ const Game = (() => {
       }
     }
   }
-  // ---------- manual effects / judge mode ----------
-  // A "Manual" block pauses the game: the players do the card's text by hand with judgeOp() (move any card,
-  // change power/critical, rest/stand, energy, shuffle), then answer Done. judgeOp() also works any time in hot-seat.
+  // ---------- steps the game can't do yet ----------
+  // No pause and no panel (the user, 2026-11-20: no manual steps): the step is skipped and the log says so.
+  // judgeOp() below stays for the test table's own tools.
   async function manualEffect(pi, ctx, text) {
-    S.judge = { by: pi, name: ctx.card ? ctx.card.name : "", uid: ctx.card ? ctx.card.uid : null, text: text || (ctx.card && ctx.card.text) || "Do this card's text by hand" };
-    log(`✋ ${ctx.card ? ctx.card.name + ": " : ""}manual effect, resolve it by hand`);
-    try { await choose(pi, `✋ Manual: ${S.judge.text}\nDo it on the table (click a card, then where it goes), then press Done.`, [{ id: "done", label: "Done ✓" }, { id: "skip", label: "Skip (do nothing)" }], 1, 1); }
-    finally { S.judge = null; }
+    log(`⚠ ${ctx.card ? ctx.card.name + ": " : ""}not automated yet, skipped (${String(text || "").slice(0, 120)})`);
   }
   const ZONES = ["hand", "deck", "drop", "soul", "damage", "bind", "removed", "orderZone", "automod", "gUp", "gDeck"];
   function judgeOp(op) {
@@ -2272,6 +2308,8 @@ const Game = (() => {
     const bk = useBoost ? boosterFor(ai, att) : null;
     if (bk) p.slots[bk].rest = true;
     S.battle = { att, tgt, boostKey: bk, guards: [], perfect: false, shieldBonus: 0 };
+    // "when this unit would attack a rear-guard, this unit battles all of your opponent's rear-guards in the same column as that unit"
+    if (tgt !== "vc" && contHas(ai, att, "columnBattle")) S.battle.also = rcOf(di).filter((k) => k !== tgt && COL[k] && COL[k] === COL[tgt] && P(di).slots[k] && !P(di).slots[k].locked);
     S.battleNo = (S.battleNo || 0) + 1; // "the Nth battle of that turn"
     if (att === "vc") p.vcAttacks = p.vcAttacks && p.vcAttacks.turn === S.turn ? { turn: S.turn, n: p.vcAttacks.n + 1 } : { turn: S.turn, n: 1 };
     S.reveal = [];
@@ -2371,6 +2409,8 @@ const Game = (() => {
     const hit = !b.perfect && atk >= def;
     b.hit = hit; S.lastHit = { turn: S.turn, battle: S.battleNo || 0, hit }; // "if the attack did not hit during that battle"
     log(`${atk.toLocaleString()} vs ${def.toLocaleString()} → ${hit ? "HIT!" : "guarded"}`);
+    b.alsoHit = (b.also || []).filter((k) => d.slots[k] && atk >= power(di, k)).map((k) => ({ key: k, uid: d.slots[k].card.uid })); // the other units in that column (no guard on them)
+    for (const x of b.alsoHit) log(`${atk.toLocaleString()} vs ${power(di, x.key).toLocaleString()} (${d.slots[x.key].card.name}) → HIT!`);
     await beat("result");
     if (hit) {
       if (b.tgt === "vc") {
@@ -2424,6 +2464,7 @@ const Game = (() => {
     }
     b.guards = [];
     if (b.hitUid && d.slots[b.tgt] && d.slots[b.tgt].card.uid === b.hitUid) { const hc = d.slots[b.tgt].card; if (await retireUnit(1 - ai, b.tgt, ai)) log(`${hc.name} is retired`); }
+    for (const x of b.alsoHit || []) if (d.slots[x.key] && d.slots[x.key].card.uid === x.uid) { const hc = d.slots[x.key].card; if (await retireUnit(1 - ai, x.key, ai)) log(`${hc.name} is retired`); }
     if (!over()) await fire(ai, b.att, "battleEnd");
     S.players.forEach((pl) => Object.values(pl.slots).forEach((s) => s && (s.powB = 0, s.critB = 0)));
     expire(true);

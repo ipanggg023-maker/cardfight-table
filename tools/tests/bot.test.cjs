@@ -65,17 +65,14 @@ function botMain() {
   return { Game, TP, Bot, S };
 }
 
-test("manual step is skipped", async () => {
-  const { Game, Bot, S } = botMain();
+test("an ability that is only a manual step is never offered (no pause, no panel)", async () => {
+  const { Game, S } = botMain();
   const vc = S.players[1].slots.vc.card;
   vc.abilities = [{ kind: "ACT", zone: "VC", once: "", conds: [], costs: [], effects: [{ type: "manual", text: "x" }] }];
-  const act = Game.activate("vc", 0);
-  for (let i = 0; i < 5 && !S.judge; i++) await tick();
-  assert.ok(S.judge, "the manual step is waiting");
-  const r = await Bot.step(1, "normal");
-  await act;
-  assert.equal(r.ok, true);
-  assert.equal(S.judge, null);
+  assert.equal(Game.actList(1, "vc").filter((a) => a.ready).length, 0, "not ready, so no glow and no menu entry");
+  const r = await Game.activate("vc", 0);
+  assert.ok(!S.judge && !S.pending, "nothing waits");
+  void r;
 });
 
 test("refused moves fall back", async () => {
@@ -248,14 +245,16 @@ test("a premium bot strides when its hand can pay", async () => {
   assert.ok(strides >= 3, `strides over 3 games: ${strides}`);
 });
 
-test("a skipped manual step is logged", async () => {
-  const { Game, Bot, S } = botMain();
-  S.players[1].slots.vc.card.abilities = [{ kind: "ACT", zone: "VC", once: "", conds: [], costs: [], effects: [{ type: "manual", text: "do the thing" }] }];
-  const act = Game.activate("vc", 0);
-  for (let i = 0; i < 5 && !S.judge; i++) await tick();
-  await Bot.step(1, "normal");
-  await act;
-  assert.ok(S.log.some((l) => l.startsWith("Bot skips: do the thing")), S.log.slice(0, 4).join(" / "));
+test("a manual step inside an ability is skipped and logged, the rest still happens", async () => {
+  const { Game, S } = botMain();
+  const me = S.players[1];
+  me.slots.vc.card.abilities = [{ kind: "ACT", zone: "VC", once: "", conds: [], costs: [], effects: [{ type: "manual", text: "do the thing" }, { type: "draw", n: 1 }] }];
+  const hand = me.hand.length;
+  await Game.activate("vc", 0);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.ok(!S.judge, "no pause");
+  assert.equal(me.hand.length, hand + 1, "the draw still happened");
+  assert.ok(S.log.some((l) => l.includes("not automated yet, skipped (do the thing)")), S.log.slice(0, 4).join(" / "));
 });
 
 test("the bot plays an order from its hand", async () => {
